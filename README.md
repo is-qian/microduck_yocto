@@ -136,7 +136,37 @@ of RAM.
 
 ## Status
 
-Milestone 1 (skeleton, booting console image). Nothing here has been built or
-run on hardware yet. See the milestone plan for what comes next; A/B
-partitioning and RAUC are M7, and the `.wks` is deliberately not written until
-M5 measures a real image size.
+**The image builds.** 5815 tasks, all succeeded. Not yet booted on hardware.
+
+| | microduck_os | reachy_mini_os |
+|---|---|---|
+| image | **526 MiB** `.wic` | 5.9 GiB |
+| rootfs | **386 MiB** | 4.9 GiB used |
+| packages | **913** | 1190 |
+| kernel | 6.1.84-rockchip (vendor BSP, pinned) | 6.18.33+rpt (apt, pinned via `Pin-Priority: -1`) |
+
+Roughly an order of magnitude smaller, mostly because dev headers and toolchain
+live in the SDK rather than on the robot.
+
+Artifacts in `tmp/deploy/images/microduck-zero3/`: `.wic` (SD/eMMC),
+`update.img` (Rockchip flashing), `boot.img`/`zboot.img`, `Image`, both device
+trees, `idblock.img`, `uboot.img`, plus a `.manifest` and an SPDX SBOM.
+
+Partition layout comes from meta-rockchip's `generic-gptdisk.wks`: raw
+`idblock.img` outside the table, `uboot` at 2 MiB, `boot`, then `rootfs`.
+(`trust.img` is absent and skipped — this U-Boot is SPL+FIT, so ATF is inside
+`uboot.img`.)
+
+### Two things to resolve before flashing
+
+1. **Built on hardware with a known memory fault** — see `../CONTEXT.md`. Do not
+   flash this image. Rebuild after `memtest=4` and after deleting
+   `/data1/fabien/yocto/{downloads,sstate}`.
+2. **`KERNEL_DEVICETREE` lists two DTBs**, and `linux-rockchip.inc` derives one
+   Rockchip `boot.img` target per DTB but deploys a single `boot.img` — so which
+   wifi variant it carries is ambiguous. Once `dmesg | grep -iE 'brcmf|aic8800'`
+   on the board says which module it has, pin `KERNEL_DEVICETREE` to that one
+   DTB and the ambiguity disappears.
+
+A/B partitioning and RAUC are M7. The A/B `.wks` is still deliberately unwritten
+until slot sizes can be based on a real image size — which now exists.
