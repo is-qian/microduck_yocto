@@ -4,8 +4,20 @@ AIC8800 wifi/BT combo fitted to some Radxa Zero 3W boards, plus its firmware. \
 Not present in radxa's kernel tree -- the device tree wires up the SDIO bus, \
 power sequence and BT UART, but nothing drives it."
 HOMEPAGE = "https://github.com/radxa-pkg/aic8800"
-LICENSE = "GPL-2.0-only"
-LIC_FILES_CHKSUM = "file://LICENSE;md5=db95b6e40dc7d26d8308b6b7375637b6"
+# Two licences in one tree, per debian/copyright:
+#   Files: src/*   -> GPL-2   (AICSemi's driver: what we compile and ship, and it
+#                              carries MODULE_LICENSE("GPL"))
+#   Files: *       -> GPL-3+  (radxa's Debian packaging; the top-level LICENSE
+#                              file is therefore the GPLv3 text)
+# Both are declared so the SPDX SBOM describes the tree we actually fetch, even
+# though only the GPL-2 part reaches the robot.
+#
+# Note debian/copyright's blanket "Files: *" also sweeps in the firmware blobs
+# under src/*/driver_fw/fw, which are redistributable binaries rather than
+# GPL-anything. That is upstream's claim, not ours to correct here.
+LICENSE = "GPL-2.0-only & GPL-3.0-or-later"
+LIC_FILES_CHKSUM = "file://LICENSE;md5=1ebbd3e34237af26da5dc08a4e440464 \
+                    file://debian/copyright;md5=ccd22839cbff32b2bbe9a6ec05d11739"
 
 inherit module
 
