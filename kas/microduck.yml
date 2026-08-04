@@ -147,3 +147,26 @@ local_conf_header:
     # glibc just uses /etc/resolv.conf, which NetworkManager writes itself.
     VIRTUAL-RUNTIME_net_manager = "networkmanager"
     PACKAGECONFIG:remove:pn-systemd = "networkd resolved nss-resolve"
+
+  services: |
+    # Three services poky enables by default that a robot should not be running.
+    # Found by importing the rootfs into an arm64 container and listing
+    # /etc/systemd/system/multi-user.target.wants -- the build is perfectly happy
+    # with all of them.
+
+    # rpcbind, listening on :111. Pulled in by DISTRO_FEATURES "nfs" (a poky
+    # default) via packagegroup-base-nfs. This is not an NFS client.
+    DISTRO_FEATURES:remove = "nfs"
+
+    # busybox-syslog, a second logger next to journald. default-providers.inc sets
+    # VIRTUAL-RUNTIME_base-utils-syslog ?= "busybox-syslog". microduck_daemon
+    # ships a journald drop-in with Storage=persistent and ForwardToSyslog=no, so
+    # journald is the log store and syslog is dead weight.
+    VIRTUAL-RUNTIME_base-utils-syslog = ""
+
+    # dnsmasq.service, a general-purpose DNS/DHCP server. The *binary* is wanted:
+    # NetworkManager needs it for shared/hotspot connections, which is how wifi
+    # provisioning will work (Reachy Mini's equivalent drives `nmcli Hotspot`).
+    # But NM spawns its own instance, so the standalone service should not be
+    # listening. Keep the package, disable the unit.
+    SYSTEMD_AUTO_ENABLE:pn-dnsmasq = "disable"
