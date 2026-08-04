@@ -115,6 +115,59 @@ Two findings from reading those defconfigs, recorded in
   `MICRODUCK_MOTOR_UART`, which only silences Linux. Harmless now; on the custom
   PCB, put the debug UART elsewhere.
 
+## Testing without hardware
+
+Three tiers, and it matters which one can see what.
+
+### Docker (arm64) — userspace only, works today
+
+A container shares the host kernel, so this can never test boot, U-Boot, the DTB,
+the AIC8800 driver, SDIO or `/dev/ttyS2`. It *can* test that binaries link and
+run, that glibc is right, and that config files are where they should be. Needs
+only `qemu-aarch64` binfmt, which both `coach` and `lotus` already have.
+
+```sh
+zstd -dc microduck-image-microduck-zero3.rootfs.tar.zst | docker import - microduck-rootfs
+docker run --rm --platform linux/arm64 microduck-rootfs \
+    /bin/sh -c 'nmcli --version; wpa_supplicant -v | head -1'
+```
+
+This is the same pattern `microduck_daemon/scripts/board-test.sh` already uses for
+its glibc-2.31 floor check.
+
+### QEMU `-M virt` — the real kernel, real systemd
+
+`qemu-virt.cfg` (see `recipes-kernel/linux/files/`) enables PL011, virtio and
+`PCI_HOST_GENERIC` so **the exact kernel and rootfs that ship** boot under QEMU.
+Without it you get a silent hang: radxa's defconfig has no PL011, which is the
+UART QEMU's virt machine provides.
+
+Needs `qemu-system-aarch64` (`sudo apt install qemu-system-arm` — not installed on
+lotus yet):
+
+```sh
+qemu-system-aarch64 -M virt -cpu max -smp 4 -m 2048 -nographic \
+  -kernel Image \
+  -append "root=/dev/vda rw console=ttyAMA0" \
+  -drive file=microduck-image-microduck-zero3.rootfs.ext4,format=raw,if=none,id=hd \
+  -device virtio-blk-pci,drive=hd \
+  -netdev user,id=n0 -device virtio-net-pci,netdev=n0
+```
+
+This is what catches the class of bug Docker cannot: systemd unit ordering,
+NetworkManager startup, whether `network-online.target` ever settles (which
+`updaterd.service` waits on), and `robotd`/`updaterd` socket permissions.
+
+Chosen over a separate `qemuarm64` MACHINE deliberately — that would use a
+different kernel and a different tune (cortexa57 vs our cortexa55), sharing
+almost no sstate, so it would mean a whole second build *and* test something other
+than what ships.
+
+### Only hardware
+
+U-Boot, the Rockchip DTB, the radio associating, `/dev/ttyS2` and the Dynamixel
+loop, thermals, and the 50 Hz control-loop jitter question.
+
 ## Developing software for this image
 
 You do not need a Yocto tree on your laptop. Use the lowest tier that works:

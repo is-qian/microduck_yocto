@@ -14,6 +14,7 @@ SRC_URI = " \
     git://github.com/radxa/kernel.git;protocol=https;nobranch=1;branch=linux-6.1-stan-rkr4.1 \
     file://cgroups.cfg \
     file://mali-csf.cfg \
+    file://qemu-virt.cfg \
 "
 
 # WATCH OUT when adding config fragments. linux-rockchip.inc builds the defconfig
