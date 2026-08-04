@@ -38,16 +38,20 @@ MODULES_MODULE_SYMVERS_LOCATION = "."
 #   fix-sdio-firmware-path.patch   -- points the driver at
 #                                     /lib/firmware/aic8800_fw/SDIO, which is
 #                                     where do_install below puts the blobs
-# Attached as a do_patch postfunc rather than `do_patch:append`: do_patch is a
-# *Python* task (patch.bbclass), so appending a shell body to it makes bitbake try
-# to parse the shell as Python. A postfunc also guarantees this runs as part of
-# patching, immediately after a clean unpack, instead of risking double
-# application if a later task re-runs.
+# Attached as a do_patch postfunc rather than `do_patch:append`, because do_patch
+# is a *Python* task (patch.bbclass) and appending a shell body to it makes bitbake
+# parse shell as Python.
 #
-# -l/--ignore-whitespace is needed, not cosmetic: parts of AICSemi's vendor drop
-# are CRLF while the patches are LF, and without it
-# fix-aic_btusb-use-bluez-by-default.patch dies with
-# "Hunk #1 FAILED at 144 (different line endings)" on
+# Driven by quilt rather than a hand-rolled loop over series, for a concrete
+# reason: a postfunc re-runs whenever do_patch re-runs, and do_patch re-runs after
+# a recipe edit *without* re-unpacking. A plain `patch` loop then meets an
+# already-patched tree and dies with "Reversed (or previously applied) patch
+# detected". quilt records applied state in .pc/, so a re-run is a no-op -- and it
+# is the tool debian/patches is written for, so series semantics come for free.
+#
+# QUILT_PATCH_OPTS=-l is required, not cosmetic: parts of AICSemi's vendor drop are
+# CRLF while the patches are LF, and without it
+# fix-aic_btusb-use-bluez-by-default.patch fails with "different line endings" on
 # src/USB/driver_fw/drivers/aic8800/aic_load_fw/aicbluetooth.c.
 #
 # Failures stay fatal deliberately. The whole series is applied, as Debian does,
@@ -55,10 +59,14 @@ MODULES_MODULE_SYMVERS_LOCATION = "."
 # mean not knowing whether an SDIO-relevant fix landed.
 apply_debian_patches() {
 	cd ${S}
-	while read -r p; do
-		case "$p" in ''|\#*) continue ;; esac
-		patch -p1 -l --no-backup-if-mismatch -i "debian/patches/$p"
-	done < debian/patches/series
+	export QUILT_PATCHES=debian/patches
+	export QUILT_PATCH_OPTS="-l"
+	rc=0
+	quilt --quiltrc /dev/null push -a || rc=$?
+	# 0 = applied; 2 = nothing to do (already fully applied). Anything else is real.
+	if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then
+		bbfatal "quilt push -a failed with exit $rc"
+	fi
 }
 do_patch[postfuncs] += "apply_debian_patches"
 
