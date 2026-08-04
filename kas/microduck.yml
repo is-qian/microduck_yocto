@@ -72,10 +72,17 @@ local_conf_header:
     # TMPDIR without this.
     INHERIT += "rm_work"
 
-    # Keep the image lean: dev headers belong in the SDK (populate_sdk), not
-    # on the robot. This is the single biggest difference from reachy_mini_os,
-    # which carries build-essential and gdb on the device.
-    EXTRA_IMAGE_FEATURES = "debug-tweaks"
+    # Bring-up convenience: root login with no password, on serial and over ssh.
+    #
+    # wrynose removed the `debug-tweaks` catch-all; these are the pieces of it we
+    # actually want. Deliberately NOT included: serial-autologin-root (typing
+    # `root` is not the bottleneck), tools-debug, tools-sdk, dev-pkgs, staticdev
+    # -- dev headers and debuggers belong in the SDK (`-c populate_sdk`), not on
+    # the robot. reachy_mini_os ships build-essential and gdb on the device
+    # because PyGObject compiles on-target; we have no reason to repeat that.
+    #
+    # MUST NOT SHIP. Strip this line before any image leaves a desk.
+    EXTRA_IMAGE_FEATURES = "allow-empty-password allow-root-login empty-root-password"
 
     # A robot has no display server. Dropping x11 also drops the XSERVER list
     # that rockchip-common.inc sets up.
