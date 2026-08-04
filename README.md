@@ -140,9 +140,9 @@ of RAM.
 
 | | microduck_os | reachy_mini_os |
 |---|---|---|
-| image | **526 MiB** `.wic` | 5.9 GiB |
-| rootfs | **386 MiB** | 4.9 GiB used |
-| packages | **913** | 1190 |
+| image | **535 MiB** `.wic` | 5.9 GiB |
+| rootfs | **393 MiB** | 4.9 GiB used |
+| packages | **~915** | 1190 |
 | kernel | 6.1.84-rockchip (vendor BSP, pinned) | 6.18.33+rpt (apt, pinned via `Pin-Priority: -1`) |
 
 Roughly an order of magnitude smaller, mostly because dev headers and toolchain
@@ -157,16 +157,36 @@ Partition layout comes from meta-rockchip's `generic-gptdisk.wks`: raw
 (`trust.img` is absent and skipped — this U-Boot is SPL+FIT, so ATF is inside
 `uboot.img`.)
 
-### Two things to resolve before flashing
+### WiFi/BT: AIC8800 built in
+
+The board is the SDIO AICSemi AIC8800DS2 variant, so `KERNEL_DEVICETREE` is pinned
+to `rk3566-radxa-zero-3w-aic8800ds2.dtb` and the out-of-tree driver comes from
+`meta-microduck/recipes-kernel/aic8800`.
+
+Verified present in the rootfs (not merely in the manifest):
+
+```
+/usr/lib/modules/6.1.84-rockchip-standard/extra/aic8800_{bsp,btlpm,fdrv}.ko
+/usr/lib/modules-load.d/aic8800_{bsp,btlpm,fdrv}.conf
+/usr/lib/firmware/aic8800_fw/SDIO/{aic8800,aic8800D80,aic8800D80N,...}/
+```
+
+`/lib -> usr/lib` (usrmerge), so the `/lib/firmware/...` path the driver's
+`fix-sdio-firmware-path.patch` sets does resolve.
+
+### Before flashing
 
 1. **Built on hardware with a known memory fault** — see `../CONTEXT.md`. Do not
    flash this image. Rebuild after `memtest=4` and after deleting
    `/data1/fabien/yocto/{downloads,sstate}`.
-2. **`KERNEL_DEVICETREE` lists two DTBs**, and `linux-rockchip.inc` derives one
-   Rockchip `boot.img` target per DTB but deploys a single `boot.img` — so which
-   wifi variant it carries is ambiguous. Once `dmesg | grep -iE 'brcmf|aic8800'`
-   on the board says which module it has, pin `KERNEL_DEVICETREE` to that one
-   DTB and the ambiguity disappears.
+2. **The kernel config is radxa's family-wide defconfig alone.**
+   `linux-rockchip.inc` cats `${RK_SOC_FAMILY}_linux.config` onto it with
+   `|| true`, and radxa's tree has no `rk3568_linux.config` — so every
+   SoC-specific override is silently missing. Mali CSF was the one symptom loud
+   enough to break the build; audit `${B}/.config` (particularly the SDIO/MMC
+   symbols the aic8800ds2 DTS relies on) before blaming the driver for anything.
+3. **Nothing has booted.** A clean compile of a vendor driver against a vendor
+   kernel is the first hurdle, not evidence the radio associates.
 
 A/B partitioning and RAUC are M7. The A/B `.wks` is still deliberately unwritten
 until slot sizes can be based on a real image size — which now exists.
