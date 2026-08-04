@@ -36,13 +36,19 @@ MODULES_MODULE_SYMVERS_LOCATION = "."
 #   fix-sdio-firmware-path.patch   -- points the driver at
 #                                     /lib/firmware/aic8800_fw/SDIO, which is
 #                                     where do_install below puts the blobs
-do_patch:append() {
+# Attached as a do_patch postfunc rather than `do_patch:append`: do_patch is a
+# *Python* task (patch.bbclass), so appending a shell body to it makes bitbake try
+# to parse the shell as Python. A postfunc also guarantees this runs as part of
+# patching, immediately after a clean unpack, instead of risking double
+# application if a later task re-runs.
+apply_debian_patches() {
 	cd ${S}
 	while read -r p; do
 		case "$p" in ''|\#*) continue ;; esac
 		patch -p1 --no-backup-if-mismatch -i "debian/patches/$p"
 	done < debian/patches/series
 }
+do_patch[postfuncs] += "apply_debian_patches"
 
 FW_SUBDIR = "${nonarch_base_libdir}/firmware/aic8800_fw"
 
