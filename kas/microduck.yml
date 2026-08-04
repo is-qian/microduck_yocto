@@ -140,5 +140,10 @@ local_conf_header:
     # units both gating network-online.target -- which updaterd.service depends
     # on, so a networkd wait-online that never settles stalls the updater on a
     # board whose wifi is fine.
+    # nss-resolve has to go with resolved: oe-core enables it by default and
+    # systemd's meson refuses the combination --
+    #   "nss-resolve is requested but resolve is disabled"
+    # Nothing in systemd's PACKAGECONFIG depends on networkd. Without nss-resolve
+    # glibc just uses /etc/resolv.conf, which NetworkManager writes itself.
     VIRTUAL-RUNTIME_net_manager = "networkmanager"
-    PACKAGECONFIG:remove:pn-systemd = "networkd resolved"
+    PACKAGECONFIG:remove:pn-systemd = "networkd resolved nss-resolve"
