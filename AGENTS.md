@@ -1,0 +1,103 @@
+# microduck_os — working notes for agents
+
+Yocto OS image for the microduck robot (RK3566, Rockchip vendor BSP 6.1).
+See `README.md` for what this is and how to build it; this file is about *how to
+work in here*.
+
+Workspace-level conventions live in `../../AGENTS.md`.
+
+## The one rule: verify, don't assume
+
+Almost every bug in a Yocto layer is a wrong assumption about an upstream layer —
+a branch that doesn't exist, a recipe named differently, a variable set somewhere
+you didn't look. This repo already has a scar for each:
+
+- `poky` has **no `wrynose` branch** (it stops at `walnascar`), which is why we
+  use `openembedded-core` + `meta-yocto` + `bitbake` separately.
+- meta-rockchip sets neither `RK_UBOOT_SPL` nor `RK_UBOOT_CFG` in any machine
+  conf, so its only tested U-Boot path is the Rockchip Miniloader with generic
+  `rk3568_defconfig` — not what radxa's defconfig expects.
+- `u-boot-rockchip`'s `SRC_URI` has a **second** git entry (`rkbin`, with
+  `destsuffix=rkbin`) that `make.sh` requires. Replacing `SRC_URI` wholesale
+  silently drops it and breaks the build.
+
+So before adding a recipe or a bbappend that leans on meta-rockchip or oe-core,
+go read the thing you are leaning on. `git ls-remote`, the GitHub contents API
+and `https://git.openembedded.org/<repo>/plain/<path>?h=wrynose` are all cheap
+and answer these in seconds.
+
+**When something cannot be verified, say so in the file.** Do not write a
+confident comment over a guess.
+
+## Layer pins
+
+`kas/microduck.yml` pins every upstream layer to an explicit `commit:` next to
+its `branch:`. Never drop the commit and float on a branch — the whole point of
+choosing Yocto over `reachy_mini_os`'s pi-gen build is that a build is
+reproducible. `reachy_mini_os` pins its kernel with apt `Pin-Priority: -1`
+because a point release broke BLE; we should not recreate that failure mode.
+
+To bump a pin: change `commit:`, build, and note what moved in the commit
+message.
+
+## Where things go
+
+```
+kas/microduck.yml         layer pins + build config. NO absolute paths.
+kas/host-<name>.yml       per-host paths only (DL_DIR/SSTATE_DIR/TMPDIR).
+meta-microduck/conf/machine/microduck-zero3.conf
+                          the Radxa Zero 3W stand-in board.
+meta-microduck/conf/machine/include/microduck-common.inc
+                          anything shared with the future custom PCB.
+```
+
+The machine conf is deliberately thin over meta-rockchip's `rk356x.inc`. When
+the custom PCB arrives it should be a second machine conf plus its own DTS,
+reusing `microduck-common.inc` unchanged — so put board-specific things in the
+machine conf and shared things in the include, not the other way round.
+
+Build a new host overlay rather than editing an existing one. Paths are the only
+thing that may differ between hosts; if you find yourself putting a
+non-path setting in a `host-*.yml`, it belongs in `microduck.yml`.
+
+## Hardware constraints that shape recipes
+
+- **UART2 is contested.** `MICRODUCK_MOTOR_UART` in `microduck-common.inc`
+  switches UART2 between the serial console and `robotd`'s Dynamixel bus. It
+  defaults to `0` (console) because during bring-up serial is worth more than
+  motors. Note it only silences *Linux* — U-Boot's `CONFIG_DEBUG_UART_BASE` is
+  UART2 too, so U-Boot still prints onto the motor wires at power-on.
+- **No RTC.** `updaterd`'s preflight check exists because a 1970 clock fails TLS
+  with an opaque error. Anything that fetches over HTTPS depends on timesyncd
+  working. Verify with `timedatectl`; do not assume.
+- **The image must stay lean.** Dev headers belong in the SDK
+  (`-c populate_sdk`), not on the robot. `reachy_mini_os` ships
+  `build-essential`, `gdb` and four `gstreamer*-dev` packages on the device
+  purely because PyGObject compiles on-target; do not repeat that.
+
+## Working with microduck_daemon
+
+The daemon is a **separate repo** (`../../microduck_daemon/`) and cross-compiles
+on its own via `cargo board`. Do not add a Yocto recipe step to someone's
+edit-test loop:
+
+1. Pure-Rust change → `cargo board`, rsync to the board. No Yocto involved.
+2. Links native libs (`mediad` against GStreamer/MPP) → Yocto SDK.
+3. Iterating on a recipe already in the image → `devtool modify` /
+   `devtool deploy-target`.
+
+Two recipe constraints, both load-bearing:
+
+- `rustls` resolves to the **`aws-lc-rs`** provider, whose build script invokes
+  CMake → the recipe needs `cmake-native`. There is no OpenSSL in the tree.
+- `serialport` must keep `default-features = false`. Its `libudev` feature needs
+  a pkg-config sysroot the cross-build does not have and breaks the aarch64 build
+  outright. `grep -c libudev Cargo.lock` should stay `0`.
+
+## Commits
+
+Per the workspace convention, no `Co-Authored-By:`. Use a single
+`Assisted-by: Claude:<model-id>` trailer.
+
+There is no linter here. The check that matters before pushing is that bitbake
+parses and the target still builds.

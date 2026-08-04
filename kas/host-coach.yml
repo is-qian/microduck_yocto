@@ -1,0 +1,13 @@
+# Path overlay for the `coach` build host (see ~/.ssh/config).
+#
+#   ssh -A coach          # -A: the daemon recipe fetches a private repo over SSH
+#   kas-container build kas/microduck.yml:kas/host-coach.yml
+
+header:
+  version: 14
+
+local_conf_header:
+  host-paths: |
+    DL_DIR = "/data1/fabien/yocto/downloads"
+    SSTATE_DIR = "/data1/fabien/yocto/sstate"
+    TMPDIR = "/data1/fabien/yocto/tmp"

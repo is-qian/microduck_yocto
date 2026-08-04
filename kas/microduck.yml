@@ -1,0 +1,81 @@
+# microduck OS -- portable build definition.
+#
+# Deliberately contains NO absolute paths, so it is identical on every build
+# host. Per-host paths live in kas/host-*.yml and are composed on the command
+# line:
+#
+#   kas-container build kas/microduck.yml:kas/host-coach.yml
+#
+# Note there is no `poky` repo here. The combined poky repo has no wrynose
+# branch (it stops at walnascar), so we use the three repos meta-rockchip's
+# README actually names: openembedded-core, meta-yocto and meta-openembedded.
+# bitbake is a fourth, checked out as a sibling of openembedded-core, which is
+# where oe-buildenv-internal's `$OEROOT/../bitbake` fallback finds it.
+
+header:
+  version: 14
+
+distro: poky
+machine: microduck-zero3
+target: microduck-image
+
+repos:
+  # This repo. Contributes meta-microduck; no url/commit, kas uses the checkout.
+  microduck_os:
+    layers:
+      meta-microduck:
+
+  openembedded-core:
+    url: https://git.openembedded.org/openembedded-core
+    branch: wrynose
+    commit: f09a0f28aeb54ddd90415dd458338e1565bb5a49
+    layers:
+      meta:
+
+  bitbake:
+    url: https://git.openembedded.org/bitbake
+    branch: "2.18"
+    commit: fae9db3168dbff1b8c76fe9c6726a9687ff97514
+    layers:
+      # Not a layer -- oe-core requires bitbake >= 2.18.0 and locates it by path.
+      .: disabled
+
+  meta-yocto:
+    url: https://git.yoctoproject.org/meta-yocto
+    branch: wrynose
+    commit: 1b132647002eea43a2c7a7f857f63f42dacbc26c
+    layers:
+      meta-poky:
+      meta-yocto-bsp: disabled
+
+  meta-openembedded:
+    url: https://git.openembedded.org/meta-openembedded
+    branch: wrynose
+    commit: af8b6d6b2f0b11595b0a0d5b82efa3129d52a628
+    layers:
+      meta-oe:            # meta-rockchip depends on this (openembedded-layer)
+      meta-python:
+      meta-multimedia:
+      meta-networking:    # NetworkManager
+
+  meta-rockchip:
+    url: https://github.com/JeffyCN/meta-rockchip.git
+    branch: wrynose
+    commit: 54f31b3987948afc07d2e83cb0ecd981d7476de3
+
+local_conf_header:
+  microduck: |
+    # rockchip-libmali is a redistributable binary blob.
+    LICENSE_FLAGS_ACCEPTED = "commercial"
+
+    # Vendor BSP kernel + rkaiq + full GStreamer is comfortably 100 GB+ of
+    # TMPDIR without this.
+    INHERIT += "rm_work"
+
+    # Keep the image lean: dev headers belong in the SDK (populate_sdk), not
+    # on the robot. This is the single biggest difference from reachy_mini_os,
+    # which carries build-essential and gdb on the device.
+    EXTRA_IMAGE_FEATURES = "debug-tweaks"
+
+  init: |
+    INIT_MANAGER = "systemd"

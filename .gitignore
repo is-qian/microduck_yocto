@@ -1,0 +1,11 @@
+# kas checks the other layers out as siblings of meta-microduck.
+/bitbake/
+/openembedded-core/
+/meta-yocto/
+/meta-openembedded/
+/meta-rockchip/
+/meta-rauc/
+
+# Build output. Real paths come from kas/host-*.yml; this catches a stray
+# default build dir.
+/build/
