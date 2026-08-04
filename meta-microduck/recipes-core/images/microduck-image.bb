@@ -13,10 +13,21 @@ IMAGE_INSTALL:append = " \
     ca-certificates \
     networkmanager \
     bluez5 \
+    wireless-regdb-static \
     i2c-tools \
     usbutils \
     htop \
 "
+
+# wireless-regdb-static, not wireless-regdb: the -static package ships
+# /lib/firmware/regulatory.db, which kernels >= 4.15 load themselves. The plain
+# package installs the CRDA files instead, which need the obsolete crda userspace.
+#
+# Without it the QEMU boot logs:
+#   platform regulatory.0: Direct firmware load for regulatory.db failed, error -2
+# and cfg80211 falls back to restrictive built-in rules -- which on a wifi product
+# shows up much later as missing channels or reduced TX power, a long way from its
+# cause.
 
 # Notes on what is deliberately absent:
 #
