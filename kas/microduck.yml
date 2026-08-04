@@ -77,5 +77,27 @@ local_conf_header:
     # which carries build-essential and gdb on the device.
     EXTRA_IMAGE_FEATURES = "debug-tweaks"
 
+    # A robot has no display server. Dropping x11 also drops the XSERVER list
+    # that rockchip-common.inc sets up.
+    DISTRO_FEATURES:remove = "x11"
+
+  display-server-mask: |
+    # meta-rockchip repoints xserver-xorg and weston at JeffyCN forks with
+    # SRCREV = "${AUTOREV}" and, for xserver, a ${PV}-derived branch name. Both
+    # are problems:
+    #
+    #  - AUTOREV means a git ls-remote on every parse and a build that cannot be
+    #    reproduced, which defeats the reason we pin every layer to a commit.
+    #  - The xserver tag it derives, 21.1.22_2025_11_06, does not exist: the fork
+    #    stops at 21.1.21 while oe-core wrynose ships xserver-xorg 21.1.22. That
+    #    is a hard parse failure for the whole tree, not just for X.
+    #
+    # We need neither a display server: M5's GStreamer path is kmssrc, which
+    # wants libdrm, not X or Weston. Mask both bbappends.
+    #
+    # Revisit if a display is ever added -- masking the bbappend means losing
+    # meta-rockchip's Rockchip-specific patches along with the breakage.
+    BBMASK += "meta-rockchip/recipes-graphics/(xorg-xserver|wayland/weston)"
+
   init: |
     INIT_MANAGER = "systemd"
