@@ -44,21 +44,27 @@ message.
 
 ```
 kas/microduck.yml         layer pins + build config. NO absolute paths.
-kas/host-<name>.yml       per-host paths only (DL_DIR/SSTATE_DIR/TMPDIR).
+kas/<host>.env            per-host paths, as env vars (see below).
 meta-microduck/conf/machine/microduck-zero3.conf
                           the Radxa Zero 3W stand-in board.
 meta-microduck/conf/machine/include/microduck-common.inc
                           anything shared with the future custom PCB.
 ```
 
+Paths are **environment variables in `kas/<host>.env`, not `local_conf_header`
+entries.** kas-container bind-mounts `KAS_BUILD_DIR`, `DL_DIR` and `SSTATE_DIR`;
+a path written into `local.conf` names a host directory the container cannot see,
+so the build fails or silently writes somewhere useless. `TMPDIR` needs no
+setting — it defaults to `$KAS_BUILD_DIR/tmp`, which is already mounted.
+
 The machine conf is deliberately thin over meta-rockchip's `rk356x.inc`. When
 the custom PCB arrives it should be a second machine conf plus its own DTS,
 reusing `microduck-common.inc` unchanged — so put board-specific things in the
 machine conf and shared things in the include, not the other way round.
 
-Build a new host overlay rather than editing an existing one. Paths are the only
-thing that may differ between hosts; if you find yourself putting a
-non-path setting in a `host-*.yml`, it belongs in `microduck.yml`.
+Add a new `kas/<host>.env` rather than editing an existing one. Paths are the
+only thing that may differ between hosts; anything else belongs in
+`microduck.yml`.
 
 ## Hardware constraints that shape recipes
 

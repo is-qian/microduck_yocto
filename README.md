@@ -13,20 +13,32 @@ fetches a private repo over SSH.
 
 ```sh
 ssh -A coach
-git clone <this repo> && cd microduck_os
-kas-container build kas/microduck.yml:kas/host-coach.yml
+cd /data1/fabien/microduck/microduck_os_main
+. kas/coach.env
+kas-container build kas/microduck.yml
 ```
 
-On the laptop, use `kas/host-lotus.yml` instead. `/home` has ~28 GB free, which
-will not fit a rockchip build, so its paths point at `/mnt/data`. To avoid
-repeating a multi-hour build locally, keep the sstate mirror warm:
+On the laptop, source `kas/lotus.env` instead — `/home` has ~28 GB free, which
+will not fit a rockchip build, so its paths point at `/mnt/data`. To reuse
+coach's output rather than repeating a multi-hour build, rsync its sstate
+straight into `SSTATE_DIR`; sstate is content-addressed, so merging the
+directories is all that sharing means:
 
 ```sh
-rsync -a coach:/data1/fabien/yocto/sstate/ /mnt/data/fabien/yocto/sstate-coach/
+rsync -a coach:/data1/fabien/yocto/sstate/ /mnt/data/fabien/yocto/sstate/
 ```
 
 `kas/microduck.yml` holds every layer pin and no absolute paths, so it is
-identical on every host; `kas/host-*.yml` contribute only paths.
+identical on every host. Paths live in `kas/<host>.env` as **environment
+variables** rather than in `local_conf_header`, because kas-container
+bind-mounts `KAS_BUILD_DIR`, `DL_DIR` and `SSTATE_DIR` into the container — a
+path written into `local.conf` would name a host directory the container cannot
+see. `TMPDIR` needs no setting; it defaults to `$KAS_BUILD_DIR/tmp`.
+
+`kas` itself is not installed on coach and does not need to be: `kas-container`
+(in `~/bin`) is a shell wrapper around the `ghcr.io/siemens/kas/kas` image, which
+also sidesteps coach being Ubuntu 22.04 — older than wrynose's supported host
+distros.
 
 ### Why no `poky` repo
 
