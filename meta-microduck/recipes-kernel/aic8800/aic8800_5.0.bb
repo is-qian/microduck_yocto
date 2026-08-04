@@ -49,18 +49,26 @@ MODULES_MODULE_SYMVERS_LOCATION = "."
 # detected". quilt records applied state in .pc/, so a re-run is a no-op -- and it
 # is the tool debian/patches is written for, so series semantics come for free.
 #
-# QUILT_PATCH_OPTS=-l is required, not cosmetic: parts of AICSemi's vendor drop are
-# CRLF while the patches are LF, and without it
-# fix-aic_btusb-use-bluez-by-default.patch fails with "different line endings" on
-# src/USB/driver_fw/drivers/aic8800/aic_load_fw/aicbluetooth.c.
+# Line endings have to be normalised first. AICSemi's drop mixes CRLF and LF while
+# the patches are uniformly LF, so affected hunks can never match -- e.g.
+# fix-usb-firmware-path.patch fails with "Hunk #1 FAILED at 144 (different line
+# endings)" on aicbluetooth.c. patch's -l/--ignore-whitespace does not rescue this
+# one, so convert the text files instead: line endings do not affect C
+# compilation, and this kills the whole class rather than one patch at a time.
+#
+# Restricted to source/makefile extensions on purpose -- sed across the tree would
+# corrupt the firmware blobs under driver_fw/fw.
 #
 # Failures stay fatal deliberately. The whole series is applied, as Debian does,
 # even though we only build the SDIO variant -- silently tolerating rejects would
 # mean not knowing whether an SDIO-relevant fix landed.
 apply_debian_patches() {
 	cd ${S}
+	find src -type f \( -name '*.c' -o -name '*.h' -o -name 'Makefile*' \
+		-o -name '*.mk' -o -name 'Kconfig*' \) \
+		-exec sed -i 's/\r$//' {} +
+
 	export QUILT_PATCHES=debian/patches
-	export QUILT_PATCH_OPTS="-l"
 	rc=0
 	quilt --quiltrc /dev/null push -a || rc=$?
 	# 0 = applied; 2 = nothing to do (already fully applied). Anything else is real.
