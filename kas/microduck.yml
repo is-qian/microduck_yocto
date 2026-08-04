@@ -72,6 +72,24 @@ local_conf_header:
     # TMPDIR without this.
     INHERIT += "rm_work"
 
+  kernel-shallow: |
+    # radxa/kernel is a full Linux history: 13,224,308 objects and 10.7M deltas.
+    # A --mirror clone of it died with "fatal: fetch-pack: invalid index-pack
+    # output" and is a liability regardless -- a single corrupt byte anywhere in
+    # a multi-GB packfile stream fails the whole fetch.
+    #
+    # meta-rockchip avoids this by pointing at JeffyCN's filtered mirror; we need
+    # radxa's tree only for rk3566-radxa-zero-3w-*.dts, so fetch it shallow.
+    #
+    # Caveat: depth 1 only contains the branch tip, and our SRCREV *is* the tip
+    # today. When radxa next pushes to linux-6.1-stan-rkr4.1 the pinned SRCREV
+    # leaves the shallow window and this breaks. Bump the depth when it does. If
+    # that becomes annoying, the durable fix is to go back to JeffyCN's small
+    # mirror and carry the three Zero 3W device trees as patches in
+    # meta-microduck/recipes-kernel/linux/patches/ instead.
+    BB_GIT_SHALLOW:pn-linux-rockchip = "1"
+    BB_GIT_SHALLOW_DEPTH:pn-linux-rockchip = "1"
+
     # Bring-up convenience: root login with no password, on serial and over ssh.
     #
     # wrynose removed the `debug-tweaks` catch-all; these are the pieces of it we
