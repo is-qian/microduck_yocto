@@ -126,3 +126,19 @@ local_conf_header:
 
   init: |
     INIT_MANAGER = "systemd"
+
+    # NetworkManager owns the network, and only NetworkManager.
+    #
+    # docs/architecture.md:190 in microduck_daemon fixes this choice: "Wifi
+    # credentials | NetworkManager | We never store them; clients drive NM via its
+    # DBus API." wpa-supplicant stays -- NM has no supplicant of its own and drives
+    # wpa_supplicant over D-Bus, so dropping it would break wifi entirely.
+    #
+    # What has to go is systemd's own stack. INIT_MANAGER = "systemd" otherwise
+    # installs *and enables* systemd-networkd and systemd-resolved next to NM:
+    # two daemons managing the same interfaces, and two competing wait-online
+    # units both gating network-online.target -- which updaterd.service depends
+    # on, so a networkd wait-online that never settles stalls the updater on a
+    # board whose wifi is fine.
+    VIRTUAL-RUNTIME_net_manager = "networkmanager"
+    PACKAGECONFIG:remove:pn-systemd = "networkd resolved"
