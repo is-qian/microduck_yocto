@@ -13,7 +13,22 @@ SRCREV = "270a678f8364683447f994adec9d31eb182eaf85"
 SRC_URI = " \
     git://github.com/radxa/kernel.git;protocol=https;nobranch=1;branch=linux-6.1-stan-rkr4.1 \
     file://cgroups.cfg \
+    file://mali-csf.cfg \
 "
+
+# WATCH OUT when adding config fragments. linux-rockchip.inc builds the defconfig
+# with:
+#
+#     DEFCONFIGS="rockchip_linux_defconfig ${RK_SOC_FAMILY}_linux.config"
+#     cat ${KBUILD_DEFCONFIGS} > ${KBUILD_DEFCONFIG} || true
+#
+# radxa's tree has no rk3568_linux.config, and that `|| true` swallows the
+# missing file without a warning -- so every SoC-specific override meta-rockchip
+# expects to apply is silently absent, and we get radxa's family-wide
+# rockchip_linux_defconfig alone. mali-csf.cfg exists because of exactly that.
+#
+# Assume nothing about the effective config: check
+# ${B}/.config after do_configure rather than trusting the defconfig name.
 
 # meta-rockchip's linux-rockchip.inc points PATCHPATH at its own
 # linux-rockchip_6.1/ directory: a do_mounts retry plus two drm-rockchip

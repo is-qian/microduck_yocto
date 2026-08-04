@@ -20,6 +20,15 @@ you didn't look. This repo already has a scar for each:
 - `u-boot-rockchip`'s `SRC_URI` has a **second** git entry (`rkbin`, with
   `destsuffix=rkbin`) that `make.sh` requires. Replacing `SRC_URI` wholesale
   silently drops it and breaks the build.
+- `linux-rockchip.inc` assembles its defconfig with
+  `cat rockchip_linux_defconfig ${RK_SOC_FAMILY}_linux.config > ... || true`.
+  radxa's tree has no `rk3568_linux.config`, and the `|| true` hides that, so
+  **every SoC-specific config override is silently missing** and you get radxa's
+  family-wide defconfig alone. Never trust the effective kernel config from the
+  defconfig name — read `${B}/.config` after `do_configure`.
+- meta-rockchip's `wrynose` branch does not always match oe-core's `wrynose` tip.
+  It has been wrong twice: the `xserver-xorg` fork tag, and the above. Treat it as
+  the least trustworthy layer here.
 
 So before adding a recipe or a bbappend that leans on meta-rockchip or oe-core,
 go read the thing you are leaning on. `git ls-remote`, the GitHub contents API
