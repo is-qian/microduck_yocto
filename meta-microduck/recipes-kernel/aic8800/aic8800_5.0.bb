@@ -14,7 +14,9 @@ inherit module
 SRCREV = "6e076049b719ac2ff7ce5c92786a680407b11cdb"
 SRC_URI = "git://github.com/radxa-pkg/aic8800.git;protocol=https;nobranch=1"
 
-S = "${UNPACKDIR}/git"
+# No `S =` line on purpose. wrynose actively rejects S = "${WORKDIR}/git" and
+# S = "${UNPACKDIR}/git" with a do_unpack error: the git fetcher now unpacks to
+# ${UNPACKDIR}/${BP}, which is what bitbake.conf's default S already points at.
 
 # The vendor Makefile under driver/aic8800 is a plain kbuild fragment: it has no
 # rule of its own that invokes the kernel build, which is why the DKMS config

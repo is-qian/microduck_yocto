@@ -26,6 +26,13 @@ you didn't look. This repo already has a scar for each:
   **every SoC-specific config override is silently missing** and you get radxa's
   family-wide defconfig alone. Never trust the effective kernel config from the
   defconfig name — read `${B}/.config` after `do_configure`.
+- **Do not set `S = "${WORKDIR}/git"` or `S = "${UNPACKDIR}/git"`** in a git-based
+  recipe. wrynose fails `do_unpack` outright if you do: the fetcher now unpacks to
+  `${UNPACKDIR}/${BP}`, which bitbake.conf's default `S` already points at. Omit
+  the assignment. (This will bite the `microduck-daemon` recipe too.)
+- `do_patch` is a **Python** task (patch.bbclass). `do_patch:append() { ... }`
+  with a shell body makes bitbake parse shell as Python and fail with a
+  `TabError`. Use `do_patch[postfuncs] += "your_shell_func"`.
 - meta-rockchip's `wrynose` branch does not always match oe-core's `wrynose` tip.
   It has been wrong twice: the `xserver-xorg` fork tag, and the above. Treat it as
   the least trustworthy layer here.
