@@ -43,11 +43,21 @@ MODULES_MODULE_SYMVERS_LOCATION = "."
 # to parse the shell as Python. A postfunc also guarantees this runs as part of
 # patching, immediately after a clean unpack, instead of risking double
 # application if a later task re-runs.
+#
+# -l/--ignore-whitespace is needed, not cosmetic: parts of AICSemi's vendor drop
+# are CRLF while the patches are LF, and without it
+# fix-aic_btusb-use-bluez-by-default.patch dies with
+# "Hunk #1 FAILED at 144 (different line endings)" on
+# src/USB/driver_fw/drivers/aic8800/aic_load_fw/aicbluetooth.c.
+#
+# Failures stay fatal deliberately. The whole series is applied, as Debian does,
+# even though we only build the SDIO variant -- silently tolerating rejects would
+# mean not knowing whether an SDIO-relevant fix landed.
 apply_debian_patches() {
 	cd ${S}
 	while read -r p; do
 		case "$p" in ''|\#*) continue ;; esac
-		patch -p1 --no-backup-if-mismatch -i "debian/patches/$p"
+		patch -p1 -l --no-backup-if-mismatch -i "debian/patches/$p"
 	done < debian/patches/series
 }
 do_patch[postfuncs] += "apply_debian_patches"
