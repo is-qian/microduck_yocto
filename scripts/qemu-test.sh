@@ -59,6 +59,21 @@ say 'systemctl is-active network-online.target'
 say 'nmcli -t -f DEVICE,TYPE,STATE device'
 say 'lsmod | grep aic'
 say 'ls /lib/firmware/aic8800_fw/SDIO'
+# network-online.target is inert until some unit Wants it, and nothing in the image
+# does yet -- but updaterd.service will (Wants=/After=). So check it CAN be
+# satisfied: NetworkManager-wait-online hanging is a known failure mode that would
+# stall the updater on real hardware.
+say 'systemctl start network-online.target; echo rc=$?' 45
+say 'systemctl is-active network-online.target NetworkManager-wait-online.service'
+
+# Guards against services creeping back in. poky enables rpcbind (DISTRO_FEATURES
+# nfs), dnsmasq (NetworkManager PACKAGECONFIG) and busybox-syslog
+# (VIRTUAL-RUNTIME_base-utils-syslog) by default; none belong on a robot.
+say 'ls /etc/systemd/system/multi-user.target.wants/'
+
+# cfg80211 falls back to restrictive built-in regulatory rules without this.
+say 'ls /lib/firmware/regulatory.db'
+
 say 'timedatectl | head -n 3'
 say 'echo MARK-END'
 say poweroff 10
