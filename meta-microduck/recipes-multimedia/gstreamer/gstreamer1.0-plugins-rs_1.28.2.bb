@@ -1,3 +1,36 @@
+## DOES NOT BUILD YET -- deliberately not referenced by any image. ##
+#
+# do_compile fails at cargo dependency resolution:
+#
+#   failed to get `gstreamer` as a dependency of package `gst-plugin-tutorial`
+#   Unable to update https://gitlab.freedesktop.org/gstreamer/gstreamer-rs?branch=0.25
+#   can't checkout ...: you are in the offline mode (--frozen)
+#
+# gst-plugins-rs takes its bindings from git, not crates.io:
+#
+#   gst = { package = "gstreamer",
+#           git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs",
+#           branch = "0.25", version = "0.25.0" }
+#
+# and cargo-update-recipe-crates only vendors crates.io registry entries, so under
+# --frozen those ~15 gst-* crates cannot be resolved. Checked every 1.28.x tag
+# (1.28.0 through 1.28.6): all use the git dependency, so there is no version that
+# sidesteps this. It is why no upstream Yocto recipe for gst-plugins-rs exists.
+#
+# Finishing it needs, roughly: fetch gstreamer-rs through SRC_URI with its own
+# SRCREV, add a [patch] section pointing each gst-* crate at the checkout, and swap
+# --frozen for --offline since patching invalidates Cargo.lock. Workable, but fragile
+# across version bumps.
+#
+# NOT URGENT, because the alternative now exists: the bbappend beside this file
+# enables webrtc/srtp/sctp in gst-plugins-bad, so webrtcbin, libnice and libsrtp2 are
+# built. mediad can use webrtcbin directly -- and microduck_daemon's
+# architecture.md:306 has not chosen between webrtcbin and webrtc-rs anyway.
+# webrtcsink is a nicer API, not a requirement.
+#
+# Kept rather than deleted because everything except the git-dependency plumbing is
+# correct, including the generated 1139-crate crates.inc.
+
 SUMMARY = "GStreamer plugins written in Rust: webrtcsink/webrtcsrc and rtp"
 DESCRIPTION = "The plugin reachy_mini_os ships as an 82.7 MB Git-LFS blob with no \
 recipe, no source pin and four environment variables duplicated into every systemd \
