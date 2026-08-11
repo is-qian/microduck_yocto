@@ -31,8 +31,25 @@ RDEPENDS:${PN} = " \
 # is correct for a headless robot. kmssrc pulls in libdrm, and until now the image
 # had no DRM userspace at all.
 #
-# Expected elements: mppvideodec, mppjpegdec, mppvideoenc/mpph264enc, rgaconvert,
-# kmssrc.
+# Verified under qemu: the plugin loads and registers mppjpegdec, mppvideodec and
+# mppvpxalphadecodebin -- decoders only. The encoders are NOT missing; they are
+# compiled in and runtime-gated. gstmpph264enc.c:
+#
+#     gst_mpp_h264_enc_register (GstPlugin * plugin, guint rank)
+#     {
+#       if (!gst_mpp_enc_supported (MPP_VIDEO_CodingAVC))
+#         return FALSE;
+#       return gst_element_register (plugin, "mpph264enc", rank, ...);
+#     }
+#
+# gst_mpp_enc_supported() queries MPP, which needs /dev/mpp_service, so mpph264enc,
+# mpph265enc, mppvp8enc and mppjpegenc can only appear on the board. Their absence
+# in qemu says nothing about whether hardware encode works -- that measurement is
+# the whole point of this milestone and it needs the hardware.
+#
+# Note the plugin reports Version 1.14.4 (a GStreamer 1.14-era codebase) while our
+# core is 1.28.2. It builds and loads, but that gap is worth remembering if elements
+# behave oddly.
 #
 # Deliberately absent:
 #
