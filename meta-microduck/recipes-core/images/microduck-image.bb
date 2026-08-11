@@ -9,6 +9,7 @@ inherit rockchip-image
 IMAGE_FEATURES += "ssh-server-openssh"
 
 IMAGE_INSTALL:append = " \
+    microduck-daemon \
     kernel-modules \
     ca-certificates \
     networkmanager \
@@ -19,6 +20,10 @@ IMAGE_INSTALL:append = " \
     htop \
 "
 
+# microduck-daemon-padd is built but deliberately not installed: it is a gamepad
+# client, and its gilrs/libudev-sys chain is only wanted when someone is teleoperating.
+# Add it to a dev image rather than the default.
+#
 # wireless-regdb-static, not wireless-regdb: the -static package ships
 # /lib/firmware/regulatory.db, which kernels >= 4.15 load themselves. The plain
 # package installs the CRDA files instead, which need the obsolete crda userspace.

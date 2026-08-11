@@ -75,6 +75,17 @@ say 'ls /etc/systemd/system/multi-user.target.wants/'
 say 'ls /lib/firmware/regulatory.db'
 
 say 'timedatectl | head -n 3'
+
+# The daemon. updaterd is fully exercisable here -- unix socket, SO_PEERCRED, JSON-RPC.
+# robotd is expected to FAIL under qemu: it opens /dev/ttyS2 for the Dynamixel bus and
+# there is no such device, so Restart=always will have it retrying. That is the correct
+# behaviour, not a regression.
+say 'getent group robot'
+say 'robotctl --version; updaterd --version'
+say 'systemctl is-active updaterd robotd'
+say 'ls -l /run/updaterd.sock /run/robotd.sock 2>&1'
+say 'robotctl update status 2>&1 | head -n 12' 6
+say 'journalctl -u robotd --no-pager -n 4 2>&1 | tail -n 4'
 say 'echo MARK-END'
 say poweroff 10
 
