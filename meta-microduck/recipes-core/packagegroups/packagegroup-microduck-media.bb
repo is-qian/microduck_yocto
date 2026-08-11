@@ -9,6 +9,12 @@ LICENSE = "MIT"
 
 inherit packagegroup
 
+# packagegroup.bbclass sets allarch, which cannot depend on packages whose names
+# vary by target arch. rockchip-mpp and rockchip-librga both rename Debian-style
+# (librockchip-mpp1, librga2), so an allarch group fails do_package_write_rpm with
+# "shouldn't depend on packages which are dynamically renamed".
+PACKAGE_ARCH = "${MACHINE_ARCH}"
+
 RDEPENDS:${PN} = " \
     gstreamer1.0 \
     gstreamer1.0-plugins-base \
@@ -34,8 +40,18 @@ RDEPENDS:${PN} = " \
 #     device-tree node and its tuning file, and rkaiq_3A_server ships a sysvinit
 #     script that needs a systemd unit written.
 #
-#   rockchip-libmali -- GPU userspace GLES. Nothing in the pipeline needs it: MPP
-#     does the codec work and kmssrc uses libdrm. It is a licence-flagged binary
-#     blob, so leaving it out keeps the image smaller and simpler.
-#
 #   gstreamer1.0-plugins-rs (webrtcsink) -- M8, and no upstream recipe exists.
+#
+# rockchip-libmali arrives anyway, and not by choice: mali.inc sets
+# PREFERRED_PROVIDER_virtual/egl and virtual/libgles* to it, and
+# gstreamer1.0-plugins-base builds an `opengl` subpackage needing EGL/GLES. So the
+# licence-flagged GPU blob is in the image via GStreamer. Dropping `opengl` from
+# DISTRO_FEATURES would remove both, but rk356x.inc assumes a GPU is present, so
+# that is a change to make deliberately rather than in passing.
+#
+# TODO trim: this packagegroup grew the image 549 -> 745 MiB (+196 MiB), mostly
+# because the plugins-bad meta package pulls ~100 subpackages -- dvb, decklink,
+# vulkan, waylandsink, rfbsrc, festival and so on, none of which a robot wants.
+# The fix is to depend on specific plugin subpackages instead of the metas, but the
+# right list is not knowable until mediad exists and its pipeline is written. Doing
+# it now would be guessing; the metas at least prove the whole stack builds.
