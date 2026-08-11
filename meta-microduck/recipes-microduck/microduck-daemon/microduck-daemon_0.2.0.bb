@@ -13,7 +13,7 @@ HOMEPAGE = "https://github.com/pollen-robotics/microduck_daemon"
 LICENSE = "Apache-2.0"
 LIC_FILES_CHKSUM = "file://Cargo.toml;beginline=28;endline=28;md5=2507bd5f0713f05419cd2f22fa06fe62"
 
-inherit cargo cargo-update-recipe-crates systemd useradd
+inherit cargo cargo-update-recipe-crates pkgconfig systemd useradd
 
 # Pinned to tag daemon-v0.2.0. Private repo, so the fetch needs an agent:
 #   ssh -A coach
@@ -32,8 +32,15 @@ DEPENDS += "cmake-native"
 
 # libudev, for padd only: gilrs depends on libudev-sys unconditionally on Linux and
 # no feature disables it. duck-control/Cargo.toml calls that "a real cost" because
-# their cargo-zigbuild cross-build has no pkg-config sysroot -- under Yocto it is
-# one DEPENDS line and pkg-config finds it in the recipe sysroot.
+# their cargo-zigbuild cross-build has no pkg-config sysroot.
+#
+# Under Yocto it needs both halves, and missing either fails the build:
+#   DEPENDS "systemd"   provides the target libudev to link against
+#   inherit pkgconfig   provides the pkg-config *binary* that libudev-sys/build.rs
+#                       shells out to. cargo_common already exports
+#                       PKG_CONFIG_SYSROOT_DIR and friends, so without this the
+#                       env looks right and the build still dies with
+#                       "The pkg-config command could not be found."
 DEPENDS += "systemd"
 
 # Only the shipped crates. Excludes xtask (release tooling that links the full
