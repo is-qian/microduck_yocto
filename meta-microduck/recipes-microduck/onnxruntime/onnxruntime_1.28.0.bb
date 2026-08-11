@@ -30,13 +30,23 @@ COMPATIBLE_HOST = "aarch64.*-linux"
 do_configure[noexec] = "1"
 do_compile[noexec] = "1"
 
+# No `cp -a` anywhere below, deliberately. Microsoft's tarball is owned by their
+# build user (uid 1004), and -a preserves that, which fails do_package with:
+#
+#   KeyError: 'getpwuid(): uid not found: 1004' ... may be due to host contamination
+#
+# `install` and plain `cp -R` create root-owned files instead, and the symlink chain
+# is recreated rather than copied.
 do_install() {
 	install -d ${D}${libdir}
-	cp -a ${S}/lib/libonnxruntime.so* ${D}${libdir}/
+	install -m 0755 ${S}/lib/libonnxruntime.so.${PV} ${D}${libdir}/
+	ln -sf libonnxruntime.so.${PV} ${D}${libdir}/libonnxruntime.so.1
+	ln -sf libonnxruntime.so.1 ${D}${libdir}/libonnxruntime.so
 	install -m 0755 ${S}/lib/libonnxruntime_providers_shared.so ${D}${libdir}/
 
 	install -d ${D}${includedir}
-	cp -a ${S}/include/. ${D}${includedir}/
+	cp -R ${S}/include/. ${D}${includedir}/
+	chmod -R u+rwX,go+rX,go-w ${D}${includedir}
 
 	install -d ${D}${libdir}/pkgconfig
 	install -m 0644 ${S}/lib/pkgconfig/*.pc ${D}${libdir}/pkgconfig/
