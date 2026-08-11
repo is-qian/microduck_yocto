@@ -86,6 +86,15 @@ say 'systemctl is-active updaterd robotd'
 say 'ls -l /run/updaterd.sock /run/robotd.sock 2>&1'
 say 'robotctl update status 2>&1 | head -n 12' 6
 say 'journalctl -u robotd --no-pager -n 4 2>&1 | tail -n 4'
+
+# M5: the Rockchip codec plugins. Under qemu they can only *register* -- there is no
+# /dev/mpp_service, so encoding will fail. Registering still proves the plugin links
+# against rockchip-mpp and loads, which is the part that could break at build time.
+# Actual 1080p encode throughput has to be measured on the board.
+say 'gst-inspect-1.0 --version 2>&1 | head -n 2'
+say 'gst-inspect-1.0 2>/dev/null | grep -ciE "rockchip|mpp"' 8
+say 'gst-inspect-1.0 mpph264enc 2>&1 | head -n 6' 8
+say 'ls /dev/mpp_service /dev/rga 2>&1'
 say 'echo MARK-END'
 say poweroff 10
 

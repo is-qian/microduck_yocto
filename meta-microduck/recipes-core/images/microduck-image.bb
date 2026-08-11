@@ -10,6 +10,7 @@ IMAGE_FEATURES += "ssh-server-openssh"
 
 IMAGE_INSTALL:append = " \
     microduck-daemon \
+    packagegroup-microduck-media \
     kernel-modules \
     ca-certificates \
     networkmanager \
