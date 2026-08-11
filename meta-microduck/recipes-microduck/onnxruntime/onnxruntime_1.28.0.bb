@@ -1,0 +1,63 @@
+SUMMARY = "ONNX Runtime, Microsoft's prebuilt aarch64 shared library"
+DESCRIPTION = "Needed by robotd's gait policy. duck-control depends on ort \
+2.0.0-rc.11 with the \"load-dynamic\" feature, so the library is dlopened at first \
+use rather than linked -- robotd installs and starts fine without it and only fails \
+when asked to walk."
+HOMEPAGE = "https://onnxruntime.ai"
+
+LICENSE = "MIT"
+LIC_FILES_CHKSUM = "file://LICENSE;md5=0f7e3b1308cb5c00b372a6e78835732d"
+
+# The prebuilt release, which is what microduck_daemon's scripts/setup-board.sh
+# fetches. Building ONNX Runtime from source needs protobuf, abseil, onnx and a long
+# CMake build, and there is no oe-core recipe for it -- not worth it for a library we
+# only dlopen.
+#
+# Version: the workspace pins [workspace.metadata.onnxruntime] floor = "1.23",
+# target = "1.28.0". The floor exists because a board once shipped 1.20.1 against an
+# `ort` that panics below 1.23, so keep this at or above the floor and in step with
+# the `ort` dependency.
+SRC_URI = "https://github.com/microsoft/onnxruntime/releases/download/v${PV}/onnxruntime-linux-aarch64-${PV}.tgz"
+SRC_URI[sha256sum] = "e15ff8b5d85afe6c144d97c6fd432254bf76a219daaf17658087d6ecb3e8f0bb"
+
+# The tarball unpacks to its own name, not ${BP}. (Setting S is only forbidden for
+# the ${UNPACKDIR}/git case -- see AGENTS.md.)
+S = "${UNPACKDIR}/onnxruntime-linux-aarch64-${PV}"
+
+# An aarch64 binary drop.
+COMPATIBLE_HOST = "aarch64.*-linux"
+
+do_configure[noexec] = "1"
+do_compile[noexec] = "1"
+
+do_install() {
+	install -d ${D}${libdir}
+	cp -a ${S}/lib/libonnxruntime.so* ${D}${libdir}/
+	install -m 0755 ${S}/lib/libonnxruntime_providers_shared.so ${D}${libdir}/
+
+	install -d ${D}${includedir}
+	cp -a ${S}/include/. ${D}${includedir}/
+
+	install -d ${D}${libdir}/pkgconfig
+	install -m 0644 ${S}/lib/pkgconfig/*.pc ${D}${libdir}/pkgconfig/
+}
+
+# The unversioned symlink has to be in the RUNTIME package, which is not where Yocto
+# would put it. duck-control/src/policy.rs dylib_name() replicates ort's own lookup:
+# with ORT_DYLIB_PATH unset it dlopens plain "libonnxruntime.so", so shipping that
+# symlink in -dev would leave robotd unable to load the policy on a normal image.
+# Hence FILES below, and the dev-so QA skip that permits it.
+FILES:${PN} = " \
+    ${libdir}/libonnxruntime.so \
+    ${libdir}/libonnxruntime.so.* \
+    ${libdir}/libonnxruntime_providers_shared.so \
+"
+FILES:${PN}-dev = "${includedir} ${libdir}/pkgconfig ${libdir}/cmake"
+
+# already-stripped: Microsoft ships it stripped.
+# dev-so: the deliberate unversioned-symlink placement above.
+INSANE_SKIP:${PN} += "already-stripped dev-so"
+
+# Prebuilt, so nothing here is rebuilt against our toolchain. It needs at most
+# GLIBC_2.27 (checked with `strings | grep GLIBC_`), well below wrynose's glibc, so
+# it loads -- but if a future release raises that, this is where it will surface.

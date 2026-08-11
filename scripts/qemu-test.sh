@@ -92,9 +92,16 @@ say 'journalctl -u robotd --no-pager -n 4 2>&1 | tail -n 4'
 # against rockchip-mpp and loads, which is the part that could break at build time.
 # Actual 1080p encode throughput has to be measured on the board.
 say 'gst-inspect-1.0 --version 2>&1 | head -n 2'
-say 'gst-inspect-1.0 2>/dev/null | grep -ciE "rockchip|mpp"' 8
-say 'gst-inspect-1.0 mpph264enc 2>&1 | head -n 6' 8
+# Name the elements rather than counting them: a count told us the plugin loads but
+# not which elements exist, and `mpph264enc` turned out not to be registered -- the
+# Rockchip plugin enumerates codecs from MPP at runtime, which needs a device.
+say 'gst-inspect-1.0 2>/dev/null | grep -iE "rockchip|mpp"' 8
+say 'gst-inspect-1.0 rockchipmpp 2>&1 | head -n 18' 8
 say 'ls /dev/mpp_service /dev/rga 2>&1'
+
+# ONNX Runtime: ort dlopens the unversioned name, so that symlink must exist in the
+# runtime package. robotd works without it and only fails to walk.
+say 'ls -l /usr/lib/libonnxruntime.so*'
 say 'echo MARK-END'
 say poweroff 10
 

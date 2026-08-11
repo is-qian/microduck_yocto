@@ -109,7 +109,8 @@ RDEPENDS:${PN} += "systemd ca-certificates"
 # floor of 1.23 (an earlier board shipped 1.20.1 against an ort that panics below
 # that) and a target of 1.28.0.
 #
-# Not packaged yet: robotd installs and starts fine without it and only fails when
-# it tries to run the gait policy. Needs its own recipe -- either Microsoft's
-# prebuilt aarch64 tarball, as scripts/setup-board.sh fetches, or a source build.
-# ORT_DYLIB_PATH overrides the location.
+# Packaged as recipes-microduck/onnxruntime (Microsoft's prebuilt aarch64 tarball, the
+# same one scripts/setup-board.sh fetches). RRECOMMENDS rather than RDEPENDS because
+# robotd installs and starts fine without it and only fails when asked to walk, so a
+# minimal image can drop it. ORT_DYLIB_PATH overrides the location.
+RRECOMMENDS:${PN} += "onnxruntime"
