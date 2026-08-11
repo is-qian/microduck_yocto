@@ -8,4 +8,9 @@
 # srtp comes too: media encryption is not optional for WebRTC, and libsrtp is what
 # provides it. reachy_mini_os reaches the same place from the other direction, by
 # installing gstreamer1.0-nice and libnice10 as distro packages.
-PACKAGECONFIG:append = " webrtc srtp"
+# sctp is not optional alongside webrtc -- meson enforces it:
+#   ext/sctp/meson.build:23: Feature sctp cannot be disabled: webrtc option is enabled
+# WebRTC data channels run over SCTP, and microduck_daemon's architecture.md plans
+# `control` and `teleop` datachannels, so this is wanted rather than incidental.
+# PACKAGECONFIG[sctp] carries no DEPENDS: GStreamer brings its own implementation.
+PACKAGECONFIG:append = " webrtc srtp sctp"
