@@ -14,3 +14,23 @@
 # `control` and `teleop` datachannels, so this is wanted rather than incidental.
 # PACKAGECONFIG[sctp] carries no DEPENDS: GStreamer brings its own implementation.
 PACKAGECONFIG:append = " webrtc srtp sctp"
+
+# PACKAGECONFIG is necessary but not sufficient. It builds libgstwebrtc.so and
+# links libnice, and webrtcbin then registers and inspects fine -- but refuses to
+# preroll on the board (measured 2026-09-10):
+#
+#   GstWebRTCBin: Your GStreamer installation is missing a plug-in.
+#   gstwebrtcbin.c(154): _have_nice_elements(): libnice elements are not available
+#
+# _have_nice_elements() looks up the "nicesrc"/"nicesink" element *factories*, and
+# libnice in wrynose meta-oe does not build them unless its own PACKAGECONFIG gets
+# `gstreamer` -- see recipes-support/libnice/libnice_%.bbappend, which is where
+# that half of the fix lives. No PACKAGECONFIG here can supply it.
+#
+# The RDEPENDS is the other half, and it is about honesty rather than files:
+# libnice was in the image all along, but only as an automatic shlib dependency of
+# libgstwebrtcnice. Nothing declared that webrtcbin needs it, so nothing noticed
+# that what arrived was a libnice built without its plugin. Stating it on
+# -webrtc puts the requirement where the element is, so it travels with whoever
+# installs webrtcbin instead of being a coincidence of our packagegroup.
+RDEPENDS:${PN}-webrtc += "libnice"

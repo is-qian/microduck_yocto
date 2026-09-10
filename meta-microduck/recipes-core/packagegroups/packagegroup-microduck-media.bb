@@ -39,8 +39,30 @@ RDEPENDS:${PN} = " \
     gstreamer1.0-rockchip \
     rockchip-mpp \
     rockchip-librga \
+    udev-conf-rockchip \
     v4l-utils \
 "
+
+# udev-conf-rockchip is meta-rockchip's own 99-rockchip-permissions.rules, and
+# nothing in that layer pulls it in -- the recipe is referenced by no other .bb,
+# .bbappend or .conf, so an image has to name it. Without it /dev/mpp_service and
+# /dev/rga arrive 0600 root:root (measured on the board 2026-09-10; /dev/dri/card0
+# is root:video only because systemd-udev-rules covers DRM). robotd runs as root
+# so it does not care, but the failures that causes for an unprivileged mediad are
+# silent and expensive -- microduck_daemon's docs/project/media-bringup.md records
+# three separate debugging rounds:
+#
+#   /dev/mpp_service  mpph264enc is not registered at all, and mpi_enc_test
+#                     writes an empty file and exits 0
+#   /dev/rga          the element exists and the pipeline starts, then
+#                     "Try to use uninit rgaCtx=(nil)" and pages of blit failures
+#
+# The upstream rule covers both, plus mali* and the DMA heaps, all GROUP="video"
+# 0660 -- a superset of the hand-rolled 99-robot-mpp.rules that setup-gstreamer.sh
+# installs on the Armbian prototype, so prefer it over shipping our own copy.
+# `video`, not `robot`: `robot` gates the IPC sockets we define, and a kernel
+# device node is not ours to redefine. mediad.service will still need
+# SupplementaryGroups=video.
 
 # gstreamer1.0-rockchip's default PACKAGECONFIG is "mpp rga kmssrc" plus x11 when
 # that DISTRO_FEATURE is set. We removed x11, so rkximagesink is not built -- which
