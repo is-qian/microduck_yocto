@@ -86,9 +86,11 @@ only thing that may differ between hosts; anything else belongs in
 
 - **UART2 is contested.** `MICRODUCK_MOTOR_UART` in `microduck-common.inc`
   switches UART2 between the serial console and `robotd`'s Dynamixel bus. It
-  defaults to `0` (console) because during bring-up serial is worth more than
-  motors. Note it only silences *Linux* — U-Boot's `CONFIG_DEBUG_UART_BASE` is
-  UART2 too, so U-Boot still prints onto the motor wires at power-on.
+  defaults to `1` (motors) since 2026-09-10 — through bring-up it was `0`, but
+  no UART adapter was ever attached to read that console and `robotd` needs
+  `/dev/ttyS2`. Note it only silences *Linux* — U-Boot's
+  `CONFIG_DEBUG_UART_BASE` is UART2 too, so U-Boot still prints onto the motor
+  wires at power-on.
 - **No RTC.** `updaterd`'s preflight check exists because a 1970 clock fails TLS
   with an opaque error. Anything that fetches over HTTPS depends on timesyncd
   working. Verify with `timedatectl`; do not assume.

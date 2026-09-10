@@ -73,9 +73,11 @@ They cannot share it: a getty does not merely hold the port, it *reads* it,
 consuming servo replies, and kernel printk mid-transaction corrupts a reply.
 
 `MICRODUCK_MOTOR_UART` in `conf/machine/include/microduck-common.inc` switches
-between them. It defaults to `0` (console on UART2) because during bring-up you
-want serial far more than you want motors. Set it to `1` once the motor harness
-is wired.
+between them. It defaulted to `0` (console on UART2) through bring-up, and is
+`1` since 2026-09-10: the board boots from SD and answers on ssh, no USB-UART
+adapter was ever attached to read the console UART2 was being held for, and
+`robotd` cannot open its bus without `/dev/ttyS2`. A kernel that dies still
+prints to HDMI, via the `console=tty0` the dts patch puts in bootargs.
 
 ### Which Zero 3W do you have
 
