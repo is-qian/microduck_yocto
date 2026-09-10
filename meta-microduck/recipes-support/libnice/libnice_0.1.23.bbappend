@@ -1,3 +1,7 @@
+# Pinned rather than libnice_%: when meta-oe's commit pin moves and the version
+# changes, a dangling bbappend is a hard error -- which is the prompt to re-check
+# that this option still exists, instead of an append that keeps applying blind.
+
 # webrtcbin needs libnice's GStreamer *elements*, not just the library.
 #
 # gstwebrtcbin.c's _have_nice_elements() looks up the "nicesrc" and "nicesink"

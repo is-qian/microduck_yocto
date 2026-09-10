@@ -1,3 +1,8 @@
+# Pinned rather than gstreamer1.0-plugins-bad_%: when oe-core's commit pin moves
+# and the version changes, a dangling bbappend is a hard error -- which is the
+# prompt to re-check these options still exist, rather than an append that keeps
+# applying blind.
+
 # webrtcsink (gst-plugins-rs, M8) wraps webrtcbin, and oe-core does not build it:
 # PACKAGECONFIG[webrtc] is absent from the default list, so the image had no
 # webrtcbin element and no libnice at all -- only dtls was enabled.
@@ -24,8 +29,8 @@ PACKAGECONFIG:append = " webrtc srtp sctp"
 #
 # _have_nice_elements() looks up the "nicesrc"/"nicesink" element *factories*, and
 # libnice in wrynose meta-oe does not build them unless its own PACKAGECONFIG gets
-# `gstreamer` -- see recipes-support/libnice/libnice_%.bbappend, which is where
-# that half of the fix lives. No PACKAGECONFIG here can supply it.
+# `gstreamer` -- see recipes-support/libnice/, which is where that half of the
+# fix lives. No PACKAGECONFIG here can supply it.
 #
 # The RDEPENDS is the other half, and it is about honesty rather than files:
 # libnice was in the image all along, but only as an automatic shlib dependency of
