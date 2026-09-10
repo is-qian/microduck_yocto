@@ -17,7 +17,18 @@ header:
 
 distro: poky
 machine: microduck-zero3
-target: microduck-image
+
+# The dev image, while we are still bringing the board up: every image built so
+# far has gone onto a board that is then reached over ssh, and microduck-image has
+# no login at all now that the password-less root feature moved into
+# microduck-image-dev.bb. Build the shippable one explicitly:
+#
+#     HFJOB_TARGET=microduck-image scripts/build-hfjob.sh
+#
+# Flip this default when there is a product to ship rather than a board to debug.
+# sstate makes the other image cheap either way -- only do_rootfs and the image
+# tasks differ, every package is shared.
+target: microduck-image-dev
 
 repos:
   # This repo. Contributes meta-microduck; no url/commit, kas uses the checkout.
@@ -90,17 +101,19 @@ local_conf_header:
     BB_GIT_SHALLOW:pn-linux-rockchip = "1"
     BB_GIT_SHALLOW_DEPTH:pn-linux-rockchip = "1"
 
-    # Bring-up convenience: root login with no password, on serial and over ssh.
+    # Root login with no password lives in microduck-image-dev.bb, not here.
     #
-    # wrynose removed the `debug-tweaks` catch-all; these are the pieces of it we
-    # actually want. Deliberately NOT included: serial-autologin-root (typing
-    # `root` is not the bottleneck), tools-debug, tools-sdk, dev-pkgs, staticdev
-    # -- dev headers and debuggers belong in the SDK (`-c populate_sdk`), not on
-    # the robot. reachy_mini_os ships build-essential and gdb on the device
+    # It was EXTRA_IMAGE_FEATURES in this file, which applies to every image built
+    # from this config, under a comment asking whoever ships an image to remember
+    # to delete the line. Scoping it to a recipe whose name says what it is makes
+    # `bitbake microduck-image` shippable by construction instead.
+    #
+    # wrynose removed the `debug-tweaks` catch-all; that recipe takes the pieces we
+    # actually want. Deliberately NOT included, there or here: serial-autologin-root
+    # (typing `root` is not the bottleneck), tools-debug, tools-sdk, dev-pkgs,
+    # staticdev -- dev headers and debuggers belong in the SDK (`-c populate_sdk`),
+    # not on the robot. reachy_mini_os ships build-essential and gdb on the device
     # because PyGObject compiles on-target; we have no reason to repeat that.
-    #
-    # MUST NOT SHIP. Strip this line before any image leaves a desk.
-    EXTRA_IMAGE_FEATURES = "allow-empty-password allow-root-login empty-root-password"
 
     # A robot has no display server. Dropping x11 also drops the XSERVER list
     # that rockchip-common.inc sets up.

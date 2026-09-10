@@ -22,8 +22,12 @@ IMAGE_INSTALL:append = " \
 "
 
 # microduck-daemon-padd is built but deliberately not installed: it is a gamepad
-# client, and its gilrs/libudev-sys chain is only wanted when someone is teleoperating.
-# Add it to a dev image rather than the default.
+# client, and its gilrs/libudev-sys chain is only wanted when someone is
+# teleoperating. microduck-image-dev.bb installs it.
+#
+# This recipe is the one that ships. Everything a robot must not carry -- a
+# password-less root login above all -- belongs in microduck-image-dev.bb, which
+# requires this file and only ever adds to it.
 #
 # wireless-regdb-static, not wireless-regdb: the -static package ships
 # /lib/firmware/regulatory.db, which kernels >= 4.15 load themselves. The plain

@@ -40,6 +40,31 @@ see. `TMPDIR` needs no setting; it defaults to `$KAS_BUILD_DIR/tmp`.
 also sidesteps coach being Ubuntu 22.04 — older than wrynose's supported host
 distros.
 
+### Two images: dev and shippable
+
+`kas/microduck.yml` builds **`microduck-image-dev`** by default, which is what
+bring-up needs — `microduck-image` has no login at all. To build the shippable
+one:
+
+```sh
+kas build kas/microduck.yml --target microduck-image
+```
+
+or, on the HF Jobs path, `HFJOB_TARGET=microduck-image scripts/build-hfjob.sh`.
+
+`microduck-image-dev.bb` `require`s `microduck-image.bb` and only ever adds, so a
+dev board is a strict superset of the shipping one and anything verified on it
+holds for both. What it adds: password-less root login, `microduck-daemon-padd`,
+and enough userspace to debug over ssh (`coreutils`, `util-linux`, `strace`,
+`iw`, `tcpdump`, `evtest`, `less`, `e2fsprogs`).
+
+The password-less root login is the only difference that *has* to be an image
+rather than configuration — you need a login before you can configure anything,
+and the robot has no package manager to add one later. The team dev key and
+`allow_dev_keys = true` are deliberately **not** baked into either image: they
+are a per-board, revocable trust decision, and `microduck_daemon`'s
+`docs/robot/install-dev.md` covers applying them.
+
 ### Why no `poky` repo
 
 The combined `poky` repo has **no `wrynose` branch** — it stops at `walnascar`.

@@ -1,0 +1,70 @@
+SUMMARY = "microduck robot OS -- dev image"
+DESCRIPTION = "microduck-image plus what a developer needs and a robot must not \
+ship. A strict superset: it adds, never substitutes, so anything verified on a \
+dev board holds for the shipping image too."
+
+require recipes-core/images/microduck-image.bb
+
+# The reason this recipe exists.
+#
+# These three were EXTRA_IMAGE_FEATURES in kas/microduck.yml, which applies to
+# every image built from that config, under a comment asking whoever ships an
+# image to remember to delete the line. Here they are scoped to a target whose
+# name says what it is, so microduck-image cannot have them.
+#
+# This is also the one dev/prod difference that genuinely cannot be applied as
+# configuration afterwards. The dev key and allow_dev_keys can (see below), but a
+# login cannot: you need one before you can configure anything, and with no
+# package manager on the robot there is no way to add one later either.
+IMAGE_FEATURES += "allow-empty-password allow-root-login empty-root-password"
+
+IMAGE_INSTALL:append = " \
+    microduck-daemon-padd \
+    coreutils \
+    util-linux \
+    less \
+    strace \
+    e2fsprogs \
+    iw \
+    tcpdump \
+    evtest \
+"
+
+# coreutils and util-linux instead of trusting busybox. Busybox's applets are
+# subtly reduced in ways that cost debugging time rather than being a mild
+# inconvenience -- measured over ssh on the board 2026-09-10: `head -4` is
+# rejected outright (busybox wants `head -n 4`), and there is no `timeout`, no
+# `findmnt` and no `systemd-analyze` at all, which broke three diagnostic scripts
+# mid-run. update-alternatives puts the GNU versions ahead of the applets, so a
+# script written against either one works.
+#
+# microduck-daemon-padd and evtest are the gamepad pair. padd is the client the
+# teleop path needs, split out of the daemon package precisely so it could be
+# added here; evtest is how you tell a pad that never bonded from one that bonded
+# and sends nothing, which is the distinction the whole of
+# microduck_daemon/docs/robot/pair-a-gamepad.md turns on.
+#
+# iw and tcpdump for the aic8800. nmcli reports that a link is associated but not
+# why it is bad, and this radio is the component the BLE workarounds in
+# install-dev.md exist to work around.
+#
+# Still absent here, exactly as in the shipping image: gdb, build-essential,
+# *-dev packages, tools-sdk. Cross-compile against the SDK
+# (`bitbake microduck-image -c populate_sdk`).
+
+# Deliberately NOT here: the team dev key, and allow_dev_keys = true.
+#
+# Both are needed before a board will take dev builds, and the key alone does
+# nothing -- so baking it in would save no step while putting a trust anchor into
+# an artifact that can be copied to a board which should not have one. The flag is
+# a one-line edit to /etc/robot/updater.toml, which the daemon recipe already
+# ships with `allow_dev_keys = false` present to be flipped, and
+# microduck_daemon/scripts/install.sh does both halves together with validation.
+# Per-board and revocable is the right shape for a trust decision:
+# see microduck_daemon/docs/robot/install-dev.md.
+#
+# MICRODUCK_MOTOR_UART is not settable here either, tempting as it is to keep the
+# serial console on dev boards. It is read by linux-rockchip_6.1.bbappend (to add
+# motorbus.cfg to SRC_URI) and by microduck-common.inc (SERIAL_CONSOLES), neither
+# of which can see a variable set in an image recipe. Varying it needs a separate
+# MACHINE or a build-time flag, not an image.
