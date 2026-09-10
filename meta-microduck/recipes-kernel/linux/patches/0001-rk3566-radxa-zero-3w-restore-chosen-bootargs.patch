@@ -1,0 +1,51 @@
+From: Fabien Danieau <fabien.danieau@pollen-robotics.com>
+Subject: [PATCH] rk3566-radxa-zero-3w-aic8800ds2: restore chosen/bootargs
+
+rk3566-radxa-zero3.dtsi includes rk3568-linux.dtsi and then does
+`/delete-node/ chosen;`, removing Rockchip's bootargs. That is right for
+radxa's U-Boot, which passes a cmdline from extlinux.conf, and wrong for
+meta-rockchip's rk3568_defconfig U-Boot, which boots the Android boot.img
+with an empty header cmdline and no bootargs in its environment. Result:
+the kernel had no root= from any source and panicked on an unmountable
+root, with nothing written to the card.
+
+Recreate the node with root= (full GUID, matching the wic partition),
+console=ttyFIQ0 for bring-up serial and console=tty0 for HDMI. earlycon is
+deliberately left out: it targets UART2, the motor bus.
+
+Upstream-Status: Inappropriate [configuration]
+
+--- a/arch/arm64/boot/dts/rockchip/rk3566-radxa-zero-3w-aic8800ds2.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3566-radxa-zero-3w-aic8800ds2.dts
+@@ -12,6 +12,31 @@
+ / {
+ 	model = "Radxa ZERO 3";
+ 	compatible = "radxa,zero3w-aic8800ds2", "radxa,zero3", "rockchip,rk3566";
++
++	/*
++	 * rk3566-radxa-zero3.dtsi does `/delete-node/ chosen;` right after including
++	 * rk3568-linux.dtsi, dropping Rockchip's bootargs because radxa's own U-Boot
++	 * passes them from extlinux.conf. meta-rockchip's U-Boot (rk3568_defconfig,
++	 * boot_android/bootrkp) does not: its default env has no bootargs and the
++	 * boot.img header cmdline is empty, so the kernel booted with no root= and
++	 * panicked before touching the card. Recreate the node with only what the
++	 * Rockchip line carries that we need:
++	 *
++	 *   root=PARTUUID    the GUID rockchip-image.bbclass (RK_ROOTDEV_UUID) stamps
++	 *                    on the wic rootfs partition; full form so it does not
++	 *                    depend on the vendor kernel's prefix-match patch
++	 *   console=ttyFIQ0  serial during bring-up; when MICRODUCK_MOTOR_UART=1
++	 *                    disables the FIQ debugger the device never registers
++	 *                    and nothing is printed on the Dynamixel wire
++	 *   console=tty0     the HDMI console microduck-common.inc promises in
++	 *                    motor-bus mode; naming ttyFIQ0 alone would drop it
++	 *
++	 * No earlycon: uart8250,mmio32,0xfe660000 is UART2, the motor bus, and it
++	 * bypasses the FIQ switch.
++	 */
++	chosen {
++		bootargs = "root=PARTUUID=614e0000-0000-4b53-8000-1d28000054a9 rw rootwait console=ttyFIQ0 console=tty0";
++	};
+ 
+ 	wireless_wlan: wireless-wlan {
+ 		compatible = "wlan-platdata";
