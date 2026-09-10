@@ -1,0 +1,33 @@
+# microduck OS -- Hugging Face Jobs overlay.
+#
+#   kas build kas/microduck.yml:kas/hfjob.yml
+#
+# Composed on top of microduck.yml for job builds only. Paths live in
+# kas/hfjob.env; this file is for bitbake settings that a throwaway container
+# needs and a persistent build host does not.
+header:
+  version: 14
+local_conf_header:
+  hashserv-db: |
+    # Without this, sstate reuse between jobs is 0%.
+    #
+    # oe-core enables hash equivalence, and sstate objects are *named* by unihash,
+    # not by taskhash:
+    #
+    #   sstate/31/5e/sstate:acl-native::2.3.2:r0::14:315e07da79b3..._populate_lic.tar.zst
+    #
+    # The unihash mapping lives in a sqlite DB that defaults to somewhere under
+    # TOPDIR -- which on a job is the ephemeral disk, gone when the container
+    # exits. Every run therefore started with an empty database, minted brand new
+    # unihashes, looked for objects under names nothing had ever written, and
+    # rebuilt the world:
+    #
+    #   Sstate summary: Wanted 675 Local 0 Mirrors 0 Missed 675 (0% match)
+    #
+    # ...while writing a fresh set of objects each time, so the bucket grew
+    # (1342 -> 1439 tarballs) and never once got used. bitbake says this itself in
+    # the build log and names this exact variable as the fix.
+    #
+    # coach needs none of this: its build directory persists between builds, so
+    # the database survives. That is why it lives here and not in microduck.yml.
+    BB_HASHSERVE_DB_DIR = "${SSTATE_DIR}"
