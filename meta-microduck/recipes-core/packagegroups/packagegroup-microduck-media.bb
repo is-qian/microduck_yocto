@@ -7,13 +7,29 @@ encode works before mediad is written around the assumption that it does."
 
 LICENSE = "MIT"
 
-inherit packagegroup
-
-# packagegroup.bbclass sets allarch, which cannot depend on packages whose names
-# vary by target arch. rockchip-mpp and rockchip-librga both rename Debian-style
-# (librockchip-mpp1, librga2), so an allarch group fails do_package_write_rpm with
-# "shouldn't depend on packages which are dynamically renamed".
+# PACKAGE_ARCH has to be set BEFORE inherit packagegroup, not after it.
+# packagegroup.bbclass snapshots the value immediately --
+#
+#     PACKAGE_ARCH_EXPANDED := "${PACKAGE_ARCH}"
+#     inherit_defer ${@oe.utils.ifelse(d.getVar('PACKAGE_ARCH_EXPANDED') == 'all', 'allarch', '')}
+#
+# -- so only a value already in place at that line keeps allarch out. Assigning it
+# afterwards is silently undone: allarch.bbclass registers a RecipePreFinalise
+# handler that resets PACKAGE_ARCH to "all" whenever MULTILIB_VARIANTS is empty.
+# The recipe therefore stayed allarch, and oe/packagedata.py get_package_mapping()
+# gates on inherits_class('allarch'), not on the PACKAGE_ARCH value:
+#
+#     ERROR: packagegroup-microduck-media-1.0-r0 do_package_write_rpm: An allarch
+#     packagegroup shouldn't depend on packages which are dynamically renamed
+#     (rockchip-mpp to librockchip-mpp1)
+#
+# rockchip-mpp and rockchip-librga both rename Debian-style (librockchip-mpp1,
+# librga2), which an allarch group may not depend on. Six of those bb.error calls
+# fail no task at all -- they only bump bitbake's error counter, so the 2026-09-10
+# HF build wrote the .wic, logged "all succeeded", and still exited 1.
 PACKAGE_ARCH = "${MACHINE_ARCH}"
+
+inherit packagegroup
 
 RDEPENDS:${PN} = " \
     gstreamer1.0 \
