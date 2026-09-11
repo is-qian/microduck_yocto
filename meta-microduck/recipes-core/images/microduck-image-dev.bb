@@ -20,6 +20,7 @@ IMAGE_FEATURES += "allow-empty-password allow-root-login empty-root-password"
 
 IMAGE_INSTALL:append = " \
     microduck-daemon-padd \
+    aic8800-bt-test \
     coreutils \
     util-linux \
     less \
@@ -29,6 +30,16 @@ IMAGE_INSTALL:append = " \
     tcpdump \
     evtest \
 "
+
+# aic8800-bt-test is AICSemi's own bt_test, and it is here rather than in the
+# shipping image because it is a diagnostic for an unsolved problem: the board
+# has no HCI controller. btattach on /dev/ttyS1 transmits and never receives
+# (TX 4 / RX 0, HCI_Reset -110) at every baud and flow-control setting, and the
+# driver offers no other path -- aic8800_btlpm registers a platform driver and
+# rfkill, no chrdev, no HCI transport. bt_test speaks the vendor's three
+# transports, including `-s wlan wlan0`, which would mean HCI over SDIO rather
+# than the UART. Remove it once the transport is known and something brings the
+# controller up for real.
 
 # coreutils and util-linux instead of trusting busybox. Busybox's applets are
 # subtly reduced in ways that cost debugging time rather than being a mild

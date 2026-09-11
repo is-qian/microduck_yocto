@@ -101,10 +101,43 @@ do_install:append() {
 	cp -R ${S}/src/SDIO/driver_fw/fw/* ${D}${FW_SUBDIR}/SDIO/
 	# A compressed duplicate of the aic8800D80 directory; no use on target.
 	rm -f ${D}${FW_SUBDIR}/SDIO/aic8800D80.7z
+
+	install -d ${D}${bindir}
+	install -m 0755 ${S}/src/tools/aicrf_test/bt_test ${D}${bindir}/bt_test
 }
 
-PACKAGES =+ "${PN}-firmware"
+# bt_test: AICSemi's own BT bring-up and diagnostic tool, from the same source
+# tree. Debian ships it as the `aicrf-test` package -- debian/aicrf-test.install
+# is one line, `src/tools/aicrf_test/bt_test usr/bin/`.
+#
+# Packaged because the UART path is a dead end and we need the vendor's own view
+# of why. Measured on the board 2026-09-11: btattach on /dev/ttyS1 reaches
+# TX 4 bytes / RX 0 with HCI_Reset timing out (-110), identically across
+# 1500000 and 115200 baud with and without flow control. The driver cannot help
+# -- aic8800_btlpm's aic_bluetooth_main.c registers a platform driver and rfkill
+# and nothing else, no chrdev and no HCI transport, so an HCI attach really is
+# the only path it offers. And BT power is inert while wifi holds the shared
+# chip: aicbsp_set_subsys answers "power state no need to change, current: 1"
+# to both block and unblock.
+#
+# bt_test knows the three transports the vendor supports --
+# `-s uart <baud> <dev>`, `-s usb`, `-s wlan wlan0` -- and talks to
+# /dev/aicbt_dev, which does not exist here. That `-s wlan` mode is the
+# interesting one: it implies HCI over SDIO rather than the UART, which would
+# explain everything measured so far. This tool can answer which transport the
+# controller actually replies on, instead of us guessing at baud rates.
+#
+# Compiled by hand rather than via its Makefile: that Makefile hardcodes gcc,
+# offers no hook but CROSS_COMPILE, and also builds wifi_test, which we do not
+# ship.
+do_compile:append() {
+	${CC} ${CFLAGS} ${LDFLAGS} -o ${S}/src/tools/aicrf_test/bt_test \
+		${S}/src/tools/aicrf_test/bt_test.c -lpthread
+}
+
+PACKAGES =+ "${PN}-firmware ${PN}-bt-test"
 FILES:${PN}-firmware = "${FW_SUBDIR}"
+FILES:${PN}-bt-test = "${bindir}/bt_test"
 
 # The modules are useless without the blobs, and the SDIO device probes at boot.
 RDEPENDS:${PN} += "${PN}-firmware"
