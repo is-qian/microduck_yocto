@@ -91,6 +91,23 @@ only thing that may differ between hosts; anything else belongs in
   `/dev/ttyS2`. Note it only silences *Linux* — U-Boot's
   `CONFIG_DEBUG_UART_BASE` is UART2 too, so U-Boot still prints onto the motor
   wires at power-on.
+
+  Setting the flag is **two halves**, and the kernel fragment alone does
+  nothing. `motorbus.cfg` turns `CONFIG_FIQ_DEBUGGER` off, which frees the
+  driver; a dts patch enables `&uart2` and disables the `fiq_debugger` node,
+  which frees the hardware. Rockchip's `rk3568-linux.dtsi` leaves `&uart2`
+  disabled and assigns UART2 to the debugger, so with only the fragment the
+  board came up with neither `ttyFIQ0` nor `ttyS2`.
+- **Bluetooth needs `hciattach`, never `btattach`.** The AIC8800's BT is HCI
+  over **uart1** (`/dev/ttyS1`, 1500000) — a different port from the motor bus.
+  `btattach` produces an `hci0` that transmits and never receives, which reads
+  exactly like dead silicon and is not; `hciattach -n -s 1500000 /dev/ttyS1 any
+  1500000 flow` works, because `-s` sets the speed before the line discipline
+  attaches. rfkill must be cleared **twice** — BlueZ adds a second, blocked
+  rfkill node for `hci0` once the adapter exists. `aic8800-bt-attach.service`
+  does all of this; `bt_test` (dev image) is the vendor tool that talks to the
+  chip directly when you need to tell hardware faults from stack faults. Full
+  writeup in README.md.
 - **No RTC.** `updaterd`'s preflight check exists because a 1970 clock fails TLS
   with an opaque error. Anything that fetches over HTTPS depends on timesyncd
   working. Verify with `timedatectl`; do not assume.

@@ -254,6 +254,65 @@ Verified present in the rootfs (not merely in the manifest):
 `/lib -> usr/lib` (usrmerge), so the `/lib/firmware/...` path the driver's
 `fix-sdio-firmware-path.patch` sets does resolve.
 
+#### Bluetooth needs `hciattach`, not `btattach`
+
+The BT side is **HCI over uart1** — `/dev/ttyS1` at 1500000 baud. (Not to be
+confused with uart2 / `/dev/ttyS2`, which is the Dynamixel bus.) `aic8800_btlpm`
+is only an rfkill power switch: it registers a platform driver and nothing else,
+no character device and no HCI transport, so something in userspace has to
+attach the controller. `aic8800-bt` ships `aic8800-bt-attach.service` to do it,
+enabled by default.
+
+**Use `hciattach`. `btattach` does not work on this chip, and its failure looks
+like dead hardware.** `btattach` creates `hci0` and transmits, but never
+receives a single byte — TX 4, RX 0, `HCI_Reset` timing out with `-110` —
+identically at 1500000 and 115200, with and without flow control. The working
+command is:
+
+```sh
+hciattach -n -s 1500000 /dev/ttyS1 any 1500000 flow
+```
+
+`-s` sets the port speed *before* the HCI line discipline attaches; `btattach`
+attaches the discipline first. That is the explanation for the difference and it
+fits every measurement, but it was established by testing the two tools, not by
+reading their internals — what is certain is which command works.
+
+**rfkill has to be cleared twice.** Once before the attach, for the chip-level
+kill that is soft-blocked at boot; and again *after*, because BlueZ registers a
+second rfkill node for `hci0` itself when the adapter appears, and that one is
+born blocked. Skip the second and `hciconfig hci0 up` fails with `Operation not
+possible due to RF-kill (132)`. The first clear cannot cover a node that does
+not exist yet.
+
+Working result, from a cold boot:
+
+```
+hci0:  BD Address: 50:37:CD:16:5A:3D   HCI Version: 5.4 (0xd)
+       UP RUNNING   RX bytes:1460 events:89
+bluetoothctl show -> Powered: yes
+```
+
+**To debug it, use the vendor's own tool.** `aic8800-bt-test` (dev image) ships
+AICSemi's `bt_test`, which bypasses the Linux Bluetooth stack and talks to the
+chip directly:
+
+```sh
+bt_test -s uart 1500000 /dev/ttyS1     # server, holds the transport
+bt_test -c 01 03 0c 00                 # client, sends HCI_Reset
+```
+
+A healthy chip answers `04 0E 04 05 03 0C 00` — Command Complete, opcode 0x0C03,
+status 0. That one result is what separated "the radio is broken" from "our
+tooling cannot talk to a working radio", after a day spent on power rails, reset
+GPIOs and device-tree nodes. Its `-s wlan wlan0` mode fails with
+`ioctl[TX_PARA] -1`, which rules out HCI-over-SDIO: the transport really is the
+UART.
+
+Not verified: that `btd` can advertise through the adapter. `btd` is not built
+yet, and the LE checks available from a shell conflict with `bluetoothd` holding
+the adapter.
+
 ### Before flashing
 
 1. **Built on hardware with a known memory fault** — see `../CONTEXT.md`. Do not
