@@ -1,0 +1,41 @@
+[Unit]
+Description=Attach the AIC8800 Bluetooth HCI on UART1
+Documentation=https://github.com/radxa-pkg/aic8800
+# bluetoothd needs the adapter to exist before it starts, or it finds none and
+# only a restart picks it up later.
+Before=bluetooth.service
+After=systemd-modules-load.service
+# uart1 is the BT HCI; uart2 is the Dynamixel bus and must never be touched here.
+ConditionPathExists=/dev/ttyS1
+
+[Service]
+Type=simple
+
+# The chip-level rfkill is soft-blocked at boot, and an attach against a blocked
+# radio yields a controller that cannot be powered. Written through sysfs rather
+# than the rfkill(8) tool so this unit needs no package beyond bluez.
+ExecStartPre=/bin/sh -c 'for r in /sys/class/rfkill/*; do [ "$(cat $r/type)" = bluetooth ] && echo 0 > $r/soft; done; exit 0'
+
+# -s 1500000 is the load-bearing flag: it sets the port speed *before* the HCI
+# line discipline attaches. btattach attaches the ldisc first, so the controller's
+# replies land on an unconfigured port -- measured 2026-09-11 as TX 4 bytes,
+# RX 0, HCI_Reset timing out, at every baud and flow-control combination. With
+# hciattach the same hardware answers immediately: "Device setup complete",
+# BD address 50:37:CD:16:5A:3D, HCI 5.4.
+#
+# -n keeps it in the foreground so systemd owns the process. It must stay alive:
+# it holds the line discipline, and the adapter disappears when it exits.
+ExecStart=/usr/bin/hciattach -n -s 1500000 /dev/ttyS1 any 1500000 flow
+
+# A second unblock, deliberately. BlueZ registers a *new* rfkill node for hci0
+# itself when the adapter appears, and that one is born soft-blocked -- so an
+# unblock before the attach does not cover it, and `hciconfig hci0 up` fails with
+# "Operation not possible due to RF-kill (132)". The wait loop is for the adapter
+# to appear, which takes about a second after hciattach forks.
+ExecStartPost=/bin/sh -c 'for i in 1 2 3 4 5 6 7 8 9 10; do [ -e /sys/class/bluetooth/hci0 ] && break; sleep 0.5; done; for r in /sys/class/rfkill/*; do [ "$(cat $r/type)" = bluetooth ] && echo 0 > $r/soft; done; hciconfig hci0 up || true'
+
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

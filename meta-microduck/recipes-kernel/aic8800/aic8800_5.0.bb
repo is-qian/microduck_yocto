@@ -19,12 +19,16 @@ LICENSE = "GPL-2.0-only & GPL-3.0-or-later"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=1ebbd3e34237af26da5dc08a4e440464 \
                     file://debian/copyright;md5=ccd22839cbff32b2bbe9a6ec05d11739"
 
-inherit module
+inherit module systemd
+
+FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
 # Tag 5.0+git20260123.5f7be68d-7. radxa-pkg wraps AICSemi's vendor drop in Debian
 # packaging; we reuse their patches and build rules but not dpkg/DKMS.
 SRCREV = "6e076049b719ac2ff7ce5c92786a680407b11cdb"
-SRC_URI = "git://github.com/radxa-pkg/aic8800.git;protocol=https;nobranch=1"
+SRC_URI = "git://github.com/radxa-pkg/aic8800.git;protocol=https;nobranch=1 \
+           file://aic8800-bt-attach.service \
+"
 
 # No `S =` line on purpose. wrynose actively rejects S = "${WORKDIR}/git" and
 # S = "${UNPACKDIR}/git" with a do_unpack error: the git fetcher now unpacks to
@@ -104,7 +108,23 @@ do_install:append() {
 
 	install -d ${D}${bindir}
 	install -m 0755 ${S}/src/tools/aicrf_test/bt_test ${D}${bindir}/bt_test
+
+	install -d ${D}${systemd_system_unitdir}
+	install -m 0644 ${UNPACKDIR}/aic8800-bt-attach.service \
+		${D}${systemd_system_unitdir}/
 }
+
+# The BT controller needs an HCI attach, and the exact incantation is not
+# obvious -- see the unit for the measurements. Enabled by default because BLE
+# provisioning (btd, configd) is the product's way onto a network, and a radio
+# that is present but unattached looks identical to a board with no Bluetooth.
+SYSTEMD_PACKAGES = "${PN}-bt"
+SYSTEMD_SERVICE:${PN}-bt = "aic8800-bt-attach.service"
+SYSTEMD_AUTO_ENABLE:${PN}-bt = "enable"
+
+# hciattach and hciconfig come from bluez5; nothing else is needed, since the
+# rfkill handling is done through sysfs rather than the rfkill tool.
+RDEPENDS:${PN}-bt += "bluez5"
 
 # bt_test: AICSemi's own BT bring-up and diagnostic tool, from the same source
 # tree. Debian ships it as the `aicrf-test` package -- debian/aicrf-test.install
@@ -135,8 +155,9 @@ do_compile:append() {
 		${S}/src/tools/aicrf_test/bt_test.c -lpthread
 }
 
-PACKAGES =+ "${PN}-firmware ${PN}-bt-test"
+PACKAGES =+ "${PN}-firmware ${PN}-bt ${PN}-bt-test"
 FILES:${PN}-firmware = "${FW_SUBDIR}"
+FILES:${PN}-bt = "${systemd_system_unitdir}/aic8800-bt-attach.service"
 FILES:${PN}-bt-test = "${bindir}/bt_test"
 
 # The modules are useless without the blobs, and the SDIO device probes at boot.

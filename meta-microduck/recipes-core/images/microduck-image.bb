@@ -15,11 +15,18 @@ IMAGE_INSTALL:append = " \
     ca-certificates \
     networkmanager \
     bluez5 \
+    aic8800-bt \
     wireless-regdb-static \
     i2c-tools \
     usbutils \
     htop \
 "
+
+# aic8800-bt is the HCI attach unit, in the shipping image rather than the dev
+# one: BLE is how a robot with no network gets provisioned (configd over btd), so
+# a controller that never attaches is a product fault, not a debug inconvenience.
+# The chip answers only through hciattach with the port speed set before the line
+# discipline attaches -- see the unit for the measurements that established that.
 
 # microduck-daemon-padd is built but deliberately not installed: it is a gamepad
 # client, and its gilrs/libudev-sys chain is only wanted when someone is
