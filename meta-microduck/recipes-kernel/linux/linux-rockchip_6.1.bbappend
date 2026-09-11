@@ -43,6 +43,16 @@ SRC_URI = " \
 PATCHPATH := "${THISDIR}/patches"
 
 # See MICRODUCK_MOTOR_UART in conf/machine/include/microduck-common.inc.
-# Disabling the FIQ debugger is what makes UART2 enumerate as /dev/ttyS2 so
-# robotd can drive the Dynamixel bus on it.
-SRC_URI += "${@bb.utils.contains('MICRODUCK_MOTOR_UART', '1', 'file://motorbus.cfg', '', d)}"
+#
+# Two halves, and the config fragment alone is a no-op. motorbus.cfg turns
+# CONFIG_FIQ_DEBUGGER off, which frees the *driver*; the dts patch enables &uart2
+# and disables the fiq_debugger node, which frees the *hardware*. Rockchip's
+# rk3568-linux.dtsi leaves &uart2 disabled and assigns UART2 to fiq_debugger, so
+# with only the fragment applied the board came up on 2026-09-11 with no
+# /dev/ttyFIQ0 (correct) and still no /dev/ttyS2 -- fe660000.serial was not even a
+# platform device, and robotd kept looping on "cannot open the bus".
+#
+# The patch goes through SRC_URI rather than the patches/ directory above because
+# PATCHPATH is unconditional: uart2 must stay disabled when MICRODUCK_MOTOR_UART
+# is "0", or that mode loses the serial console it exists to keep.
+SRC_URI += "${@bb.utils.contains('MICRODUCK_MOTOR_UART', '1', 'file://motorbus.cfg file://0002-rk3566-radxa-zero-3w-uart2-for-the-motor-bus.patch', '', d)}"

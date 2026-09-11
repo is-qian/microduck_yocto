@@ -1,0 +1,49 @@
+From: Fabien Danieau <fabien.danieau@pollen-robotics.com>
+Subject: [PATCH] rk3566-radxa-zero-3w-aic8800ds2: enable uart2 for the motor bus
+
+CONFIG_FIQ_DEBUGGER=n frees the driver but not the hardware: Rockchip's
+rk3568-linux.dtsi leaves &uart2 disabled and assigns UART2 to its fiq_debugger
+node, so disabling the debugger in the kernel config alone yields neither
+ttyFIQ0 nor ttyS2. Enable &uart2 on the m0 pins and disable the fiq_debugger
+node, matching radxa's rk3568-uart2-m0.dts overlay.
+
+Only applied when MICRODUCK_MOTOR_UART = "1"; see
+conf/machine/include/microduck-common.inc.
+
+Upstream-Status: Inappropriate [configuration]
+
+--- a/arch/arm64/boot/dts/rockchip/rk3566-radxa-zero-3w-aic8800ds2.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3566-radxa-zero-3w-aic8800ds2.dts
+@@ -56,6 +56,32 @@
+ 	status = "okay";
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&uart1m0_xfer &uart1m0_ctsn>;
++};
++
++/*
++ * Hand UART2 to robotd's Dynamixel bus.
++ *
++ * Turning CONFIG_FIQ_DEBUGGER off (motorbus.cfg) is necessary and NOT sufficient.
++ * Rockchip's rk3568-linux.dtsi leaves &uart2 status = "disabled" and gives the
++ * hardware to its fiq_debugger node instead, so with the driver gone nothing
++ * drives UART2 at all. Measured on the board 2026-09-11, kernel config alone:
++ * /dev/ttyFIQ0 correctly disappeared, /dev/ttyS2 never appeared, fe660000.serial
++ * was not even a platform device, and robotd sat in its retry loop exactly as
++ * before. Only fe650000.serial (uart1) had bound dw-apb-uart.
++ *
++ * m0 pins, and disabling fiq_debugger rather than deleting it, both follow
++ * radxa's own rk3568-uart2-m0.dts overlay -- whose compatible list includes
++ * radxa,zero3, and which their setup-board.sh enables as "uart2-m0" on the
++ * Armbian prototype this board replaces.
++ */
++&fiq_debugger {
++	status = "disabled";
++};
++
++&uart2 {
++	status = "okay";
++	pinctrl-names = "default";
++	pinctrl-0 = <&uart2m0_xfer>;
+ };
+ 
+ &sdmmc1 {
