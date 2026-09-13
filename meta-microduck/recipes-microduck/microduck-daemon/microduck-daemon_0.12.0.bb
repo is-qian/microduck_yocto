@@ -82,6 +82,35 @@ DEPENDS += "cmake-native"
 #                       "The pkg-config command could not be found."
 DEPENDS += "systemd"
 
+# GStreamer, for mediad. It links the bindings rather than driving gst-launch:
+# gstreamer, gstreamer-app, gstreamer-webrtc, gstreamer-video and glib, each of
+# which has a -sys crate whose build.rs pkg-configs a .pc out of the sysroot.
+#
+# They are declared under
+#
+#     [target.'cfg(target_os = "linux")'.dependencies]
+#
+# rather than plain [dependencies], which is easy to miss when reading the
+# manifest and is exactly how this was missed the first time -- the 0.12.0 build
+# failed at
+#
+#     error: failed to run custom build command for `gstreamer-sys v0.24.5`
+#     Package 'gstreamer-1.0' not found
+#
+# tof's bmi088 hides in the same kind of section. When adding a workspace member,
+# read the target-conditional tables too.
+#
+# Which recipe provides what:
+#   glib-2.0                    glib-2.0.pc, gobject-2.0.pc, gio-2.0.pc
+#   gstreamer1.0                gstreamer-1.0.pc, gstreamer-base-1.0.pc
+#   gstreamer1.0-plugins-base   gstreamer-app-1.0.pc, gstreamer-video-1.0.pc,
+#                               gstreamer-sdp-1.0.pc
+#   gstreamer1.0-plugins-bad    gstreamer-webrtc-1.0.pc -- which exists only
+#                               because our bbappend turns the webrtc
+#                               PACKAGECONFIG on; without it this would fail with
+#                               the same shape of error as above.
+DEPENDS += "glib-2.0 gstreamer1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-bad"
+
 # Everything the board can use, expressed as the workspace minus four exclusions
 # rather than a list of packages to include. That is the repo's own convention --
 # its Cargo.toml sets default-members for exactly this reason, so "a new daemon is
@@ -96,10 +125,7 @@ DEPENDS += "systemd"
 #   duck-ether    not in upstream's default-members either
 #
 # Everything else builds, including mediad, tof, sounds, duck-detect and
-# pet-detect. None of them needed a new DEPENDS: mediad drives GStreamer through
-# its CLI rather than linking it, sounds is pure Rust (hound), and the detectors
-# take ort with `load-dynamic`, so libonnxruntime is dlopened at runtime rather
-# than linked at build time.
+# pet-detect.
 CARGO_BUILD_FLAGS += "--workspace --exclude xtask --exclude test-support --exclude duckctl --exclude duck-ether"
 
 # Both units hard-require this group; updater/systemd/sysusers.d/robot.conf exists
