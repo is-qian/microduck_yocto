@@ -54,6 +54,18 @@ jobs:
     runs-on: ubuntu-latest
     # The build is ~50 min warm and hours cold; this is a backstop, not a target.
     timeout-minutes: 240
+
+    # `shell: bash` runs every step as `bash --noprofile --norc -eo pipefail`,
+    # and the pipefail is the point. GitHub's default is `bash -e`, under which a
+    # failing command in a pipeline is invisible: `scripts/wait-hfjob.sh | tee`
+    # takes its exit status from tee, so the step goes green no matter what the
+    # script decided. That is exactly how run 34837726446 reported success while
+    # wait-hfjob.sh had failed to execute at all -- the same false-green this
+    # workflow exists to prevent, reintroduced one level up.
+    defaults:
+      run:
+        shell: bash
+
     steps:
       - uses: actions/checkout@v4
 
@@ -107,10 +119,13 @@ jobs:
         run: |
           set -eu
           prefix="${{ steps.wait.outputs.artifacts }}"
+          # Guard, because an empty prefix means the wait step did not produce a
+          # verdict and we would otherwise "publish" nothing while staying green.
+          test -n "$prefix" || { echo "no artifacts prefix from the wait step"; exit 1; }
           echo "### Image built" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           hf buckets ls "$prefix/" | grep -E "rootfs-[0-9]+\.wic|zboot\.img--|\.manifest$" \
-            >> "$GITHUB_STEP_SUMMARY" || true
+            >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "Artifacts: \`$prefix\`" >> "$GITHUB_STEP_SUMMARY"
 
