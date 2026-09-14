@@ -3,9 +3,9 @@ DESCRIPTION = "robotd (50 Hz Dynamixel control loop), updaterd (signed, \
 rollback-safe update engine), robotctl (local CLI), padd (gamepad client), \
 configd (wifi and robot identity, drives NetworkManager), btd (the BLE \
 transport that fronts configd, so a robot with no network can be provisioned \
-from a phone), mediad, tofd, sounds and the duck/pet detectors. Only robotd, \
-updaterd, configd and btd have their units enabled; the rest are built and \
-installed but wait on hardware that is not fitted."
+from a phone), mediad, tofd, sounds and the duck/pet detectors. Every unit is \
+enabled: a robot with the hardware should come up working. On a board without \
+it, disable the three that need parts -- mediad, tofd, padd."
 HOMEPAGE = "https://github.com/pollen-robotics/microduck_daemon"
 
 # Upstream now ships a LICENSE file, so point at the whole thing rather than a
@@ -166,53 +166,36 @@ USERADD_PARAM:${PN} = "-r -g btd -d / -s /sbin/nologin -c 'Robot BLE transport a
 #   padd     input robot            input already exists and /dev/input/event* is
 #                                   already root:input
 
-# Four enabled, seven installed. mediad, tofd and padd ship as unit *files* but
-# are deliberately absent from SYSTEMD_SERVICE, which is what leaves them
-# disabled: oe-core's /usr/lib/systemd/system-preset/99-default.preset is
-# `disable *`, so a unit no preset mentions stays off. Verified on the board --
-# systemd-boot-check-no-failures.service is present and reports `disabled` for
-# exactly this reason.
+# All seven units, all enabled. The robot is the common case: a board with
+# servos, a camera, a ToF sensor and a gamepad should come up working, and
+# needing to remember an enable command per daemon is how a robot ends up half
+# running with nothing obviously wrong.
 #
-# That is the difference between a board that can run them and a board that
-# does. On this bring-up board there is no camera, no ToF sensor and no gamepad,
-# and none of those three units carries a Condition= that would make it skip
-# itself -- enabling them would mean three permanently failing units and a
-# `systemctl --failed` that no longer means anything. On a robot that has the
-# hardware:
+# The cost lands on a bare bring-up board, which has none of that hardware and
+# where none of these three carries a Condition= to skip itself -- so mediad,
+# tofd and padd fail there and `systemctl --failed` stops being a clean health
+# signal. That is the right way round: on a bring-up board someone is already
+# watching and
 #
-#     systemctl enable --now mediad tofd padd
+#     systemctl disable --now mediad tofd padd
 #
-# works with no rebuild, because the unit, the binary, the user and the groups
-# are all already there.
+# is a one-off, whereas on a robot the alternative is a daemon that silently
+# never started.
 #
-# robot-boot-check.service is the exception that stays out entirely: its
-# ExecStart is /usr/local/sbin/robot-boot-check, a path belonging to updaterd's
-# release-tree layout, which this packaging deliberately does not use. Installing
-# it would ship a unit that cannot work.
-SYSTEMD_SERVICE:${PN} = "robotd.service updaterd.service configd.service btd.service"
+# padd.service is assigned to ${PN}-padd rather than ${PN}, because the unit is
+# packaged with its binary (see the FILES split below) and systemd.bbclass
+# expects a service to be listed against the package that ships it.
+# SYSTEMD_PACKAGES has to name both, since it otherwise defaults to ${PN} alone
+# and padd.service would be installed but never enabled.
+#
+# robot-boot-check.service is the one that stays out entirely: its ExecStart is
+# /usr/local/sbin/robot-boot-check, a path belonging to updaterd's release-tree
+# layout, which this packaging deliberately does not use. Installing it would
+# ship a unit that cannot work.
+SYSTEMD_PACKAGES = "${PN} ${PN}-padd"
+SYSTEMD_SERVICE:${PN} = "robotd.service updaterd.service configd.service btd.service mediad.service tofd.service"
+SYSTEMD_SERVICE:${PN}-padd = "padd.service"
 SYSTEMD_AUTO_ENABLE = "enable"
-
-# Four units, not eight. Upstream also ships mediad.service, tofd.service,
-# padd.service and robot-boot-check.service, and all four are deliberately left
-# out even though their binaries are built and installed:
-#
-#   mediad   needs a camera. None is fitted (the CSI module on order is an
-#            IMX219; the RPi Cam 3 that was tried has no driver in this kernel).
-#   tofd     needs the time-of-flight sensor, not fitted.
-#   padd     needs a paired gamepad.
-#   robot-boot-check  its ExecStart is /usr/local/sbin/robot-boot-check, a path
-#            this packaging never installs -- it belongs to updaterd's release
-#            tree layout, which is the layout we deliberately do not use.
-#
-# None of the first three carries a Condition= that would make it skip itself on
-# hardware that is absent, and all are WantedBy=multi-user.target. Enabling them
-# would mean three permanently failing units on every boot, which costs more than
-# it gives: `systemctl --failed` stops being a usable health signal, and that is
-# the check this bring-up has leaned on repeatedly.
-#
-# The binaries are present, so any of them can be run by hand or enabled with
-# `systemctl enable` once its hardware arrives. Their users would need creating
-# at that point too -- each runs as its own (mediad, tofd, padd).
 
 do_install:append() {
 	# Units, with ExecStart repointed from the self-updating release tree at
