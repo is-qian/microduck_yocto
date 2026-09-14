@@ -1,0 +1,113 @@
+name: build-image
+
+# Builds the microduck image on Hugging Face Jobs and reports the result.
+#
+# GitHub runs the orchestration, not the build. That is not a preference, it is
+# arithmetic: a hosted runner has 4 cores, 16 GB RAM and ~14 GB of free disk,
+# while this build wants 32 cores and its sstate cache alone is 48 GB. The
+# Actions cache tops out at 10 GB per repository, so the one thing that must
+# persist between builds cannot live there. On HF Jobs the same build takes ~6
+# minutes of bitbake at 99% sstate reuse and costs about $1.60.
+#
+# One secret does everything: HF_TOKEN launches the job AND reaches the bucket,
+# because the bucket is mounted into the job by the platform as the org. No
+# credential ever enters the build itself.
+#
+# Artifacts stay in the bucket. A .wic is ~900 MB, which is awkward as a release
+# asset and pointless to move when the bucket is already private and already
+# where the build wrote it. This publishes the hf:// URL instead.
+
+on:
+  workflow_dispatch:
+    inputs:
+      kas_command:
+        description: "kas command (build, or checkout to validate the pipeline cheaply)"
+        type: choice
+        options: [build, checkout]
+        default: build
+      target:
+        description: "single recipe to build, e.g. linux-rockchip (empty = whole image)"
+        type: string
+        default: ""
+      flavor:
+        description: "HF Jobs hardware flavor"
+        type: choice
+        options: [cpu-performance, cpu-basic]
+        default: cpu-performance
+  push:
+    branches: [main]
+    # Only what can change the image. A README edit should not spend $1.60.
+    paths:
+      - "meta-microduck/**"
+      - "kas/**"
+      - "scripts/build-hfjob.sh"
+      - ".github/workflows/build-image.yml"
+
+# Queue rather than cancel. Cancelling mid-build would leave the HF job running
+# and billing, and the cleanup step below only fires for jobs this run started.
+concurrency:
+  group: build-image
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # The build is ~50 min warm and hours cold; this is a backstop, not a target.
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # >= 1.30 for bucket volume mounts in `hf jobs run`.
+      - name: Install the Hugging Face CLI
+        run: pip install --quiet "huggingface_hub[cli]>=1.30"
+
+      - name: Launch the build on HF Jobs
+        id: launch
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HFJOB_TARGET: ${{ inputs.target }}
+          HFJOB_FLAVOR: ${{ inputs.flavor || 'cpu-performance' }}
+        run: |
+          set -eu
+          out=$(scripts/build-hfjob.sh "${{ inputs.kas_command || 'build' }}" 2>&1 | tee /dev/stderr)
+          id=$(printf '%s\n' "$out" | grep -oE '^id=[A-Za-z0-9]+' | head -1 | cut -d= -f2)
+          test -n "$id" || { echo "could not parse a job id from build-hfjob.sh"; exit 1; }
+          echo "job_id=$id" >> "$GITHUB_OUTPUT"
+          echo "Launched https://huggingface.co/jobs/pollen-robotics/$id" >> "$GITHUB_STEP_SUMMARY"
+
+      # Judges the build on its logs, never on its exit status -- see the long
+      # explanation at the top of wait-hfjob.sh. Every green build of this image
+      # so far has reported ERROR, so `hf jobs wait` would fail all of them.
+      - name: Wait for it, and decide whether it actually worked
+        id: wait
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -eu
+          scripts/wait-hfjob.sh "${{ steps.launch.outputs.job_id }}" | tee /tmp/verdict.txt
+          grep -oE '^artifacts=.*' /tmp/verdict.txt >> "$GITHUB_OUTPUT" || true
+
+      - name: Publish what was built
+        if: success()
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -eu
+          prefix="${{ steps.wait.outputs.artifacts }}"
+          echo "### Image built" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          hf buckets ls "$prefix/" | grep -E "rootfs-[0-9]+\.wic|zboot\.img--|\.manifest$" \
+            >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Artifacts: \`$prefix\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # A cancelled workflow leaves the job running and billing by the minute.
+      - name: Cancel the HF job if this run was cancelled
+        if: cancelled() && steps.launch.outputs.job_id != ''
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: hf jobs cancel "${{ steps.launch.outputs.job_id }}" || true
