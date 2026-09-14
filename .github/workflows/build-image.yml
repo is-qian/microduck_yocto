@@ -136,8 +136,25 @@ jobs:
       # so this is safe to fire on both. Targeted at the one id this run started
       # -- the org's job namespace is shared, and a broader sweep would kill
       # someone else's training run.
+      #
+      # --namespace is load-bearing and was missing at first: `hf jobs cancel`
+      # looks the job up under the *token owner's* namespace by default, so it
+      # returned 404 "Job Not Found for url: .../jobs/FabienDanieau/<id>" while
+      # the job ran on happily under pollen-robotics. The `|| true` then hid that,
+      # and the step reported success having cancelled nothing.
+      #
+      # The failure is still non-fatal -- this runs on an already-failing path and
+      # masking the original error would be worse -- but it is now loud, because
+      # a silent failure here costs $1.90/h until somebody notices.
       - name: Cancel the HF job if this run did not finish cleanly
         if: (failure() || cancelled()) && steps.launch.outputs.job_id != ''
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: hf jobs cancel "${{ steps.launch.outputs.job_id }}" || true
+        run: |
+          id="${{ steps.launch.outputs.job_id }}"
+          if hf jobs cancel "$id" --namespace pollen-robotics; then
+            echo "cancelled $id"
+          else
+            echo "::warning::could not cancel HF job $id - it may still be running and billing."
+            echo "::warning::check: hf jobs ps --namespace pollen-robotics"
+          fi
