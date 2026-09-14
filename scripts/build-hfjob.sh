@@ -138,10 +138,47 @@ save() {
 		echo "no deploy/images dir -- nothing to copy out"
 	fi
 
+	# Publish the caches a file at a time, writing beside the target and then
+	# renaming. A rename is atomic, so a job killed mid-copy leaves a stray
+	# .part file rather than a truncated sstate object -- and a truncated sstate
+	# object is the dangerous kind of damage, because a *later* build reads it as
+	# valid and fails somewhere unrelated.
+	#
+	# This is not theoretical. Two orphaned cpu-performance builds were cancelled
+	# by hand on 2026-09-14 after a CI bug let their GitHub runs exit while the
+	# jobs kept going; either could have been inside this loop at the time. The
+	# deploy copy above needs no such care: it is per-job, nothing reads it until
+	# the "artifacts:" line above says it finished, and a partial directory there
+	# merely wastes space.
+	#
+	# Skipping names that already exist is safe and is what makes this affordable:
+	# sstate and downloads are content-addressed, so a name that is present
+	# already holds the same bytes. That is also why concurrent writers do not
+	# corrupt each other -- only *interrupted* ones do.
+	publish() {
+		from=$1
+		to=$2
+		[ -d "$from" ] || return 0
+		mkdir -p "$to"
+		find "$from" -type f | while read -r f; do
+			rel=${f#"$from"/}
+			dest=$to/$rel
+			[ -e "$dest" ] && continue
+			mkdir -p "$(dirname "$dest")"
+			if cp "$f" "$dest.part" && mv -f "$dest.part" "$dest"; then
+				continue
+			fi
+			# Leave nothing half-written behind, and say so. Silence here is how
+			# a poisoned cache would reach the next build unnoticed.
+			rm -f "$dest.part"
+			echo "WARNING: could not publish $rel atomically"
+		done
+	}
+
 	# No 2>/dev/null on these: suppressing the errors here is what made one run
 	# of sstate evidence unreadable and cost an experiment.
-	cp -Ru "$DL_DIR"/. /cache/downloads/ || true
-	cp -Ru "$SSTATE_DIR"/. /cache/sstate/ || true
+	publish "$DL_DIR" /cache/downloads
+	publish "$SSTATE_DIR" /cache/sstate
 }
 
 # Named handlers rather than trap 'save; exit 143' TERM -- see the heredoc note
