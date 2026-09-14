@@ -31,10 +31,16 @@ set -eu
 JOB=${1:?usage: wait-hfjob.sh <job-id>}
 NS=${HFJOB_NAMESPACE:-pollen-robotics}
 POLL=${POLL:-90}
+# A backstop, not a target. Without one, any failure to recognise the end of a
+# build becomes a silent hang: the first version of this script looped for 37
+# minutes after the build had finished, because it was parsing a CLI output
+# format that only exists on a terminal. Better to fail loudly and leave the
+# artifacts in the bucket than to hold a runner until the job timeout.
+MAX_WAIT=${MAX_WAIT:-14400}
 
 log=$(mktemp)
 seen=$(mktemp)
-trap 'rm -f "$log" "$seen"' EXIT
+trap 'rm -f "$log" "$log.cur" "$seen"' EXIT
 : > "$seen"
 
 # Milestones worth echoing as they happen, plus every shape of real failure.
@@ -42,6 +48,7 @@ trap 'rm -f "$log" "$seen"' EXIT
 # stays silent through a crash, and silence is indistinguishable from progress.
 INTERESTING='Sstate summary:|task do_(patch|compile|install|package_qa|rootfs|image_wic|image_complete): (Started|Succeeded|Failed)|Tasks Summary|artifacts: hf://|ARTIFACT COPY FAILED|no deploy/images dir|^\| *error|ERROR:|failed with exit code|not found in the pkg-config|Nothing RPROVIDES|installed-vs-shipped'
 
+started=$(date +%s)
 while :; do
 	hf jobs logs "$NS/$JOB" > "$log" 2>/dev/null || true
 
@@ -57,16 +64,42 @@ while :; do
 		fi
 	fi
 
-	stage=$(hf jobs inspect "$JOB" --namespace "$NS" 2>/dev/null \
-		| tr '\t' '\n' | grep -o "'stage': '[A-Z]*'" | head -1 || true)
+	# Primary signal: the log itself. bitbake prints "Tasks Summary" exactly once
+	# when it stops, and save() then prints one of the three outcomes below. This
+	# is the same evidence the verdict uses, so if it is there we can decide, and
+	# no amount of CLI reformatting can take it away.
+	if grep -q "Tasks Summary" "$log" 2>/dev/null \
+		&& grep -qE "artifacts: hf://|ARTIFACT COPY FAILED|no deploy/images dir" "$log" 2>/dev/null; then
+		break
+	fi
+
+	# Secondary: the job's own state, for the case where the job dies without
+	# finishing its output at all. --json matters -- `hf` defaults to
+	# `--format auto`, which "picks 'agent' or 'human' based on the terminal",
+	# so the shape of this output differs between a laptop and a CI runner. The
+	# first version parsed the human form and silently never matched in CI.
+	#
+	# `.[0] // .` because inspect returns a single-element array, not an object;
+	# reading .status.stage straight off the top level yields empty, which looks
+	# exactly like "not terminal yet" and hangs. Tolerating both shapes costs
+	# nothing and removes one more way for this to fail quietly.
+	stage=$(hf jobs inspect "$JOB" --namespace "$NS" --json 2>/dev/null \
+		| jq -r '(.[0]? // .) | .status.stage // empty' 2>/dev/null || true)
 	case "$stage" in
-		*ERROR*|*COMPLETED*|*SUCCEEDED*|*CANCEL*|*STOPPED*|*DELETED*) break ;;
+		ERROR|COMPLETED|SUCCEEDED|CANCELED|CANCELLED|STOPPED|DELETED) break ;;
 	esac
+
+	elapsed=$(( $(date +%s) - started ))
+	if [ "$elapsed" -gt "$MAX_WAIT" ]; then
+		echo "FAILED: gave up after ${elapsed}s waiting for $JOB (stage='${stage:-unknown}')"
+		echo "  the job may still be running: hf jobs ps --namespace $NS"
+		exit 1
+	fi
 	sleep "$POLL"
 done
 
 echo
-echo "job reached: ${stage:-unknown}  (this says nothing about success -- see the header)"
+echo "job reached: ${stage:-terminal-by-log}  (this says nothing about success -- see the header)"
 
 # --- the actual verdict ---------------------------------------------------
 hf jobs logs "$NS/$JOB" > "$log" 2>/dev/null || true
