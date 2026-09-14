@@ -27,8 +27,11 @@ inherit cargo cargo-update-recipe-crates pkgconfig systemd useradd
 # microduck_daemon is a public repo, so this fetches anonymously. The recipe used
 # to note that it was private and needed `ssh -A coach`; that stopped being true,
 # and bitbake falls through to oe-core's https mirror rewrite regardless.
+FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
+
 SRC_URI = "git://git@github.com/pollen-robotics/microduck_daemon.git;protocol=ssh;branch=main;name=daemon \
            git://github.com/pollen-robotics/bmi088-rs;protocol=https;nobranch=1;name=bmi088;destsuffix=bmi088-rs \
+           file://60-robot-i2c.rules \
 "
 SRCREV_daemon = "6507d2e960417aaa4ecd38eccf59b2dcf586ecd2"
 SRCREV_bmi088 = "bd113f317b14923f50f9a12a06678fe162b7fe06"
@@ -142,9 +145,50 @@ CARGO_BUILD_FLAGS += "--workspace --exclude xtask --exclude test-support --exclu
 # group="bluetooth" rule, only `user="root"` and a permissive `context="default"`.
 # The group exists to satisfy systemd, not to carry a permission.
 USERADD_PACKAGES = "${PN}"
-GROUPADD_PARAM:${PN} = "-r robot; -r bluetooth; -r btd"
-USERADD_PARAM:${PN} = "-r -g btd -d / -s /sbin/nologin -c 'Robot BLE transport adapter' btd"
+GROUPADD_PARAM:${PN} = "-r robot; -r bluetooth; -r btd; -r mediad; -r tofd; -r padd; -r i2c"
+USERADD_PARAM:${PN} = "-r -g btd -d / -s /sbin/nologin -c 'Robot BLE transport adapter' btd; \
+                       -r -g mediad -d / -s /sbin/nologin -c 'Robot media and WebRTC gateway' mediad; \
+                       -r -g tofd -d / -s /sbin/nologin -c 'Robot ToF sensor daemon' tofd; \
+                       -r -g padd -d / -s /sbin/nologin -c 'Robot gamepad intent client' padd"
 
+# mediad, tofd and padd get their users and groups even though their units are
+# not enabled here, because systemd refuses to start a unit whose User= or
+# SupplementaryGroups= do not exist -- so creating them is what makes
+# `systemctl enable mediad` work on a robot that does have the hardware, with no
+# rebuild. The names and descriptions match upstream's own sysusers.d files.
+#
+# The supplementary groups each unit asks for:
+#   mediad   video render robot     video/render already exist (udev-conf-rockchip
+#                                   and the DRM rules put the VPU and render nodes
+#                                   in them)
+#   tofd     i2c robot              i2c does NOT exist on a stock image, hence the
+#                                   groupadd above and the udev rule below
+#   padd     input robot            input already exists and /dev/input/event* is
+#                                   already root:input
+
+# Four enabled, seven installed. mediad, tofd and padd ship as unit *files* but
+# are deliberately absent from SYSTEMD_SERVICE, which is what leaves them
+# disabled: oe-core's /usr/lib/systemd/system-preset/99-default.preset is
+# `disable *`, so a unit no preset mentions stays off. Verified on the board --
+# systemd-boot-check-no-failures.service is present and reports `disabled` for
+# exactly this reason.
+#
+# That is the difference between a board that can run them and a board that
+# does. On this bring-up board there is no camera, no ToF sensor and no gamepad,
+# and none of those three units carries a Condition= that would make it skip
+# itself -- enabling them would mean three permanently failing units and a
+# `systemctl --failed` that no longer means anything. On a robot that has the
+# hardware:
+#
+#     systemctl enable --now mediad tofd padd
+#
+# works with no rebuild, because the unit, the binary, the user and the groups
+# are all already there.
+#
+# robot-boot-check.service is the exception that stays out entirely: its
+# ExecStart is /usr/local/sbin/robot-boot-check, a path belonging to updaterd's
+# release-tree layout, which this packaging deliberately does not use. Installing
+# it would ship a unit that cannot work.
 SYSTEMD_SERVICE:${PN} = "robotd.service updaterd.service configd.service btd.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
@@ -179,11 +223,25 @@ do_install:append() {
 	install -m 0644 ${S}/updater/systemd/updaterd.service ${D}${systemd_system_unitdir}/
 	install -m 0644 ${S}/configd/systemd/configd.service ${D}${systemd_system_unitdir}/
 	install -m 0644 ${S}/btd/systemd/btd.service ${D}${systemd_system_unitdir}/
+	install -m 0644 ${S}/mediad/systemd/mediad.service ${D}${systemd_system_unitdir}/
+	install -m 0644 ${S}/tof/systemd/tofd.service ${D}${systemd_system_unitdir}/
+	install -m 0644 ${S}/padd/systemd/padd.service ${D}${systemd_system_unitdir}/
 	sed -i -e 's|/opt/robot/daemon/current/bin/|${bindir}/|g' \
 		${D}${systemd_system_unitdir}/robotd.service \
 		${D}${systemd_system_unitdir}/updaterd.service \
 		${D}${systemd_system_unitdir}/configd.service \
-		${D}${systemd_system_unitdir}/btd.service
+		${D}${systemd_system_unitdir}/btd.service \
+		${D}${systemd_system_unitdir}/mediad.service \
+		${D}${systemd_system_unitdir}/tofd.service \
+		${D}${systemd_system_unitdir}/padd.service
+
+	# /dev/i2c-* arrives 0600 root:root, so tofd's SupplementaryGroups=i2c buys it
+	# nothing without this -- the same shape of silent failure that left
+	# /dev/mpp_service unopenable by a non-root mediad until udev-conf-rockchip
+	# was installed. Matched on the kernel name, as meta-rockchip's own rule does.
+	install -d ${D}${nonarch_base_libdir}/udev/rules.d
+	install -m 0644 ${UNPACKDIR}/60-robot-i2c.rules \
+		${D}${nonarch_base_libdir}/udev/rules.d/
 
 	# Per-robot config. Never overwritten by an update upstream, so mark as conffiles.
 	install -d ${D}${sysconfdir}/robot
@@ -207,11 +265,15 @@ CONFFILES:${PN} = "${sysconfdir}/robot/robotd.toml ${sysconfdir}/robot/updater.t
 
 # padd split out so a gamepad stack can be dropped without rebuilding, and so the
 # libudev runtime dependency is visible rather than buried in the main package.
+# Its unit travels with it: a padd.service in the main package would reference a
+# binary that is not necessarily installed. PACKAGES =+ puts this package ahead
+# of ${PN}, so it claims the unit before ${PN}'s ${systemd_system_unitdir} does.
 PACKAGES =+ "${PN}-padd"
-FILES:${PN}-padd = "${bindir}/padd"
+FILES:${PN}-padd = "${bindir}/padd ${systemd_system_unitdir}/padd.service"
 
 FILES:${PN} += " \
     ${systemd_system_unitdir} \
+    ${nonarch_base_libdir}/udev/rules.d/60-robot-i2c.rules \
     ${sysconfdir}/robot \
     ${sysconfdir}/systemd/journald.conf.d/10-robot.conf \
     ${localstatedir}/lib/robot \

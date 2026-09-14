@@ -1,0 +1,11 @@
+# tofd opens the ToF sensor over i2c, and /dev/i2c-* arrives 0600 root:root on a
+# stock image -- SupplementaryGroups=i2c in its unit grants nothing until the
+# nodes carry that group. Same failure shape as /dev/mpp_service before
+# udev-conf-rockchip: the daemon starts, finds its device, and cannot open it.
+#
+# Matched on the kernel name rather than the subsystem, the way meta-rockchip's
+# own 99-rockchip-permissions.rules does: these are vendor i2c controllers and a
+# subsystem match that is wrong about them fails silently.
+#
+# 0660 root:i2c, not world-writable: anything that needs the bus joins the group.
+KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0660"
