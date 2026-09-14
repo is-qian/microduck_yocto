@@ -74,8 +74,17 @@ jobs:
         run: |
           set -eu
           out=$(scripts/build-hfjob.sh "${{ inputs.kas_command || 'build' }}" 2>&1 | tee /dev/stderr)
-          id=$(printf '%s\n' "$out" | grep -oE '^id=[A-Za-z0-9]+' | head -1 | cut -d= -f2)
+          # Parse the id out of the job URL, not out of `id=...`. The CLI prints
+          # two different shapes depending on where it runs -- `id=<hex> name=...`
+          # in one place and an indented, ANSI-coloured `  id: <hex>` in another --
+          # and the first run of this workflow died on exactly that. The URL line
+          # carries the id in both, so match that and strip colour first.
+          id=$(printf '%s\n' "$out" \
+                | sed -e 's/\x1b\[[0-9;]*m//g' \
+                | grep -oE 'jobs/[^/[:space:]]+/[A-Za-z0-9]{16,}' \
+                | head -1 | sed 's|.*/||')
           test -n "$id" || { echo "could not parse a job id from build-hfjob.sh"; exit 1; }
+          echo "parsed job id: $id"
           echo "job_id=$id" >> "$GITHUB_OUTPUT"
           echo "Launched https://huggingface.co/jobs/pollen-robotics/$id" >> "$GITHUB_STEP_SUMMARY"
 
@@ -105,9 +114,15 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "Artifacts: \`$prefix\`" >> "$GITHUB_STEP_SUMMARY"
 
-      # A cancelled workflow leaves the job running and billing by the minute.
-      - name: Cancel the HF job if this run was cancelled
-        if: cancelled() && steps.launch.outputs.job_id != ''
+      # A run that ends without reaching a terminal job state leaves the job
+      # running and billing by the minute. Failure counts, not just cancellation:
+      # the first run of this workflow died parsing the job id *after* launching
+      # a job, which orphaned it. Cancelling an already-terminal job is a no-op,
+      # so this is safe to fire on both. Targeted at the one id this run started
+      # -- the org's job namespace is shared, and a broader sweep would kill
+      # someone else's training run.
+      - name: Cancel the HF job if this run did not finish cleanly
+        if: (failure() || cancelled()) && steps.launch.outputs.job_id != ''
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: hf jobs cancel "${{ steps.launch.outputs.job_id }}" || true
