@@ -380,6 +380,22 @@ pkg_postinst:${PN}-devkey() {
 # the rootfs as a shlib side effect while webrtcbin had no ICE.
 RDEPENDS:${PN} += "systemd ca-certificates networkmanager bluez5"
 
+# webrtcsink, and it is a hard dependency rather than a recommendation: mediad
+# calls ElementFactory::make("webrtcsink") during pipeline construction and exits
+# 1 when it is absent, so a rootfs without this has a unit that crash-loops from
+# first boot. Observed on 2026-09-15 -- restart counter 37 before anyone looked.
+#
+# gstreamer1.0-plugins-rs also carries the patch that teaches webrtcsink about
+# mpph264enc, and gstreamer1.0-rockchip carries the one that lets mpph264enc
+# admit constrained-baseline. Neither is optional for video: without the second,
+# webrtcsink's discovery finds no codec at all and every session dies on
+# not-negotiated, because mediad restricts video-caps to H.264.
+#
+# gstreamer1.0-rockchip is named here for the same reason networkmanager is --
+# it arrives in these images anyway, via the machine's own gstreamer stack, and
+# that is exactly how a dependency stays invisible until a leaner image drops it.
+RDEPENDS:${PN} += "gstreamer1.0-plugins-rs gstreamer1.0-rockchip"
+
 # duck-control, duck-detect and pet-detect all take ort 2.0.0-rc.11 with the
 # "load-dynamic" feature, so libonnxruntime is dlopened at first use rather than
 # linked. The workspace pins a floor of 1.23 (an earlier board shipped 1.20.1

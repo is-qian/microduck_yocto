@@ -1,0 +1,42 @@
+From: Fabien Danieau <fabien.danieau@pollen-robotics.com>
+Subject: [PATCH] webrtcsink: no converter in front of mpph264enc
+
+Taken verbatim from patches/gst-plugins-rs/ in pollen-robotics/microduck-gst-plugins,
+which is where mediad's own documentation points (mediad/src/pipeline.rs:57).
+
+Carried here rather than relied on from that repo's binary release, because the v3
+release ships a libgstrswebrtc.so that does NOT contain this patch even though its
+MANIFEST lists it as applied: the binary has `vapostproc` and `videoconvert` -- the
+arms immediately above and below this one in the same function -- but no occurrence
+of `mpph264enc` at all. Building it here is what makes the claim checkable.
+
+Upstream-Status: Pending
+
+--- a/net/webrtc/src/webrtcsink/imp.rs
++++ b/net/webrtc/src/webrtcsink/imp.rs
+@@ -685,6 +685,25 @@
+
+                 ret.add_many([&vapostproc])?;
+                 (vapostproc.clone(), vapostproc)
++            } else if codec
++                .encoder_factory()
++                .is_some_and(|factory| factory.name() == "mpph264enc")
++            {
++                // Rockchip's MPP encoder accepts NV12, I420, YUY2 and a dozen more formats on its
++                // sink pad, and performs any conversion it needs on the SoC's 2D accelerator
++                // (RGA) rather than on the CPU. So unlike the NVIDIA and VA cases above, what it
++                // wants is not a *better* converter but no converter at all: a software
++                // `videoconvert ! videoscale` in front of it is a full CPU pass over every frame,
++                // which on the four Cortex-A55s of an RK3566 is precisely the cost the hardware
++                // encoder exists to avoid.
++                //
++                // The trade-off, stated plainly: without `videoscale` this bin cannot resize, so
++                // the negotiated resolution has to be one the source already produces. That is
++                // true of the robot this is used on, which pins its caps upstream of the tee.
++                let identity = make_element("identity", None)?;
++
++                ret.add_many([&identity])?;
++                (identity.clone(), identity)
+             } else {
+                 let convert = make_element("videoconvert", None)?;
+                 let scale = make_element("videoscale", None)?;
