@@ -231,11 +231,22 @@ do_install:append() {
 	#
 	# Atomicity is a rename(2) of the `current` symlink on one filesystem
 	# (updater-design.md §7.1), so /opt/robot/daemon must not straddle a mount.
+	#
+	# Everything cargo installed moves, rather than a hand-kept list of names.
+	# The list was wrong the moment it was written -- it omitted padd, which
+	# would have stayed in ${bindir}, been swept into the main package by the
+	# default ${bindir}/* glob, and left ${PN}-padd shipping nothing but a
+	# padd.service whose ExecStart points at a path no package provides. A
+	# failed unit on every boot of both images, and the gamepad split defeated.
+	#
+	# A glob is also what updaterd assumes: the orphan check refuses a release
+	# that lacks a binary an installed unit execs, so a workspace binary missing
+	# from the release tree is not a packaging nit, it is an unbootable update.
+	# Adding a member upstream must not require editing a list here to stay true.
 	install -d ${D}/opt/robot/daemon/releases/${PV}/bin
-	for b in robotd updaterd robotctl configd btd mediad tofd sounds pet-detect duck-bench; do
-		if [ -e ${D}${bindir}/$b ]; then
-			mv ${D}${bindir}/$b ${D}/opt/robot/daemon/releases/${PV}/bin/
-		fi
+	for b in ${D}${bindir}/*; do
+		[ -e "$b" ] || continue
+		mv "$b" ${D}/opt/robot/daemon/releases/${PV}/bin/
 	done
 	ln -snf releases/${PV} ${D}/opt/robot/daemon/current
 	ln -snf releases/${PV} ${D}/opt/robot/daemon/golden
