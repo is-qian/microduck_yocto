@@ -10,9 +10,9 @@ LIC_FILES_CHKSUM = "file://LICENSE-MPL-2.0;md5=815ca599c9df247a0c7f619bab123dad"
 
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
-# Two repositories, and the second one is the whole difficulty of this recipe.
+# Six repositories, and everything after the first is the difficulty of this recipe.
 #
-# gst-plugins-rs takes its GStreamer bindings from git rather than crates.io:
+# gst-plugins-rs takes its bindings from git rather than crates.io:
 #
 #   gst = { package = "gstreamer",
 #           git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs",
@@ -22,23 +22,28 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 #
 #   crates_candidates = list(filter(lambda c: 'crates.io' in c.get('source', ''), ...))
 #
-# -- so none of those ~20 crates reaches the generated crates.inc, and cargo under
-# --frozen cannot resolve them. Every 1.28.x tag (1.28.0 .. 1.28.6) does this, so no
-# version sidesteps it. It is why no upstream Yocto recipe for gst-plugins-rs exists.
+# -- so none of those crates reaches the generated crates.inc and cargo cannot
+# resolve them under --frozen. Every 1.28.x tag (1.28.0 .. 1.28.6) does this, which
+# is why no upstream Yocto recipe for gst-plugins-rs exists.
 #
-# The fix is to fetch gstreamer-rs ourselves and point cargo at the checkout with a
-# [patch] section; see microduck_gstreamer_rs_patch_paths below for why the stock
-# mechanism cannot do it.
+# There are five such repositories, not one. The first attempt fetched only
+# gstreamer-rs and still failed, on `glib` from gtk-rs-core, because **cargo
+# resolves the entire workspace even when --package names two members**: the error
+# came from gst-plugin-analytics, which we do not build. Resolution needs every
+# member's sources present; compilation still only touches what we ask for, so
+# gtk4-rs and the rest are fetched and never built.
 #
-# SRCREV_bindings is NOT "whatever branch 0.25 is today" -- it is the exact commit
-# gst-plugins-rs's own Cargo.lock pins:
+# Each SRCREV below is the commit gst-plugins-rs's own Cargo.lock pins, not the tip
+# of the branch it names. A tip would build a combination upstream never resolved
+# and would differ between two builds of the same SRCREV_plugins. Extract them with:
 #
-#   source = "git+https://gitlab.freedesktop.org/gstreamer/gstreamer-rs?branch=0.25#f49606f2..."
-#
-# Taking the branch tip instead would build a combination upstream never resolved,
-# and would change under us between two builds of the same SRCREV_plugins.
+#   grep -oE 'git\+[^"]+#[0-9a-f]{40}' Cargo.lock | sort -u
 SRC_URI = "git://gitlab.freedesktop.org/gstreamer/gst-plugins-rs.git;protocol=https;nobranch=1;name=plugins \
            git://gitlab.freedesktop.org/gstreamer/gstreamer-rs.git;protocol=https;nobranch=1;name=bindings;destsuffix=gstreamer-rs \
+           git://github.com/gtk-rs/gtk-rs-core.git;protocol=https;nobranch=1;name=gtkcore;destsuffix=gtk-rs-core \
+           git://github.com/gtk-rs/gtk4-rs.git;protocol=https;nobranch=1;name=gtk4;destsuffix=gtk4-rs \
+           git://github.com/rust-av/flavors.git;protocol=https;nobranch=1;name=flavors;destsuffix=flavors \
+           git://github.com/rust-av/ffv1.git;protocol=https;nobranch=1;name=ffv1;destsuffix=ffv1 \
            file://0001-webrtcsink-no-converter-for-mpph264enc.patch \
 "
 
@@ -47,7 +52,11 @@ SRC_URI = "git://gitlab.freedesktop.org/gstreamer/gst-plugins-rs.git;protocol=ht
 # 1.28.x and assuming forward compatibility.
 SRCREV_plugins = "08eeb63ff2f74405447089f20c48868478a6076d"
 SRCREV_bindings = "f49606f22450e992556221e5c9dfeb628b8b54b0"
-SRCREV_FORMAT = "plugins_bindings"
+SRCREV_gtkcore = "48b79229f29fd9f87509e5ae3b34e8e584d6b92b"
+SRCREV_gtk4 = "777c1468860b49100051034f798191a5c8a31c12"
+SRCREV_flavors = "833508af656d298c269f2397c8541a084264d992"
+SRCREV_ffv1 = "bd9eabfc14c9ad53c37b32279e276619f4390ab8"
+SRCREV_FORMAT = "plugins_bindings_gtkcore_gtk4_flavors_ffv1"
 
 # No S assignment. oe-core's bitbake.conf sets S = "${UNPACKDIR}/${BP}" and
 # BB_GIT_DEFAULT_DESTSUFFIX = "${BP}", so the gst-plugins-rs checkout -- the one
@@ -55,8 +64,8 @@ SRCREV_FORMAT = "plugins_bindings"
 # S = "${UNPACKDIR}/git" by hand is now a hard do_unpack error rather than a
 # harmless leftover, which is how this recipe failed its first build.
 #
-# gstreamer-rs does not collide with it: its destsuffix puts it beside S, at
-# ${UNPACKDIR}/gstreamer-rs, which is where the postfunc below looks for it.
+# Every other checkout carries a destsuffix and so lands beside S, named after the
+# repository, which is the convention the postfunc below relies on.
 
 require ${BPN}-crates.inc
 
@@ -74,44 +83,44 @@ DEPENDS += "gstreamer1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-bad"
 # payloading path uses it.
 CARGO_BUILD_FLAGS += "--package gst-plugin-webrtc --package gst-plugin-rtp"
 
-# Point cargo at the gstreamer-rs checkout, one [patch] entry per crate.
+# Point cargo at the fetched checkouts, one [patch] entry per crate.
 #
 # cargo_common_do_patch_paths already does this for git dependencies, but it can only
 # express *one crate per repository*: it reads `name` and `destsuffix` off each SRC_URI
-# entry and emits `name = { path = <UNPACKDIR>/<destsuffix> }`. gstreamer-rs is one
-# repository holding some 39 crates -- gstreamer, gstreamer-app, gstreamer-video,
-# gstreamer-webrtc and a -sys crate beside most of them -- each in its own
-# subdirectory. One entry cannot name them, and adding the repository 39 times would
-# clone it 39 times and still point every entry at the repository root.
+# entry and emits `name = { path = <UNPACKDIR>/<destsuffix> }`. These repositories hold
+# 70 crates between them -- gstreamer-rs alone has 39, each in its own subdirectory and
+# some nested two deep (gstreamer/sys, gstreamer-gl/egl/sys). One entry per repository
+# cannot name them, and adding a repository once per crate would clone it that many
+# times and still point every entry at its root.
 #
-# So the class writes one useless entry (`bindings`, from the name above) and this
-# function replaces it. The name is not wasted: giving that SRC_URI entry both `name`
-# and `destsuffix` is exactly what makes the class do the other half of its job, which
-# we do want -- stripping the `source = "git..."` lines out of Cargo.lock so --frozen
-# still passes, after keeping a .orig copy we read below.
+# So the class writes six useless entries and this function replaces the lot. Their
+# names are not wasted: giving those SRC_URI entries both `name` and `destsuffix` is
+# what makes the class do the other half of its job, which we do want -- stripping the
+# `source = "git..."` lines out of Cargo.lock so --frozen still passes, after keeping
+# the .orig copy this function reads.
 #
-# The crate list is derived, never hand-maintained: the wanted set comes from the
-# lockfile, the paths come from walking the checkout. A layout change upstream is then
-# a build failure naming the missing crates, rather than a patch that silently does
-# not apply -- which is the failure this area has already produced once, in the v3
-# binary release whose MANIFEST claims a patch its .so does not contain.
-python microduck_gstreamer_rs_patch_paths() {
+# Nothing here is hand-maintained. The repositories, their crate names and the [patch]
+# keys all come from the lockfile; the paths come from walking the checkouts. A bumped
+# SRCREV that moves or renames a crate is then a build failure that names it, rather
+# than a patch that silently does not apply -- which is the failure this area has
+# already produced once, in the v3 binary release whose MANIFEST claims a patch its
+# .so does not contain.
+python microduck_cargo_git_patch_paths() {
     import os
     import re
 
-    repo = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs"
-    root = os.path.join(d.getVar("UNPACKDIR"), "gstreamer-rs")
+    unpackdir = d.getVar("UNPACKDIR")
     config = os.path.join(d.getVar("CARGO_HOME"), "config.toml")
-
-    if not os.path.isdir(root):
-        bb.fatal("gstreamer-rs checkout is not at %s -- destsuffix changed?" % root)
 
     # Read the lockfile as it was *before* cargo_common stripped the git sources.
     lock = d.getVar("CARGO_LOCK_PATH")
     orig = lock + ".orig"
     source = orig if os.path.exists(orig) else lock
 
-    wanted = set()
+    # crate name -> repository URL, for every package resolved from git.
+    # The URL is the [patch] key and has to match what the dependency declares, so
+    # take it verbatim from the lockfile minus the ?branch/?rev query and #commit.
+    wanted = {}
     name = None
     with open(source) as f:
         for line in f:
@@ -119,53 +128,70 @@ python microduck_gstreamer_rs_patch_paths() {
             match = re.match(r'name = "([^"]+)"', line)
             if match:
                 name = match.group(1)
-            elif name and line.startswith('source = "git+') and "gstreamer-rs" in line:
-                wanted.add(name)
+                continue
+            match = re.match(r'source = "git\+([^?#"]+)', line)
+            if match and name:
+                wanted[name] = match.group(1)
 
     if not wanted:
-        bb.fatal("no gstreamer-rs git packages in %s. If upstream moved these crates "
-                 "to crates.io this whole function is obsolete and crates.inc covers "
-                 "them; if the lockfile moved, this recipe is reading the wrong file."
+        bb.fatal("no git-sourced packages in %s. If upstream moved these crates to "
+                 "crates.io then crates.inc already covers them and this function is "
+                 "obsolete; if the lockfile moved, this is reading the wrong file."
                  % source)
+
+    # Each repository is unpacked at ${UNPACKDIR}/<basename minus .git>, which is the
+    # destsuffix convention used in SRC_URI above.
+    def checkout(url):
+        return os.path.join(unpackdir, os.path.basename(url)[:-4]
+                            if url.endswith(".git") else os.path.basename(url))
+
+    repos = sorted(set(wanted.values()))
+    absent = [r for r in repos if not os.path.isdir(checkout(r))]
+    if absent:
+        bb.fatal("the lockfile resolves crates from %d git repositories and these are "
+                 "not in SRC_URI: %s. Cargo resolves the whole workspace even though "
+                 "CARGO_BUILD_FLAGS names two members, so every one of them has to be "
+                 "fetched." % (len(repos), " ".join(absent)))
 
     # Where each crate actually lives. Walk rather than assume: the -sys crates sit
     # under their parent (gstreamer/sys), and the GL ones nest further still.
     found = {}
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [x for x in dirnames if x not in (".git", "target")]
-        if "Cargo.toml" not in filenames:
-            continue
-        package, section = None, None
-        with open(os.path.join(dirpath, "Cargo.toml")) as f:
-            for line in f:
-                stripped = line.strip()
-                if stripped.startswith("["):
-                    section = stripped
-                    continue
-                if section == "[package]":
-                    match = re.match(r'name\s*=\s*"([^"]+)"', stripped)
-                    if match:
-                        package = match.group(1)
-                        break
-        if package:
-            found[package] = dirpath
+    for repo in repos:
+        root = checkout(repo)
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [x for x in dirnames if x not in (".git", "target")]
+            if "Cargo.toml" not in filenames:
+                continue
+            package, section = None, None
+            with open(os.path.join(dirpath, "Cargo.toml")) as f:
+                for line in f:
+                    stripped = line.strip()
+                    if stripped.startswith("["):
+                        section = stripped
+                        continue
+                    if section == "[package]":
+                        match = re.match(r'name\s*=\s*"([^"]+)"', stripped)
+                        if match:
+                            package = match.group(1)
+                            break
+            if package:
+                found[(repo, package)] = dirpath
 
-    missing = sorted(wanted - set(found))
+    missing = sorted(c for c, r in wanted.items() if (r, c) not in found)
     if missing:
-        bb.fatal("gstreamer-rs %s provides no directory for: %s. The two SRCREVs have "
-                 "to move together -- SRCREV_bindings must stay the commit that "
-                 "SRCREV_plugins' Cargo.lock names."
-                 % (d.getVar("SRCREV_bindings"), " ".join(missing)))
+        bb.fatal("no directory for: %s. A SRCREV moved without its crates -- each one "
+                 "has to stay the commit SRCREV_plugins' Cargo.lock names."
+                 % " ".join(missing))
 
-    # Drop any gstreamer-rs [patch] block already in the file (the class's useless
-    # one), keep everything else, then append the real thing. "gstreamer-rs" is not a
-    # substring of "gst-plugins-rs", so this cannot eat an unrelated section.
+    # Drop every [patch] block already in the file -- they are all the class's, since
+    # it only writes them for SRC_URI git entries and all of ours are handled here --
+    # then write the real ones.
     keep, skipping = [], False
     if os.path.exists(config):
         with open(config) as f:
             for line in f:
                 if line.startswith("[patch."):
-                    skipping = "gstreamer-rs" in line
+                    skipping = True
                 elif line.startswith("["):
                     skipping = False
                 if not skipping:
@@ -173,13 +199,15 @@ python microduck_gstreamer_rs_patch_paths() {
 
     with open(config, "w") as f:
         f.writelines(keep)
-        f.write('\n[patch."%s"]\n' % repo)
-        for package in sorted(wanted):
-            f.write('%s = { path = "%s" }\n' % (package, found[package]))
+        for repo in repos:
+            f.write('\n[patch."%s"]\n' % repo)
+            for crate in sorted(c for c, r in wanted.items() if r == repo):
+                f.write('%s = { path = "%s" }\n' % (crate, found[(repo, crate)]))
 
-    bb.note("gstreamer-rs: %d crates patched to %s" % (len(wanted), root))
+    bb.note("cargo git deps: %d crates patched across %d repositories"
+            % (len(wanted), len(repos)))
 }
-do_configure[postfuncs] += "microduck_gstreamer_rs_patch_paths"
+do_configure[postfuncs] += "microduck_cargo_git_patch_paths"
 
 # GStreamer plugins are unversioned .so files inside a plugin directory, so they
 # belong in the runtime package and dev-so has to be skipped.
