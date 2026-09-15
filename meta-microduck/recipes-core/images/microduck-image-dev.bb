@@ -20,6 +20,7 @@ IMAGE_FEATURES += "allow-empty-password allow-root-login empty-root-password"
 
 IMAGE_INSTALL:append = " \
     microduck-daemon-padd \
+    microduck-daemon-devkey \
     aic8800-bt-test \
     coreutils \
     util-linux \
@@ -30,6 +31,25 @@ IMAGE_INSTALL:append = " \
     tcpdump \
     evtest \
 "
+
+# microduck-daemon-devkey is what makes this a *dev board* in updaterd's sense:
+# it installs team.dev.pub and flips allow_dev_keys, so `robotctl update apply
+# --ref main` and `provision-board.sh --ref BRANCH` work. Both halves ship
+# together because either alone leaves a board that still refuses branch builds.
+#
+# This is the reason I argued against baking the key in earlier and was wrong:
+# the objection was that a key without the flag saves no step, which is true --
+# and is an argument for shipping both, not neither.
+#
+# It belongs here and nowhere else. A dev key on a customer robot would let
+# anything a teammate builds install itself; microduck-image gets
+# allow_dev_keys = false and the three release keys only, and cannot take a
+# branch build even if it somehow resolved the tag, because the signature check
+# fails rather than a policy check. This image is already must-not-ship for the
+# password-less root login, so it changes no classification.
+#
+# Note it does NOT make this board auto-track main: updaterd's periodic check
+# still skips prereleases, so branch installs stay an explicit act.
 
 # aic8800-bt-test is AICSemi's own bt_test, and it is here rather than in the
 # shipping image because it is a diagnostic for an unsolved problem: the board

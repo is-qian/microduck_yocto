@@ -24,16 +24,33 @@ LIC_FILES_CHKSUM = "file://LICENSE;md5=86d3f3a95c324c9479bd8986968f4327"
 
 inherit cargo cargo-update-recipe-crates pkgconfig systemd useradd
 
-# microduck_daemon is a public repo, so this fetches anonymously. The recipe used
-# to note that it was private and needed `ssh -A coach`; that stopped being true,
-# and bitbake falls through to oe-core's https mirror rewrite regardless.
+# microduck_daemon is a public repo, so this fetches anonymously, and so do the
+# robots: updaterd pulls release assets over plain HTTPS with no token. That is
+# load-bearing -- updater-design.md §11 records that a *private* repo's
+# releases/download/<tag>/<asset> URL returns 404 with or without a token, and
+# only the api.github.com/.../releases/assets/<id> form works authenticated.
+#
+# SRCREV_daemon tracks a RELEASE, not main. The stable release daemon-v0.12.0
+# carries "source_revision": "213a5ce9..." in its manifest, so pinning that exact
+# commit makes the image's 0.12.0 the same code as the published 0.12.0.
+#
+# That matters more than it looks. Before this, the recipe pinned 6507d2e -- 21
+# commits *ahead* of the release -- and both called themselves 0.12.0. updaterd
+# compares versions, so it would have seen 0.12.0 == 0.12.0, concluded there was
+# nothing to do, and never converged, while the two binaries differed. A version
+# that does not identify the code makes "is this robot up to date?" unanswerable.
+#
+# Chasing main instead would not help and would cost reproducibility: main was
+# already 31 commits past our pin five days after setting it, and kas/microduck.yml
+# rejects AUTOREV by name for exactly that reason. The image seeds a release; the
+# robot converges to the newest release by itself.
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
 SRC_URI = "git://git@github.com/pollen-robotics/microduck_daemon.git;protocol=ssh;branch=main;name=daemon \
            git://github.com/pollen-robotics/bmi088-rs;protocol=https;nobranch=1;name=bmi088;destsuffix=bmi088-rs \
            file://60-robot-i2c.rules \
 "
-SRCREV_daemon = "6507d2e960417aaa4ecd38eccf59b2dcf586ecd2"
+SRCREV_daemon = "213a5ce90ec5f2605b6e6977b75672d9d2eea8c5"
 SRCREV_bmi088 = "bd113f317b14923f50f9a12a06678fe162b7fe06"
 SRCREV_FORMAT = "daemon_bmi088"
 
@@ -198,9 +215,38 @@ SYSTEMD_SERVICE:${PN}-padd = "padd.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 do_install:append() {
-	# Units, with ExecStart repointed from the self-updating release tree at
-	# /opt/robot/daemon/current/bin to ${bindir}. This is the "option 2" packaging
-	# choice: distro-managed binaries rather than updaterd's release-tree layout.
+	# Install as a release tree, the layout updaterd owns:
+	#
+	#   /opt/robot/daemon/releases/<ver>/bin/...
+	#   current → releases/<ver>     units point here
+	#   golden  → releases/<ver>     never pruned; the rescue net reads it
+	#
+	# The units are installed verbatim, ExecStart untouched. That is the whole
+	# point of this change. They already say /opt/robot/daemon/current/bin/, and
+	# the previous packaging rewrote them to ${bindir} -- "option 2", distro-managed
+	# binaries -- which quietly disabled the update system underneath: updaterd
+	# would verify a signed release, extract it, swap `current`, report success,
+	# and systemd would go on running the old binary from /usr/bin. An update that
+	# installs correctly and changes nothing is the worst shape of failure.
+	#
+	# Atomicity is a rename(2) of the `current` symlink on one filesystem
+	# (updater-design.md §7.1), so /opt/robot/daemon must not straddle a mount.
+	install -d ${D}/opt/robot/daemon/releases/${PV}/bin
+	for b in robotd updaterd robotctl configd btd mediad tofd sounds pet-detect duck-bench; do
+		if [ -e ${D}${bindir}/$b ]; then
+			mv ${D}${bindir}/$b ${D}/opt/robot/daemon/releases/${PV}/bin/
+		fi
+	done
+	ln -snf releases/${PV} ${D}/opt/robot/daemon/current
+	ln -snf releases/${PV} ${D}/opt/robot/daemon/golden
+
+	# robotctl is what a person types, so keep it on PATH. A symlink through
+	# `current` rather than a copy, so it follows the active release instead of
+	# pinning the seed forever.
+	install -d ${D}${bindir}
+	ln -snf /opt/robot/daemon/current/bin/robotctl ${D}${bindir}/robotctl
+
+	# Units, verbatim: their ExecStart already points into current/.
 	install -d ${D}${systemd_system_unitdir}
 	install -m 0644 ${S}/robotd/systemd/robotd.service ${D}${systemd_system_unitdir}/
 	install -m 0644 ${S}/updater/systemd/updaterd.service ${D}${systemd_system_unitdir}/
@@ -209,14 +255,6 @@ do_install:append() {
 	install -m 0644 ${S}/mediad/systemd/mediad.service ${D}${systemd_system_unitdir}/
 	install -m 0644 ${S}/tof/systemd/tofd.service ${D}${systemd_system_unitdir}/
 	install -m 0644 ${S}/padd/systemd/padd.service ${D}${systemd_system_unitdir}/
-	sed -i -e 's|/opt/robot/daemon/current/bin/|${bindir}/|g' \
-		${D}${systemd_system_unitdir}/robotd.service \
-		${D}${systemd_system_unitdir}/updaterd.service \
-		${D}${systemd_system_unitdir}/configd.service \
-		${D}${systemd_system_unitdir}/btd.service \
-		${D}${systemd_system_unitdir}/mediad.service \
-		${D}${systemd_system_unitdir}/tofd.service \
-		${D}${systemd_system_unitdir}/padd.service
 
 	# /dev/i2c-* arrives 0600 root:root, so tofd's SupplementaryGroups=i2c buys it
 	# nothing without this -- the same shape of silent failure that left
@@ -231,10 +269,25 @@ do_install:append() {
 	install -m 0644 ${S}/deploy/robotd.toml ${D}${sysconfdir}/robot/
 	install -m 0644 ${S}/deploy/updater.toml ${D}${sysconfdir}/robot/
 
+	# The shipped updater.toml names a placeholder repo, so a stock image polls
+	# https://api.github.com/repos/ORG/duck-daemon/releases and logs a 404 every
+	# check_interval (6h) forever. Point it at the real one. Upstream leaves it a
+	# placeholder deliberately -- it is a per-deployment value, and provisioning
+	# fills it in -- but an image *is* a deployment, so it belongs here.
+	sed -i -e 's|^repo\( *\)= *"ORG/duck-daemon"|repo\1= "pollen-robotics/microduck_daemon"|' \
+		${D}${sysconfdir}/robot/updater.toml
+	grep -q 'repo.*pollen-robotics/microduck_daemon' ${D}${sysconfdir}/robot/updater.toml \
+		|| bbfatal "updater.toml repo rewrite did not apply -- upstream format changed?"
+
 	# minisign trust anchor. All three keys ship from the first image on purpose so
 	# key rotation never needs a reflash.
 	install -d ${D}${sysconfdir}/robot/trusted_keys
 	install -m 0644 ${S}/deploy/trusted_keys/*.pub ${D}${sysconfdir}/robot/trusted_keys/
+
+	# The dev key, staged but packaged separately (see ${PN}-devkey). It lives in
+	# deploy/dev-key/, not deploy/trusted_keys/, so the glob above cannot pick it
+	# up by accident -- which is upstream's design and worth preserving.
+	install -m 0644 ${S}/deploy/dev-key/team.dev.pub ${D}${sysconfdir}/robot/trusted_keys/
 
 	# Storage=persistent, SystemMaxUse=200M, ForwardToSyslog=no.
 	install -d ${D}${sysconfdir}/systemd/journald.conf.d
@@ -250,17 +303,60 @@ CONFFILES:${PN} = "${sysconfdir}/robot/robotd.toml ${sysconfdir}/robot/updater.t
 # libudev runtime dependency is visible rather than buried in the main package.
 # Its unit travels with it: a padd.service in the main package would reference a
 # binary that is not necessarily installed. PACKAGES =+ puts this package ahead
-# of ${PN}, so it claims the unit before ${PN}'s ${systemd_system_unitdir} does.
+# of ${PN}, so it claims both before ${PN}'s broader globs do.
+#
+# Note the split now only governs the *seed*. updaterd replaces the whole release
+# tree on update, so a later release reinstates padd whether or not this package
+# was installed -- the orphan check (updater-design.md §7.3) keeps that honest by
+# refusing a release that lacks a binary an installed unit execs.
 PACKAGES =+ "${PN}-padd"
-FILES:${PN}-padd = "${bindir}/padd ${systemd_system_unitdir}/padd.service"
+FILES:${PN}-padd = "/opt/robot/daemon/releases/${PV}/bin/padd ${systemd_system_unitdir}/padd.service"
 
 FILES:${PN} += " \
+    /opt/robot/daemon \
+    ${bindir}/robotctl \
     ${systemd_system_unitdir} \
     ${nonarch_base_libdir}/udev/rules.d/60-robot-i2c.rules \
     ${sysconfdir}/robot \
     ${sysconfdir}/systemd/journald.conf.d/10-robot.conf \
     ${localstatedir}/lib/robot \
 "
+
+# The dev-board trust anchor, as its own package so it can only reach an image
+# that asks for it by name. microduck-image-dev installs it; microduck-image
+# cannot get it by accident.
+#
+# Both halves in one package, deliberately. install-dev.md is emphatic that the
+# key and the flag are useless apart -- "either alone leaves a board that still
+# refuses branch builds" -- and a board that looks provisioned but silently
+# refuses `--ref` is a bad afternoon. Packaging them together makes half-applied
+# impossible.
+#
+# What this buys: `robotctl update apply --ref main` and
+# `provision-board.sh --ref BRANCH`. It does NOT make a dev board auto-track a
+# branch. updaterd's newest_version skips anything GitHub flags as a prerelease
+# and anything carrying a semver prerelease component, so the 6-hourly check
+# still resolves stable on a dev board too; branch builds are always an explicit
+# act. That filter is what keeps a customer robot off candidate builds, and it is
+# not configurable away -- a board pointed at another channel by editing
+# tag_prefix still refused, because "the prefix said where to look, and the
+# prerelease filter refused to look".
+#
+# The `.dev.` infix in the filename is load-bearing: updaterd classifies a
+# trusted key as a dev key by name, so team.dev.pub landing under any other name
+# would be trusted as a *release* key.
+PACKAGES =+ "${PN}-devkey"
+FILES:${PN}-devkey = "${sysconfdir}/robot/trusted_keys/team.dev.pub"
+RDEPENDS:${PN}-devkey += "${PN}"
+
+pkg_postinst:${PN}-devkey() {
+	cfg=$D${sysconfdir}/robot/updater.toml
+	sed -i -e 's/^allow_dev_keys\( *\)= *false/allow_dev_keys\1= true/' "$cfg"
+	if ! grep -q '^allow_dev_keys *= *true' "$cfg"; then
+		echo "ERROR: could not enable allow_dev_keys in $cfg" >&2
+		exit 1
+	fi
+}
 
 # updaterd shells out to systemctl for its on_apply restart action, and every
 # HTTPS fetch needs the system trust store.
