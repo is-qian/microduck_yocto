@@ -49,7 +49,14 @@ SRCREV_plugins = "08eeb63ff2f74405447089f20c48868478a6076d"
 SRCREV_bindings = "f49606f22450e992556221e5c9dfeb628b8b54b0"
 SRCREV_FORMAT = "plugins_bindings"
 
-S = "${UNPACKDIR}/git"
+# No S assignment. oe-core's bitbake.conf sets S = "${UNPACKDIR}/${BP}" and
+# BB_GIT_DEFAULT_DESTSUFFIX = "${BP}", so the gst-plugins-rs checkout -- the one
+# without an explicit destsuffix -- already lands exactly there. Setting
+# S = "${UNPACKDIR}/git" by hand is now a hard do_unpack error rather than a
+# harmless leftover, which is how this recipe failed its first build.
+#
+# gstreamer-rs does not collide with it: its destsuffix puts it beside S, at
+# ${UNPACKDIR}/gstreamer-rs, which is where the postfunc below looks for it.
 
 require ${BPN}-crates.inc
 
