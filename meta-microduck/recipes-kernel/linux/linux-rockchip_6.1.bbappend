@@ -56,3 +56,14 @@ PATCHPATH := "${THISDIR}/patches"
 # PATCHPATH is unconditional: uart2 must stay disabled when MICRODUCK_MOTOR_UART
 # is "0", or that mode loses the serial console it exists to keep.
 SRC_URI += "${@bb.utils.contains('MICRODUCK_MOTOR_UART', '1', 'file://motorbus.cfg file://0002-rk3566-radxa-zero-3w-uart2-for-the-motor-bus.patch', '', d)}"
+
+# The camera, and unlike the motor bus it needs no config fragment: the sensor
+# drivers and the ISP are already =y in radxa's defconfig. The device tree was
+# the entire gap -- with i2c2 and the csi2/isp chain left disabled, the board
+# showed no /dev/video* and nothing in dmesg whether or not a camera was
+# plugged in, which is a confusing way to look broken.
+#
+# Unconditional, because every microduck has the camera. It is ordered after
+# the MICRODUCK_MOTOR_UART line and touches a different part of the same file,
+# so it applies whether or not 0002 did; both orders are checked.
+SRC_URI += "file://0003-rk3566-radxa-zero-3w-radxa-camera-8m-imx219.patch"

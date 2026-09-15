@@ -1,0 +1,192 @@
+From: Fabien Danieau <fabien.danieau@pollen-robotics.com>
+Subject: [PATCH] rk3566-radxa-zero-3w-aic8800ds2: enable the Radxa Camera 8M (IMX219)
+
+The board could not see a camera at all, and plugging one in would not have
+changed that: rk3566-radxa-zero3.dtsi describes no camera, so i2c2, csi2_dphy0,
+csi2_dphy_hw, rkcif and rkisp all stay disabled. Only the CSI2 host controller
+probes, with nothing attached to it, and there is no /dev/video*. The sensor's
+i2c address is never even scanned, so an empty connector and a populated one
+look identical from software.
+
+The drivers were never the problem -- CONFIG_VIDEO_IMX219, CONFIG_VIDEO_OV5647,
+CONFIG_VIDEO_IMX415, CONFIG_VIDEO_GC2093, CONFIG_VIDEO_ROCKCHIP_ISP and
+CONFIG_VIDEO_ROCKCHIP_CIF are all =y already. This is purely the missing
+description.
+
+Transcribed from radxa's radxa-zero3-rpi-camera-v2.dts overlay rather than
+written from scratch: the Radxa Camera 8M is an IMX219 module electrically
+equivalent to the Raspberry Pi Camera v2, so radxa's description applies
+unchanged, and it is the only version of this path known to work on this board.
+
+Compiled in rather than shipped as an overlay because the image boots one fixed
+DTB through extlinux and every microduck carries this camera.
+
+Pin conflicts were checked rather than assumed, since two other buses on this
+board are already hand-assigned: i2c2m1 is GPIO4_B4/B5, the motor bus holds
+UART2m0 on GPIO0_D0/D1 (see 0002) and bluetooth holds UART1m0 on GPIO2_B3/B4.
+No overlap, and gpio3 RK_PC6 has no other user in the zero3 dtsi.
+
+Applies with or without 0002, which edits a different part of the file.
+
+Upstream-Status: Inappropriate [configuration]
+
+--- a/arch/arm64/boot/dts/rockchip/rk3566-radxa-zero-3w-aic8800ds2.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3566-radxa-zero-3w-aic8800ds2.dts
+@@ -139,4 +139,155 @@
+ 			rockchip,pins = <3 RK_PD3 RK_FUNC_GPIO &pcfg_pull_down>;
+ 		};
+ 	};
+-};
+\ No newline at end of file
++};
++
++/*
++ * Radxa Camera 8M (IMX219) on the 15-pin CSI connector.
++ *
++ * Transcribed from radxa's own radxa-zero3-rpi-camera-v2.dts overlay, which is
++ * the only proven description of this path for this board. The Camera 8M is an
++ * IMX219 module electrically equivalent to the Raspberry Pi Camera v2, so the
++ * overlay applies unchanged.
++ *
++ * It is compiled in rather than shipped as an overlay because the image boots
++ * one fixed DTB through extlinux and every microduck carries this camera; an
++ * overlay would only add a step that can be forgotten.
++ *
++ * Nothing here is a free choice -- the sensor's i2c address, the 24 MHz xvclk,
++ * the two data lanes and the dphy0 -> rkisp routing are all fixed by the
++ * hardware. The only thing worth knowing when reading it is that the whole
++ * chain must be enabled together: the sensor is useless without csi2_dphy0,
++ * and rkisp will not finish binding its async subdevs (so no /dev/video*
++ * appears at all) unless every endpoint it declares resolves.
++ *
++ * Pins were checked against the other two buses this board already claims:
++ * i2c2m1 is GPIO4_B4/B5, while the motor bus holds UART2m0 on GPIO0_D0/D1 and
++ * bluetooth holds UART1m0 on GPIO2_B3/B4. No overlap, and gpio3 RK_PC6 is
++ * otherwise unused in the zero3 dtsi.
++ */
++
++/ {
++	clk_cam_24m: external-camera-clock-24m {
++		compatible = "fixed-clock";
++		clock-frequency = <24000000>;
++		clock-output-names = "clk_cam_24m";
++		#clock-cells = <0>;
++		status = "okay";
++	};
++
++	/*
++	 * Not referenced by the sensor node: regulator-always-on/boot-on is
++	 * radxa's way of simply asserting the module's enable line at boot and
++	 * leaving it asserted. Kept as-is rather than converted to a
++	 * pwdn-gpios on the sensor, which is what the OV5647 overlay does --
++	 * the imx219 driver in this tree does not take one.
++	 */
++	camera_pwdn_gpio: camera-pwdn-gpio {
++		compatible = "regulator-fixed";
++		regulator-name = "camera_pwdn_gpio";
++		regulator-always-on;
++		regulator-boot-on;
++		enable-active-high;
++		gpio = <&gpio3 RK_PC6 GPIO_ACTIVE_HIGH>;
++		status = "okay";
++	};
++};
++
++&i2c2 {
++	status = "okay";
++	pinctrl-names = "default";
++	pinctrl-0 = <&i2c2m1_xfer>;
++	#address-cells = <1>;
++	#size-cells = <0>;
++
++	camera_imx219: camera-imx219@10 {
++		compatible = "sony,imx219";
++		reg = <0x10>;
++		clocks = <&clk_cam_24m>;
++		clock-names = "xvclk";
++		rockchip,camera-module-index = <0>;
++		rockchip,camera-module-facing = "back";
++		/*
++		 * A lookup key into rockchip's camera tuning data, not a
++		 * description of the part. Left at radxa's value so that any
++		 * IQ file that does exist is still found; the Camera 8M is the
++		 * same module under a different label.
++		 */
++		rockchip,camera-module-name = "rpi-camera-v2";
++		rockchip,camera-module-lens-name = "default";
++		status = "okay";
++
++		port {
++			ucam_out0: endpoint {
++				remote-endpoint = <&mipi_in_ucam0>;
++				data-lanes = <1 2>;
++			};
++		};
++	};
++};
++
++&csi2_dphy_hw {
++	status = "okay";
++};
++
++&csi2_dphy0 {
++	status = "okay";
++
++	ports {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		port@0 {
++			reg = <0>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			mipi_in_ucam0: endpoint@1 {
++				reg = <1>;
++				remote-endpoint = <&ucam_out0>;
++				data-lanes = <1 2>;
++			};
++		};
++
++		port@1 {
++			reg = <1>;
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			dphy0_out: endpoint@1 {
++				reg = <1>;
++				remote-endpoint = <&isp0_in>;
++			};
++		};
++	};
++};
++
++&rkisp_vir0 {
++	status = "okay";
++
++	port {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		isp0_in: endpoint@0 {
++			reg = <0>;
++			remote-endpoint = <&dphy0_out>;
++		};
++	};
++};
++
++&rkisp {
++	status = "okay";
++};
++
++&rkisp_mmu {
++	status = "okay";
++};
++
++&rkcif_mmu {
++	status = "okay";
++};
++
++&rkcif {
++	status = "okay";
++};
