@@ -30,12 +30,17 @@ inherit cargo cargo-update-recipe-crates pkgconfig systemd useradd
 # releases/download/<tag>/<asset> URL returns 404 with or without a token, and
 # only the api.github.com/.../releases/assets/<id> form works authenticated.
 #
-# SRCREV_daemon tracks a RELEASE, not main. The stable release daemon-v0.12.0
-# carries "source_revision": "213a5ce9..." in its manifest, so pinning that exact
-# commit makes the image's 0.12.0 the same code as the published 0.12.0.
+# SRCREV_daemon tracks a RELEASE, not main. Every stable release carries a
+# "source_revision" in its manifest.json -- daemon-v0.13.0 says
+# "84684dbf..." -- so pinning that exact commit makes the image's PV the same
+# code as the published release of that version. On a version bump, take the
+# revision from the manifest rather than from the tag or from main:
+#
+#   gh release download daemon-v<PV> --repo pollen-robotics/microduck_daemon \
+#     --pattern '*manifest*' && jq -r .source_revision <PV>.manifest.json
 #
 # That matters more than it looks. Before this, the recipe pinned 6507d2e -- 21
-# commits *ahead* of the release -- and both called themselves 0.12.0. updaterd
+# commits *ahead* of release 0.12.0 -- and both called themselves 0.12.0. updaterd
 # compares versions, so it would have seen 0.12.0 == 0.12.0, concluded there was
 # nothing to do, and never converged, while the two binaries differed. A version
 # that does not identify the code makes "is this robot up to date?" unanswerable.
@@ -50,7 +55,7 @@ SRC_URI = "git://git@github.com/pollen-robotics/microduck_daemon.git;protocol=ss
            git://github.com/pollen-robotics/bmi088-rs;protocol=https;nobranch=1;name=bmi088;destsuffix=bmi088-rs \
            file://60-robot-i2c.rules \
 "
-SRCREV_daemon = "213a5ce90ec5f2605b6e6977b75672d9d2eea8c5"
+SRCREV_daemon = "84684dbf104b12c581db7bfa38ccb2a0b4af466e"
 SRCREV_bmi088 = "bd113f317b14923f50f9a12a06678fe162b7fe06"
 SRCREV_FORMAT = "daemon_bmi088"
 
