@@ -44,7 +44,7 @@ SRC_URI = "git://gitlab.freedesktop.org/gstreamer/gst-plugins-rs.git;protocol=ht
            git://github.com/gtk-rs/gtk4-rs.git;protocol=https;nobranch=1;name=gtk4;destsuffix=gtk4-rs \
            git://github.com/rust-av/flavors.git;protocol=https;nobranch=1;name=flavors;destsuffix=flavors \
            git://github.com/rust-av/ffv1.git;protocol=https;nobranch=1;name=ffv1;destsuffix=ffv1 \
-           file://0001-webrtcsink-no-converter-for-mpph264enc.patch \
+           file://0001-webrtcsink-add-mpph264enc-encoder-support.patch \
 "
 
 # Tag gstreamer-1.28.2 -- note the prefix, the tags are not bare version numbers.
