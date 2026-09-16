@@ -50,6 +50,27 @@ do_install() {
 
 	install -d ${D}${libdir}/pkgconfig
 	install -m 0644 ${S}/lib/pkgconfig/*.pc ${D}${libdir}/pkgconfig/
+
+	# A second unversioned symlink, in /usr/local/lib, purely so the daemon's
+	# update hook can find this.
+	#
+	# hooks/preinstall probes exactly one path -- ONNX_LIB_DIR=/usr/local/lib --
+	# and reads the version out of what `readlink -f` resolves to, because asking
+	# the library itself would mean dlopening it. A distro install in ${libdir} is
+	# invisible to that check, so on 2026-09-16 a board carrying this very package
+	# at the very version the hook wanted refused the 0.13.0 update with "ONNX
+	# Runtime absent is below 1.23" and then failed to download a replacement
+	# because the image has no curl. The update was correctly refused and nothing
+	# was swapped; it just could never have succeeded.
+	#
+	# Pointing at the versioned file rather than at ${libdir}/libonnxruntime.so
+	# keeps the hook's parse working through one hop instead of three, and means
+	# this link says which version it is even if the chain above changes shape.
+	#
+	# The hook writes here itself when it does install ONNX, so this is the
+	# directory it already owns -- we are only telling it what is already present.
+	install -d ${D}${prefix}/local/lib
+	ln -sf ${libdir}/libonnxruntime.so.${PV} ${D}${prefix}/local/lib/libonnxruntime.so
 }
 
 # The unversioned symlink has to be in the RUNTIME package, which is not where Yocto
@@ -61,6 +82,7 @@ FILES:${PN} = " \
     ${libdir}/libonnxruntime.so \
     ${libdir}/libonnxruntime.so.* \
     ${libdir}/libonnxruntime_providers_shared.so \
+    ${prefix}/local/lib/libonnxruntime.so \
 "
 FILES:${PN}-dev = "${includedir} ${libdir}/pkgconfig ${libdir}/cmake"
 
