@@ -127,13 +127,25 @@ edit-test loop:
 3. Iterating on a recipe already in the image → `devtool modify` /
    `devtool deploy-target`.
 
-Two recipe constraints, both load-bearing:
+Three recipe constraints, all load-bearing:
 
 - `rustls` resolves to the **`aws-lc-rs`** provider, whose build script invokes
   CMake → the recipe needs `cmake-native`. There is no OpenSSL in the tree.
 - `serialport` must keep `default-features = false`. Its `libudev` feature needs
   a pkg-config sysroot the cross-build does not have and breaks the aarch64 build
   outright. `grep -c libudev Cargo.lock` should stay `0`.
+- **Anything the daemon's install scripts fetch, the image has to provide.**
+  `hooks/postinstall` and `scripts/install.sh` are where a provisioned Armbian
+  board gets its policies, its duck detector and its voice bank; an image
+  installs through neither, so on this image nobody ever ran them. Two of those
+  have already cost a board: ONNX Runtime, which the update hook looked for in a
+  directory the recipe did not write (`recipes-microduck/onnxruntime`), and the
+  policy set, whose absence makes `robotd` report **`unhealthy`** — so every
+  update downloaded, swapped, failed the health gate and rolled back
+  (`recipes-microduck/microduck-policies`). When reading a daemon release, read
+  `hooks/postinstall` for what it does to a board, not just the units it
+  installs. The image also has no `curl`, so re-running those scripts at first
+  boot is not the fallback it looks like.
 
 ## Commits
 

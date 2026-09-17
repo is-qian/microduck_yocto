@@ -411,3 +411,26 @@ RDEPENDS:${PN} += "gstreamer1.0-plugins-rs gstreamer1.0-rockchip"
 # robotd installs and starts fine without it and only fails when asked to walk, so a
 # minimal image can drop it. ORT_DYLIB_PATH overrides the location.
 RRECOMMENDS:${PN} += "onnxruntime"
+
+# The policy set, and RDEPENDS rather than RRECOMMENDS because this one decides whether
+# the robot can be updated at all.
+#
+# robotd reports `unhealthy` -- not `degraded` -- when a policy slot names a file it
+# cannot read, and `unhealthy` is exactly what the updater's health gate reverts a
+# release on. So a board with no set does not merely stand still: it downloads, verifies,
+# swaps, restarts, fails the gate and rolls back, every six hours, forever. Seen on the
+# board as
+#
+#     "health check failed: not healthy within 30s: policy unavailable:
+#      reading /opt/robot/policies/current/velstand.onnx: No such file or directory"
+#
+# Upstream fills that directory from hooks/postinstall on every update and from
+# scripts/install.sh on a fresh board; an image installs through neither, so on this
+# image nothing ever put a policy there. recipes-microduck/microduck-policies does, in
+# the layout and with the `.source` record that make seed-policies.sh leave it alone
+# afterwards.
+#
+# The version to seed is named by the *daemon* release -- POLICY_VERSION in its own
+# scripts/seed-policies.sh -- so on a daemon bump, check it and bump the policies recipe
+# with it. It is v5 at 0.13.0 and still v5 at 0.14.1.
+RDEPENDS:${PN} += "microduck-policies"
