@@ -431,6 +431,17 @@ flashes. Nothing merges until stage 1 is verified on hardware.
 throughout, `uboot_env` reserved for stage 2, slots addressed by `PARTLABEL`);
 `bitbake microduck-bundle` produces a signed verity `.raucb`.
 
+**The kernel partition is named `boot`, not `boot_a`, and that is load-bearing.**
+Vendor U-Boot finds the kernel by GPT partition *name* — its environment carries
+`name=boot,size=32M,bootable` and `bootcmd=boot_android ...;boot_fit;bootrkp;run
+distro_bootcmd;`. The first flash of this layout called it `boot_a`, so there was
+no `boot` to find, every arm of that bootcmd fell through, and the board never
+loaded a kernel: no wifi, no BLE, nothing. The card itself was written correctly
+(RKNS at sector 64, `uboot.img` at 2 MiB, a valid `ANDROID!` image in the slot) —
+only the name was wrong. So rootfs is A/B today and the kernel is not; `boot_b`
+keeps its offset, and renaming the pair is stage 2's job, at the point where a
+`boot.scr` can actually choose between them.
+
 `system.conf` ships `bootloader=noop`. That is not a placeholder to forget
 about: this board has **no boot-time slot selection mechanism at all**. `root=`
 is compiled into the DTB, which is packed inside an Android `boot.img` on a raw
