@@ -144,8 +144,10 @@ Three recipe constraints, all load-bearing:
   update downloaded, swapped, failed the health gate and rolled back
   (`recipes-microduck/microduck-policies`). When reading a daemon release, read
   `hooks/postinstall` for what it does to a board, not just the units it
-  installs. The image also has no `curl`, so re-running those scripts at first
-  boot is not the fallback it looks like.
+  installs. And give the scripts themselves what they ask for: they are POSIX
+  shell and fetch with `curl`, so the daemon recipe has to pull it in — without
+  it every seeder fails instantly, the hook warns, and the update completes
+  having silently done nothing.
 
 ## Commits
 

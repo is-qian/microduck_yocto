@@ -347,6 +347,13 @@ pinned release's own `scripts/seed-policies.sh`. Seeding *below* it is the case
 that breaks, because the daemon's defaults name files only the newer set
 carries.
 
+Seeding is only half of it, though — the board also has to be able to *follow*
+that pin when a later release moves it, and `seed-policies.sh` is the only thing
+that does so unattended. It is POSIX shell and fetches with `curl`, which the
+daemon recipe therefore pulls into the image; `updaterd`'s own policy installer
+speaks rustls and needs no curl, but it is reached from `robotctl policy update`
+alone and never runs on the update path.
+
 ### Before flashing
 
 1. **Built on hardware with a known memory fault** — see `../CONTEXT.md`. Do not
