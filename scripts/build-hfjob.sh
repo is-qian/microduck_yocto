@@ -42,6 +42,30 @@ BUCKET=${HFJOB_BUCKET:-pollen-robotics/microduck-yocto-cache}
 TARGET=${HFJOB_TARGET:-}
 KAS_CMD=${1:-build}
 
+# The RAUC signing pair, needed only when the target is the bundle.
+#
+# Defaulted from KAS_BUILD_DIR so a shell that has sourced kas/lotus.env -- which
+# is what README.md tells you to do before generating them -- needs no extra
+# variable. Override either explicitly to sign with a different key.
+RAUC_KEYDIR=${HFJOB_RAUC_KEYDIR:-${KAS_BUILD_DIR:-}/rauc-keys}
+RAUC_KEY=${HFJOB_RAUC_KEY:-$RAUC_KEYDIR/development-1.key.pem}
+RAUC_CERT=${HFJOB_RAUC_CERT:-$RAUC_KEYDIR/development-1.cert.pem}
+
+# Fail here rather than 45 minutes into a paid job. bundle.bbclass only checks
+# RAUC_KEY_FILE in do_bundle, which is the very last task, so a missing key
+# currently costs a full image build before it says so.
+case "$TARGET" in
+*bundle*)
+	for f in "$RAUC_KEY" "$RAUC_CERT"; do
+		[ -r "$f" ] && continue
+		echo "$0: target '$TARGET' needs a signing pair and $f is not readable." >&2
+		echo "  Generate it once (README.md 'Signing keys are not in this repo')," >&2
+		echo "  or point HFJOB_RAUC_KEYDIR at an existing one." >&2
+		exit 1
+	done
+	;;
+esac
+
 # This repo is on no git host -- only coach's bare repo and local checkouts -- so
 # the build inputs travel as local-directory volumes: hf syncs them (incrementally)
 # to the org's private jobs-artifacts bucket and mounts them read-only. Needs
@@ -76,6 +100,20 @@ if [ -n "${HFJOB_SSH_KEY:-}" ]; then
 	# `ssh-add -`, and got "Error loading key "(stdin)": error in libcrypto".
 	set -- "$@" -s "SSH_PRIVATE_KEY_B64=$(base64 -w0 "$HFJOB_SSH_KEY")"
 fi
+
+# The signing pair, split deliberately: -s for the private key so hf treats it as
+# a secret, -e for the certificate because it is public and showing up in the job
+# description is useful rather than harmful.
+#
+# Sent only for a bundle target. There is no reason for a private key to reach a
+# machine that is only building an image, and "we always pass it" is how a key
+# ends up somewhere nobody remembers putting it.
+case "$TARGET" in
+*bundle*)
+	set -- "$@" -s "RAUC_KEY_B64=$(base64 -w0 "$RAUC_KEY")"
+	set -- "$@" -e "RAUC_CERT_B64=$(base64 -w0 "$RAUC_CERT")"
+	;;
+esac
 
 # A quoted heredoc, not `-lc '...'`. With a single-quoted argument every apostrophe
 # in the body below -- including one inside a prose comment -- silently terminates
@@ -260,6 +298,24 @@ if [ -n "${SSH_PRIVATE_KEY_B64:-}" ]; then
 	else
 		echo "WARNING: ssh auth to github failed; relying on the public https mirror"
 	fi
+fi
+
+# The RAUC signing pair, written where microduck-bundle.bb looks for it:
+# MICRODUCK_RAUC_KEYDIR defaults to ${TOPDIR}/rauc-keys, and under kas TOPDIR is
+# KAS_BUILD_DIR. Absent for an image build, which needs neither.
+#
+# umask before the mkdir, so the directory itself is not group-readable either --
+# the job container is ours alone, but a key readable by anything that wanders
+# into the image is a habit worth not forming.
+if [ -n "${RAUC_KEY_B64:-}" ]; then
+	umask 077
+	mkdir -p "$KAS_BUILD_DIR"/rauc-keys
+	printf %s "$RAUC_KEY_B64" | base64 -d > "$KAS_BUILD_DIR"/rauc-keys/development-1.key.pem
+	chmod 600 "$KAS_BUILD_DIR"/rauc-keys/development-1.key.pem
+	printf %s "${RAUC_CERT_B64:-}" | base64 -d > "$KAS_BUILD_DIR"/rauc-keys/development-1.cert.pem
+	chmod 644 "$KAS_BUILD_DIR"/rauc-keys/development-1.cert.pem
+	umask 022
+	echo "rauc: signing pair installed in $KAS_BUILD_DIR/rauc-keys"
 fi
 
 # Do not let a non-zero exit skip the copy below. bitbake returns 1 merely because
