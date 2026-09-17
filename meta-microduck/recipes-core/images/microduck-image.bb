@@ -10,6 +10,7 @@ IMAGE_FEATURES += "ssh-server-openssh"
 
 IMAGE_INSTALL:append = " \
     microduck-daemon \
+    rauc \
     packagegroup-microduck-media \
     kernel-modules \
     ca-certificates \
@@ -21,6 +22,10 @@ IMAGE_INSTALL:append = " \
     usbutils \
     htop \
 "
+
+# rauc is listed here rather than arriving on its own: meta-rauc pulls it in by
+# bbappending packagegroup-base, and this image is built from core-image-base,
+# which does not use that packagegroup.
 
 # aic8800-bt is the HCI attach unit, in the shipping image rather than the dev
 # one: BLE is how a robot with no network gets provisioned (configd over btd), so

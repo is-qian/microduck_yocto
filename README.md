@@ -133,10 +133,17 @@ tests the Miniloader path and radxa's defconfig is SPL+ATF.
 Two findings from reading those defconfigs, recorded in
 `conf/machine/microduck-zero3.conf`:
 
-- **No Rockchip defconfig sets `CONFIG_ENV_IS_IN_*` or
-  `CONFIG_BOOTCOUNT_LIMIT`.** RAUC's `uboot` backend needs both. This U-Boot
-  instead has Android/AVB A/B (`CONFIG_SPL_AB`, `CONFIG_AVB_LIBAVB_AB`) — a
-  different mechanism. Resolve before designing the partition layout.
+- **No Rockchip defconfig sets `CONFIG_ENV_IS_IN_*`.** That, plus
+  `fw_printenv`/`fw_setenv` and an `/etc/fw_env.config`, is what RAUC's `uboot`
+  backend actually requires. This U-Boot instead has Android/AVB A/B
+  (`CONFIG_SPL_AB`, `CONFIG_AVB_LIBAVB_AB`) — a different mechanism.
+
+  This bullet used to say RAUC needs `CONFIG_BOOTCOUNT_LIMIT` too. **It does
+  not**, and that was never checked: `grep -ri bootcount` over RAUC's own
+  documentation returns nothing. The retry counter is `BOOT_<slot>_LEFT`, a
+  plain environment variable that the boot script we write decrements itself —
+  and RAUC parses it as **hex** (`g_ascii_strtoull(..., 16)` in
+  `src/bootloaders/uboot.c`), so that script has to say `0x${BOOT_A_LEFT}`.
 - **`CONFIG_DEBUG_UART_BASE=0xFE660000` is UART2**, the motor bus, at 1.5 Mbaud.
   U-Boot therefore prints onto the Dynamixel wires at power-on regardless of
   `MICRODUCK_MOTOR_UART`, which only silences Linux. Harmless now; on the custom
@@ -412,5 +419,72 @@ daemon names is the case that breaks.
 3. **Nothing has booted.** A clean compile of a vendor driver against a vendor
    kernel is the first hurdle, not evidence the radio associates.
 
-A/B partitioning and RAUC are M7. The A/B `.wks` is still deliberately unwritten
-until slot sizes can be based on a real image size — which now exists.
+## A/B OS updates (RAUC)
+
+Being built on the `rauc-ab` branch, in a worktree, because it changes the
+partition layout and later the bootloader — and `main` is what a colleague
+flashes. Nothing merges until stage 1 is verified on hardware.
+
+**Stage 1 (here): RAUC userspace and signed bundles, no bootloader change.**
+`meta-rauc` is pinned in `kas/microduck.yml`; the layout is
+`meta-microduck/files/wic/microduck-ab.wks.in` (explicit offsets and fixed sizes
+throughout, `uboot_env` reserved for stage 2, slots addressed by `PARTLABEL`);
+`bitbake microduck-bundle` produces a signed verity `.raucb`.
+
+`system.conf` ships `bootloader=noop`. That is not a placeholder to forget
+about: this board has **no boot-time slot selection mechanism at all**. `root=`
+is compiled into the DTB, which is packed inside an Android `boot.img` on a raw
+partition — no extlinux, no U-Boot `bootargs`, no `boot.img` header cmdline. So
+RAUC can write the inactive slot and honestly reports that it cannot make the
+board boot it.
+
+**Signing keys are not in this repo.** Generate once, into the build directory
+(bind-mounted by kas-container, and already in `.gitignore`):
+
+```sh
+. kas/lotus.env                        # or coach.env -- this sets KAS_BUILD_DIR
+mkdir -p "$KAS_BUILD_DIR/rauc-keys" && cd "$KAS_BUILD_DIR/rauc-keys"
+
+# The script comes from the meta-rauc layer. kas clones it next to
+# meta-microduck on the first build; before that, fetch just the script:
+curl -sfLO https://raw.githubusercontent.com/rauc/meta-rauc/wrynose/scripts/openssl-ca.sh
+chmod +x openssl-ca.sh && ./openssl-ca.sh                # edit ORG=/CA= at the top first
+
+cp openssl-ca/dev/development-1.cert.pem .
+cp openssl-ca/dev/private/development-1.key.pem .
+chmod 600 development-1.key.pem
+```
+
+Then copy the **public** CA certificate into the layer, so the image trusts
+bundles signed by that key:
+
+```sh
+cp openssl-ca/dev/ca.cert.pem <repo>/meta-microduck/recipes-core/rauc/files/
+```
+
+Until that certificate exists, `rauc-conf` falls back to meta-rauc's example and
+says so (`Please overwrite example ca.cert.pem ...`), and the image cannot verify
+anything. In CI the private key becomes an org-scoped GitHub secret written to
+`$KAS_BUILD_DIR/rauc-keys/` before the build.
+
+Verification, none of which risks the running board:
+
+```sh
+bitbake microduck-bundle                 # -> tmp/deploy/images/.../microduck-bundle-*.raucb
+rauc info  microduck-bundle-*.raucb      # signature verifies, compatible matches
+rauc install microduck-bundle-*.raucb    # writes rootfs_b, logs the noop refusal to switch
+```
+
+**Stage 2 (not started): boot-time slot selection.** A writable U-Boot
+environment in the reserved `uboot_env` partition, a `boot.scr` that walks
+`BOOT_ORDER`, and `bootloader=uboot`. The unknown is that vendor U-Boot is
+Rockchip downstream 2017.09 built via `make.sh` — the one variant neither
+reference integration targets. The fallback is `radxa/u-boot next-dev-v2024.10`,
+which boots via extlinux.
+
+**Stage 3 (not started): reconcile with `updaterd`.** Both stay. RAUC owns the
+kernel, DTB, rootfs and everything the daemon's install hooks currently drop
+into `/usr/local/lib` and `/usr/lib/sysusers.d`; `updaterd` shrinks to the daemon
+binaries under `/opt/robot/daemon`. A daemon fix should not cost a reboot
+(~20 s symlink swap and a 13 MB payload today, versus a reboot and ~200 MB), and
+a developer should not wait on a 50-minute image build to try one.

@@ -15,6 +15,7 @@ SRC_URI = " \
     file://cgroups.cfg \
     file://mali-csf.cfg \
     file://qemu-virt.cfg \
+    file://rauc.cfg \
 "
 
 # WATCH OUT when adding config fragments. linux-rockchip.inc builds the defconfig
