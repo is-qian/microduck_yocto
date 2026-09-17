@@ -19,9 +19,21 @@ RAUC_BUNDLE_FORMAT = "verity"
 # would produce a bundle that installs and changes nothing.
 RAUC_BUNDLE_SLOTS = "rootfs"
 
-# microduck-image, not microduck-image-dev: this is the artifact that ships, and
-# the dev image carries a password-less root login.
-RAUC_SLOT_rootfs = "microduck-image"
+# Which image the bundle carries, and it has to be the one the branch also flashes.
+#
+# microduck-image (prod) is the artifact that ships, and that is what this should
+# be when RAUC is real. But building this target builds *only* this image, and
+# stage 1 is tested by flashing that same .wic and then running `rauc` on the
+# board -- and prod has no password-less root, so the first flash of it produced a
+# board that came up, answered ping, and could not be logged into at all. The
+# stage-1 test needs a shell; a card nobody can reach tests nothing.
+#
+# So on this branch the bundle wraps the dev image, which keeps card and bundle
+# identical and means installing to slot B cannot silently change what the robot
+# is. Flip this back to microduck-image at the point where stage 2 can boot slot
+# B and the interesting test becomes "does a prod rootfs come up", not "can I get
+# in to run rauc at all".
+RAUC_SLOT_rootfs = "microduck-image-dev"
 
 # Required, not decoration. bundle.bbclass defaults the extension to the first
 # entry of IMAGE_FSTYPES, which here is oe-core's "tar.zst" (rockchip-image
