@@ -54,6 +54,7 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 SRC_URI = "git://git@github.com/pollen-robotics/microduck_daemon.git;protocol=ssh;branch=main;name=daemon \
            git://github.com/pollen-robotics/bmi088-rs;protocol=https;nobranch=1;name=bmi088;destsuffix=bmi088-rs \
            file://60-robot-i2c.rules \
+           file://weird-ble \
 "
 SRCREV_daemon = "84684dbf104b12c581db7bfa38ccb2a0b4af466e"
 SRCREV_bmi088 = "bd113f317b14923f50f9a12a06678fe162b7fe06"
@@ -311,6 +312,29 @@ do_install:append() {
 		${D}${sysconfdir}/systemd/journald.conf.d/
 
 	install -d ${D}${localstatedir}/lib/robot/updater
+
+	# TEMPORARY, remove-with-real-radio -- the btd-pause marker for gamepad pairing.
+	#
+	# The `--pause-btd-on-pair` half of microduck_daemon's scripts/setup-board.sh,
+	# baked in for the same reason as the bluez5 bbappend that carries this tag:
+	# provision-board.sh never runs against a Yocto board, so neither BLE flag
+	# reaches this image unless the recipes apply them.
+	#
+	# robotctl reads only this file's existence (WEIRD_BLE_MARKER in
+	# robotctl/src/main.rs) and, when it is there, stops btd for the pairing
+	# window of `robotctl pad pair`. Measured upstream on 50:37:CD:16:1D:90,
+	# 2026-08-19: with btd advertising, a NEW bond dies ~800us after Encryption
+	# Change with Remote User Terminated (0x13); with btd paused it bonds and
+	# holds 45/45 samples. Every earlier failure blamed on the aic8800 driver
+	# build had btd advertising -- that was the uncontrolled variable.
+	#
+	# Unlike Privacy = device this half is harmless where it is not needed: it
+	# costs a pad-pairing window with no BLE provisioning, and nothing else.
+	#
+	# Under ${localstatedir}, not ${sysconfdir}, because that is where robotctl
+	# looks; it is state, not configuration, and deleting it is how a board opts
+	# out. It is not a CONFFILE for the same reason -- there is nothing to merge.
+	install -m 0644 ${UNPACKDIR}/weird-ble ${D}${localstatedir}/lib/robot/weird-ble
 }
 
 CONFFILES:${PN} = "${sysconfdir}/robot/robotd.toml ${sysconfdir}/robot/updater.toml"

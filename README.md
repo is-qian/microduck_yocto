@@ -313,6 +313,31 @@ Not verified: that `btd` can advertise through the adapter. `btd` is not built
 yet, and the LE checks available from a shell conflict with `bluetoothd` holding
 the adapter.
 
+#### Gamepad pairing: two AIC8800 workarounds, tagged `remove-with-real-radio`
+
+An Xbox pad will not bond reliably through this radio without help, and the help
+lives in `microduck_daemon`'s `scripts/provision-board.sh` — the Armbian path,
+which never runs against a Yocto board. So both halves are applied by recipes
+here instead:
+
+| `provision-board.sh` flag | applied by | effect |
+| --- | --- | --- |
+| `--pause-btd-on-pair` | `microduck-daemon` ships `/var/lib/robot/weird-ble` | `robotctl pad pair` stops `btd` for the pairing window |
+| `--weird-ble` | `recipes-connectivity/bluez5/bluez5_%.bbappend` | `Privacy = device` in `/etc/bluetooth/main.conf` (implies the pause) |
+
+The pause is harmless everywhere. **`Privacy = device` is not:** on a unit that
+did not need it, the pad bonds and then flaps with `PIN or Key Missing (0x06)`
+— 46 times in 45 seconds on `50:37:CD:16:1D:90`. Upstream measured roughly half
+of ten Zero 3W units in each camp with nothing to tell them apart, and dropped
+`device` as its default for that reason. It is the image-wide default here
+because there is one image; if a board flaps, set `Privacy = off` in
+`/etc/bluetooth/main.conf` and **reboot** (restarting `bluetoothd` leaves the
+kernel holding `hci0` and the daemon saying "No default controller available").
+
+Both are workarounds for the AIC8800, which is not the radio that ships. When
+the real one lands, the bbappend, the marker and `BtdPaused` in `robotctl` all
+go — grep the tag to find them.
+
 ### Before flashing
 
 1. **Built on hardware with a known memory fault** — see `../CONTEXT.md`. Do not
