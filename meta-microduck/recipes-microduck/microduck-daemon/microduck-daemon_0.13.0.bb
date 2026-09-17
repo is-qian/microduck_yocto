@@ -54,6 +54,7 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 SRC_URI = "git://git@github.com/pollen-robotics/microduck_daemon.git;protocol=ssh;branch=main;name=daemon \
            git://github.com/pollen-robotics/bmi088-rs;protocol=https;nobranch=1;name=bmi088;destsuffix=bmi088-rs \
            file://60-robot-i2c.rules \
+           file://robotctl.bash_completion \
 "
 SRCREV_daemon = "84684dbf104b12c581db7bfa38ccb2a0b4af466e"
 SRCREV_bmi088 = "bd113f317b14923f50f9a12a06678fe162b7fe06"
@@ -262,6 +263,20 @@ do_install:append() {
 	install -d ${D}${bindir}
 	ln -snf /opt/robot/daemon/current/bin/robotctl ${D}${bindir}/robotctl
 
+	# Tab-completion for it, in bash-completion's *dynamic* directory rather than
+	# the ${sysconfdir}/bash_completion.d/ that scripts/setup-login.sh uses.
+	#
+	# Same file either way -- it asks the binary for its own completions -- but
+	# /etc/bash_completion.d is sourced by every interactive bash at startup, so
+	# an eager copy spawns a robotctl on every login. Here it is read the first
+	# time somebody types `robotctl<TAB>` and never otherwise, which on an RK3566
+	# is the difference worth having. The two can coexist: once a later update's
+	# setup-login.sh writes the eager copy, it registers the completion first and
+	# the loader below simply never fires.
+	install -d ${D}${datadir}/bash-completion/completions
+	install -m 0644 ${UNPACKDIR}/robotctl.bash_completion \
+		${D}${datadir}/bash-completion/completions/robotctl
+
 	# Units, verbatim: their ExecStart already points into current/.
 	install -d ${D}${systemd_system_unitdir}
 	install -m 0644 ${S}/robotd/systemd/robotd.service ${D}${systemd_system_unitdir}/
@@ -337,6 +352,30 @@ FILES:${PN} += " \
     ${sysconfdir}/systemd/journald.conf.d/10-robot.conf \
     ${localstatedir}/lib/robot \
 "
+
+# Completions as their own package, for the same reason padd and the dev key are:
+# so an image takes them by name or not at all.
+#
+# It is not the 300 bytes. oe-core's bash-completion RDEPENDS on bash and brings
+# roughly a megabyte of shell with it, and microduck-image has no login at all --
+# nobody is typing on a shipping robot, so nothing there should pay for a Tab key.
+# microduck-image-dev installs it; microduck-image cannot get it by accident.
+#
+# The RDEPENDS is what makes it work rather than merely exist. bash-completion ships
+# ${sysconfdir}/profile.d/bash_completion.sh, which poky's /etc/profile sources for
+# every login shell, and that is what defines the dynamic loader that goes looking in
+# ${datadir}/bash-completion/completions. Without the package, the file installed
+# above is read by nothing -- which is exactly the state this image was in:
+# setup-login.sh's install_completions() returns early when /etc/bash_completion.d
+# does not exist, and that directory comes from this package too.
+#
+# FILES is the whole ${datadir}/bash-completion tree rather than the one path, which
+# is what oe-core's own bash-completion.bbclass uses -- the class is not inherited
+# here only because its `DEPENDS:append = " bash-completion"` would add a build edge
+# for a recipe that generates nothing at build time.
+PACKAGES =+ "${PN}-bash-completion"
+FILES:${PN}-bash-completion = "${datadir}/bash-completion"
+RDEPENDS:${PN}-bash-completion += "${PN} bash-completion"
 
 # The dev-board trust anchor, as its own package so it can only reach an image
 # that asks for it by name. microduck-image-dev installs it; microduck-image
