@@ -9,18 +9,38 @@ Documentation=file:///usr/share/doc/microduck-data/README
 # udev creates the by-partlabel symlink asynchronously; systemd knows to wait for
 # the device unit behind a mount's What=, so no explicit After= is needed.
 
+# Skip, do not fail, when there is no filesystem to mount -- and the difference
+# is not cosmetic.
+#
+# The daemon units carry StateDirectory=robot/config and robot/updater, and
+# systemd turns those into an implicit RequiresMountsFor=/var/lib/robot/..., which
+# is a Requires= on THIS unit. So if this unit *fails*, configd and updaterd never
+# start: no wifi configuration, no updater -- the two things that could repair a
+# board -- taken down by a data partition. That is exactly what happened on the
+# first card flashed with this layout, which had been written from a download
+# that was still in progress and so carried an unformatted data partition.
+#
+# A unit whose Condition is false is *skipped*: its start job succeeds, the
+# Requires= is satisfied, and the daemons start against the directories the
+# rootfs already ships. Persistence is lost until the partition is fixed, and
+# that is the right failure -- degraded, visible in `systemctl status`, and the
+# updater is still alive to help.
+#
+# by-label rather than by-partlabel for the condition, because udev creates
+# /dev/disk/by-label/<x> only when blkid finds a filesystem labelled <x>. So
+# this one path answers both "is there a partition" and "is it formatted".
+# What= keeps by-partlabel: it is the stable identity; the label is the check.
+ConditionPathExists=/dev/disk/by-label/data
+
 [Mount]
 What=/dev/disk/by-partlabel/data
 Where=/var/lib/robot
 Type=ext4
-# nofail is not a mount option here -- it is the *absence* of this unit from
-# local-fs.target's Requires (see [Install]) that makes a missing partition a
-# failed unit rather than an emergency shell.
 Options=defaults,noatime
 
 [Install]
-# WantedBy, not RequiredBy: a card without a data partition (the 2 GB one, or a
-# single-slot image) boots and runs, with /var/lib/robot falling back to the
-# rootfs directories the daemon package ships. A RequiredBy would take the whole
-# of local-fs.target down with it and the robot with that.
+# WantedBy local-fs.target, not RequiredBy. Note this alone was NOT enough to make
+# a missing partition survivable -- see the Condition above for why. It still
+# matters: with RequiredBy, a genuine mount failure (a formatted partition that
+# will not mount) would take local-fs.target down and the robot with it.
 WantedBy=local-fs.target

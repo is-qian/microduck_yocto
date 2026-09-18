@@ -114,6 +114,10 @@ part --offset 2118M --fixed-size 2048M --fstype=none --part-name rootfs_b --uuid
 # number, which moved from p3 to p5 for rootfs in this very layout.
 #
 # Deliberately NOT a wic --mountpoint: that writes an /etc/fstab line, and a
-# missing partition then drops the robot into an emergency shell. The mount
-# unit fails alone instead, and the robot still boots.
+# missing partition then drops the robot into an emergency shell. It is a .mount
+# unit with ConditionPathExists=/dev/disk/by-label/data instead, so a missing or
+# unformatted partition SKIPS the mount rather than failing it. The distinction
+# was learned the hard way: a *failed* mount cascades through the daemons'
+# StateDirectory= (an implicit RequiresMountsFor=) and kills configd and
+# updaterd -- the two units that could fix the board. See the unit file.
 part --offset 4166M --fixed-size 8192M --fstype=ext4 --label data --part-name data --mkfs-extraopts "-F -i 8192 -b 4096"

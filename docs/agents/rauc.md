@@ -101,9 +101,19 @@ library root, so nothing crosses a filesystem boundary.
   slot touches it).
 - Does **not** survive: a reflash of the whole `.wic`, which zeros that region.
   Do not describe it as if it did.
-- `WantedBy=local-fs.target`, not `RequiredBy`, and a `.mount` unit, not a wic
-  `--mountpoint` — so a card without the partition boots instead of dropping to
-  an emergency shell.
+- **A failed mount cascades, and this cost a board its updater.** The daemon
+  units carry `StateDirectory=robot/config` and `robot/updater`; systemd turns
+  those into an implicit `RequiresMountsFor=/var/lib/robot/...`, i.e. a
+  `Requires=` on `var-lib-robot.mount`. When that mount *failed* (unformatted
+  partition), `configd` and `updaterd` never started — "Dependency failed for
+  Robot config service (wifi, identity)". `WantedBy` on the mount did nothing
+  for this; only a *skipped* unit satisfies `Requires=`. Hence
+  `ConditionPathExists=/dev/disk/by-label/data`: udev creates `by-label/<x>`
+  only when blkid finds a filesystem labelled `<x>`, so one path answers both
+  "is there a partition" and "is it formatted", and a blank one degrades to the
+  rootfs directories with all daemons up. Verified live on the failing board.
+- A `.mount` unit, not a wic `--mountpoint`: the latter writes `/etc/fstab`, and
+  a missing partition there is an emergency shell.
 - `data-directory=/var/lib/robot/rauc` in system.conf puts RAUC's own bookkeeping
   there too. Without it RAUC keeps per-slot status that a slot rewrite erases.
 

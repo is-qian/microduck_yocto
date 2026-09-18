@@ -517,6 +517,17 @@ rauc info  microduck-bundle-*.raucb      # signature verifies, compatible matche
 rauc install microduck-bundle-*.raucb    # writes rootfs_b, logs the noop refusal to switch
 ```
 
+**User data has its own partition.** `data` (ext4, 8 GiB, formatted at image
+build) is mounted at `/var/lib/robot` by `recipes-core/microduck-data/`, which is
+where the daemon already keeps everything a person adds — the policy library,
+the sound bank, `configd`'s state — so no daemon change was needed. It survives
+daemon updates and, once stage 2 exists, RAUC slot switches. It does **not**
+survive a reflash of the whole `.wic`. If the partition is missing or blank, the
+mount is *skipped* rather than failed (`ConditionPathExists=/dev/disk/by-label/data`)
+and the daemons start against the rootfs directories: a failed mount would
+otherwise cascade through their `StateDirectory=` and stop `configd` and
+`updaterd`, which was observed on a card flashed from an incomplete download.
+
 **The kernel partition must be named `boot`.** This cost a flash: called `boot_a`,
 the board writes and verifies perfectly and never boots, because vendor U-Boot
 looks the kernel up by that exact GPT name. See the comment on the part line in

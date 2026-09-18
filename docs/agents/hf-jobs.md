@@ -29,12 +29,22 @@ gives empty; use `(.[0]? // .) | .status.stage`.
 
 ## Verify the artifact before flashing, not after
 
-A build can succeed and produce the wrong thing. Two checks, both cheap:
+A build can succeed and produce the wrong thing, and a download can be
+incomplete while looking like a file. Three checks, all cheap:
 
-1. The `.wic` filename says which image: `microduck-image-dev-...` vs
+1. **The local file is complete.** `curl -o` writes in place, so a `dd` of a
+   file still downloading produces a *torso*: the new GPT and the early
+   partitions are complete, everything past the download's frontier is whatever
+   the card held before. Such a card **boots** — `rootfs_a` ends at 2.2 GB — and
+   then fails somewhere later in the layout in a way that looks like a build
+   bug. It happened with the data partition at 4.4 GB: `blkid` found no
+   filesystem because the bytes had not arrived. Compare the size to the
+   bucket's `content-length`, or the sha256 to the one reported, before the dd.
+   Guard the command: `[ "$(stat -c%s f.wic)" = <expected> ] && sudo dd ...`.
+2. The `.wic` filename says which image: `microduck-image-dev-...` vs
    `microduck-image-...`. Prod has no password-less root. This was missed once
    and cost a flash of a card nobody could log into.
-2. GPT partition names, with a 17 KB range request rather than a 5 GB download:
+3. GPT partition names, with a 17 KB range request rather than a 12 GB download:
 
        curl -sfL -r 0-17407 -H "Authorization: Bearer $T" "$B/<image>.wic" \
          | tr -d '\0' | grep -oE "[a-z_]{4,10}" | sort -u
