@@ -3,16 +3,23 @@
 `scripts/build-hfjob.sh` is the build host. `README.md` explains the mechanism;
 this is what goes wrong.
 
-## Judge on the log, never on the job status
+## The job status lied for a week, and now it does not
 
-`hf jobs inspect` reports **terminal stage `ERROR` on successful builds**. Seen on
-a dozen good runs whose logs end `Tasks Summary: ... all succeeded` with a `.wic`
-and `.raucb` in the deploy. The cause is unattributed. `scripts/wait-hfjob.sh`
-exists for exactly this: it breaks on `Tasks Summary` plus an artifacts line, and
-only falls back to the stage as a backstop.
+Every build from 2026-09-10 to 2026-09-18 reported terminal stage `ERROR`, exit 1,
+after every task succeeded. The cause was found by bisection with `cpu-basic`
+probes in the real image and fixed in `build-hfjob.sh`: the job ran under
+`bash -lc`, a **login** shell sources `~/.bash_logout` on `exit`, the kas image's
+stock Debian one runs `clear_console -q` when `SHLVL=1` (which gosu guarantees),
+there is no tty so it fails, and `set -eu` promoted that to the shell's exit
+status. `bash -c` is the whole fix; `kas` resolves on the image's default PATH.
 
-Do not hand-roll a loop around `hf jobs inspect`. It was done twice on this
-branch; both times it reported failure for a build that had succeeded.
+Local reproductions all passed because lotus has `SHLVL=4`, so its own
+`.bash_logout` guard never fires. When a container-only failure will not
+reproduce locally, probe the container: a `cpu-basic` job costs cents and takes
+a minute.
+
+`scripts/wait-hfjob.sh` still judges on the log rather than the stage. That was a
+workaround for this; it is kept because it is also the more robust rule.
 
 `hf jobs logs` frequently returns **nothing** for an in-progress job. It works
 once the job is terminal. Do not read an empty log as "no output yet — fine".

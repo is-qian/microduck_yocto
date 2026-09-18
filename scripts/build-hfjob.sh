@@ -335,4 +335,20 @@ exit "$rc"
 IN_CONTAINER
 )
 
-exec hf jobs run "$@" ghcr.io/siemens/kas/kas:5.4 -- /bin/bash -lc "$IN_CONTAINER"
+# `-c`, not `-lc`, and that one letter was a week of false ERRORs.
+#
+# A login shell sources ~/.bash_logout when it exits. The kas image is Debian, so
+# /builder/.bash_logout is the stock one: when SHLVL is 1 -- which it is here,
+# because gosu execs us directly -- it runs `clear_console -q`. There is no tty,
+# so that fails. Without errexit the failure is swallowed; the script above runs
+# under `set -eu`, so it becomes the shell's exit status, bash exits 1, and HF
+# marks the job ERROR after every task succeeded. Every build from 2026-09-10 to
+# 2026-09-18 reported this way, and wait-hfjob.sh grew a "judge on the log, not
+# the status" rule to work around a cause nobody had found.
+#
+# Found by bisection with cpu-basic probes in the real image, once local
+# reproductions kept passing (lotus has SHLVL=4, so its .bash_logout guard never
+# fires): `bash -lc 'set -eu; exit 0'` -> ERROR; `bash -c 'set -eu; exit 0'` ->
+# COMPLETED, with kas resolving at /usr/local/bin on the image's default PATH. So
+# nothing here needs the login environment, and dropping -l is the whole fix.
+exec hf jobs run "$@" ghcr.io/siemens/kas/kas:5.4 -- /bin/bash -c "$IN_CONTAINER"

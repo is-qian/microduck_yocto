@@ -60,9 +60,10 @@ Topics too long for this file, each a list of things that bite:
 
 - `docs/agents/rauc.md` — A/B updates: the partition table, why `boot` cannot be
   renamed, `bootloader=noop`, the signing key, what "user data survives" means.
-- `docs/agents/hf-jobs.md` — building on HF Jobs: the phantom `ERROR` stage,
-  judging on the log, verifying an artifact before flashing, what is blocked
-  for an agent.
+- `docs/agents/hf-jobs.md` — building on HF Jobs: why every job reported
+  `ERROR` for a week (`bash -lc` + `.bash_logout` + `set -e`) and the probe
+  technique that found it, verifying an artifact before flashing, what is
+  blocked for an agent.
 
 ## Layer pins
 
