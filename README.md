@@ -478,13 +478,55 @@ says so (`Please overwrite example ca.cert.pem ...`), and the image cannot verif
 anything. In CI the private key becomes an org-scoped GitHub secret written to
 `$KAS_BUILD_DIR/rauc-keys/` before the build.
 
-Verification, none of which risks the running board:
+**Verified on hardware 2026-09-18**, on the 32 GB card, dev image, RAUC 1.15.2:
+
+```
+rauc status
+  Compatible:  microduck-zero3
+  Booted from: rootfs.0 (/dev/mmcblk1p5)
+  [rootfs.0] /dev/disk/by-partlabel/rootfs_a  bootname A  booted
+  [rootfs.1] /dev/disk/by-partlabel/rootfs_b  bootname B  inactive
+
+rauc info microduck-bundle-*.raucb
+  Verified inline signature by 'O = Pollen Robotics, CN = Pollen Robotics Development-1'
+  Compatible: 'microduck-zero3'   Bundle Format: verity
+  1 Image: rootfs -> microduck-image-dev-microduck-zero3.rootfs.ext4, 720.8 MB
+
+rauc install microduck-bundle-*.raucb
+  Copying image to rootfs.1 done.
+  noop bootloader: ignore setting slot rootfs.1 as primary
+  Installing succeeded          (exit 0)
+```
+
+So the CA committed here validates a bundle signed by a key that only ever
+existed on the build host; 720 MB reached `rootfs_b`, which held zeroes before
+and carries an ext4 superblock after; and RAUC stopped exactly where this board's
+capability ends, saying so rather than pretending.
+
+Two things that look wrong and are not. Both slots report `boot status: bad` --
+`noop` cannot answer, and RAUC's default for unknown is bad; they become real
+answers under `bootloader=uboot`. And `rauc info` warns `No data directory or
+status file set`: RAUC wants somewhere persistent for its own slot bookkeeping,
+which is the reserved `data` partition, unmounted until something needs it.
+
+Reproduce with:
 
 ```sh
 bitbake microduck-bundle                 # -> tmp/deploy/images/.../microduck-bundle-*.raucb
 rauc info  microduck-bundle-*.raucb      # signature verifies, compatible matches
 rauc install microduck-bundle-*.raucb    # writes rootfs_b, logs the noop refusal to switch
 ```
+
+**The kernel partition must be named `boot`.** This cost a flash: called `boot_a`,
+the board writes and verifies perfectly and never boots, because vendor U-Boot
+looks the kernel up by that exact GPT name. See the comment on the part line in
+the wks.
+
+**Build the bundle, not the image, and it builds the dev image too.**
+`RAUC_SLOT_rootfs` is `microduck-image-dev` on this branch, so `HFJOB_TARGET=microduck-bundle`
+produces both a flashable card and the bundle that matches it. It was briefly
+`microduck-image`, which built a prod card with no password-less root -- a board
+that came up, answered ping, and could not be logged into.
 
 **Stage 2 (not started): boot-time slot selection.** A writable U-Boot
 environment in the reserved `uboot_env` partition, a `boot.scr` that walks
