@@ -528,6 +528,12 @@ and the daemons start against the rootfs directories: a failed mount would
 otherwise cascade through their `StateDirectory=` and stop `configd` and
 `updaterd`, which was observed on a card flashed from an incomplete download.
 
+Both halves are verified on hardware (2026-09-18), on that same card: with the
+partition blank, the mount was skipped and every daemon started; after
+formatting it with the wks's exact `mkfs.ext4` options, `by-label/data`
+appeared, the mount came up (`/dev/mmcblk1p7 ext4 7.7G`), and `StateDirectory=`
+created `config/` and `updater/` on the empty filesystem with zero failed units.
+
 **The kernel partition must be named `boot`.** This cost a flash: called `boot_a`,
 the board writes and verifies perfectly and never boots, because vendor U-Boot
 looks the kernel up by that exact GPT name. See the comment on the part line in

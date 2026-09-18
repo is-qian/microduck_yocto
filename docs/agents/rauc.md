@@ -127,9 +127,13 @@ seed and `updaterd` converges it again — test that deliberately once stage 2 e
 - Nothing can select a slot at boot. Stage 2 is the writable U-Boot env +
   `boot.scr`; the fallback is `radxa/u-boot next-dev-v2024.10`, which boots via
   extlinux (see `conf/machine/microduck-zero3.conf`).
-- First boot on a blank `data` partition — whether `StateDirectory=` populates
-  an empty *filesystem* the way it populates an empty directory — is the next
-  flash's test.
+- First boot on a blank `data` partition, **as flashed by wic**, has not happened
+  yet — every card so far was either unformatted (incomplete download) or
+  formatted by hand. What *is* verified, live on 2026-09-18: `mkfs.ext4` with the
+  wks's exact options → `by-label/data` appears → the mount's condition is true
+  → it mounts → `StateDirectory=` creates `config/` and `updater/` on the empty
+  filesystem → `configd` and `updaterd` start → zero failed units → RAUC's
+  data-directory warning is gone. The wic path only has to reproduce the mkfs.
 - `updater-design.md` in the daemon repo (`:46`) still records A/B as rejected
   ("would be over-engineering"). Its premise — "the OS is static" — expired the
   week the camera DTS and three GStreamer patches each needed a reflash. Update
