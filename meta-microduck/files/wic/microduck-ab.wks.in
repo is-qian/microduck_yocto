@@ -38,8 +38,8 @@
 #   boot_b         38 MiB      32 MiB
 #   rootfs_a       70 MiB       2 GiB
 #   rootfs_b     2118 MiB       2 GiB
-#   data         4166 MiB       1 GiB
-#                            ~5.07 GiB total -- for the 32 GB card, NOT the 2 GB one.
+#   data         4166 MiB       8 GiB   (ext4, mounted at /var/lib/robot)
+#                            ~12.1 GiB total -- for the 32 GB card, NOT the 2 GB one.
 #
 # Partition *labels* are load-bearing. RAUC's system.conf addresses slots as
 # /dev/disk/by-partlabel/rootfs_a|b, and the stage 2 boot script will set
@@ -93,8 +93,27 @@ part / --source rootfs --offset 70M --fixed-size 2048M --fstype=ext4 --part-name
 # than random so two builds of the same commit produce the same GPT.
 part --offset 2118M --fixed-size 2048M --fstype=none --part-name rootfs_b --uuid 614e0001-0000-4b53-8000-1d28000054a9
 
-# Persistent data, reserved only. No mountpoint on purpose: a wic mountpoint
-# writes an /etc/fstab entry, and a failed mount of a partition that a
-# differently-flashed card does not have drops the robot into an emergency
-# shell. Format and mount it when something actually needs it.
-part --offset 4166M --fixed-size 1024M --fstype=none --part-name data
+# Persistent user data -- what a person adds to their robot and would be upset to
+# lose: RL policies under /var/lib/robot/policies, the sound bank, configd's
+# state, wifi credentials. Mounted at /var/lib/robot by
+# recipes-core/microduck-data/, which is where every one of those already lives
+# (POLICY_LIBRARY, StateDirectory=robot/*), so the daemon needs no change at all.
+#
+# Neither rootfs slot touches it, so it survives a RAUC slot switch as well as a
+# daemon update. It does not survive a reflash of the whole .wic, and should not
+# be described as if it did.
+#
+# 8 GiB, not the remaining ~24: unallocated space costs nothing and can be
+# claimed later without a reflash, whereas shrinking a partition someone has
+# filled cannot. The fixed size also keeps this layout identical on a smaller
+# card. Policies are tens of MB each; this is years of collecting them.
+#
+# Formatted here (ext4) rather than at first boot, so a freshly flashed card
+# mounts on its first boot with nothing having to run first. The label is what
+# the mount unit addresses -- /dev/disk/by-partlabel/data -- never a partition
+# number, which moved from p3 to p5 for rootfs in this very layout.
+#
+# Deliberately NOT a wic --mountpoint: that writes an /etc/fstab line, and a
+# missing partition then drops the robot into an emergency shell. The mount
+# unit fails alone instead, and the robot still boots.
+part --offset 4166M --fixed-size 8192M --fstype=ext4 --label data --part-name data --mkfs-extraopts "-F -i 8192 -b 4096"

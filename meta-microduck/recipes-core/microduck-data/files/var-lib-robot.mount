@@ -1,0 +1,26 @@
+[Unit]
+Description=Persistent robot data (policies, sounds, config)
+Documentation=file:///usr/share/doc/microduck-data/README
+
+# The partition is addressed by GPT label, never by number: rootfs itself moved
+# from p3 to p5 when this layout was introduced, and a number here would have
+# silently mounted the wrong thing. The label is set by the wks.
+#
+# udev creates the by-partlabel symlink asynchronously; systemd knows to wait for
+# the device unit behind a mount's What=, so no explicit After= is needed.
+
+[Mount]
+What=/dev/disk/by-partlabel/data
+Where=/var/lib/robot
+Type=ext4
+# nofail is not a mount option here -- it is the *absence* of this unit from
+# local-fs.target's Requires (see [Install]) that makes a missing partition a
+# failed unit rather than an emergency shell.
+Options=defaults,noatime
+
+[Install]
+# WantedBy, not RequiredBy: a card without a data partition (the 2 GB one, or a
+# single-slot image) boots and runs, with /var/lib/robot falling back to the
+# rootfs directories the daemon package ships. A RequiredBy would take the whole
+# of local-fs.target down with it and the robot with that.
+WantedBy=local-fs.target

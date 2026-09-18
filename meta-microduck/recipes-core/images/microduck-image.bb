@@ -11,6 +11,7 @@ IMAGE_FEATURES += "ssh-server-openssh"
 IMAGE_INSTALL:append = " \
     microduck-daemon \
     rauc \
+    microduck-data \
     packagegroup-microduck-media \
     kernel-modules \
     ca-certificates \
