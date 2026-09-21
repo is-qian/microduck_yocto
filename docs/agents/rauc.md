@@ -177,14 +177,21 @@ seed and `updaterd` converges it again — test that deliberately once stage 2 e
 ## What is not done
 
 - Kernel is not A/B. `boot_b` is reserved and empty.
-- Nothing can select a slot at boot. Stage 2a is **done in the tree, untested on
-  hardware**: a writable U-Boot environment
+- Nothing can select a slot at boot. Stage 2a is **built and verified at build
+  time; untested on hardware**: a writable U-Boot environment
   (`recipes-bsp/u-boot/files/rauc-env.cfg`) plus `/etc/fw_env.config` and
-  `libubootenv-bin` (`recipes-bsp/u-boot-env/`). It deliberately changes no boot
-  behaviour, so the board must come up exactly as before; what it adds is that
-  `fw_setenv X 1; reboot; fw_printenv X` survives. Verify that before stage 2b,
-  because everything RAUC does with `bootloader=uboot` rests on it, and a wrong
-  `CONFIG_ENV_OFFSET` corrupts U-Boot rather than failing loudly.
+  `libubootenv-bin` (`recipes-bsp/u-boot-env/`). Build `6ab11671` (2026-09-21)
+  completed with 0 errors, and the config provably took effect: comparing the
+  deployed `uboot-*.bin` against the previous build's, the string `setexpr` goes
+  0 → 8 and `ENV_BLK` goes 0 → 2. That is the check to repeat if this is ever
+  suspected — `bb.note` from the `do_configure` postfunc goes to the per-recipe
+  task log, which `rm_work` deletes, so it is *not* visible in the job log and
+  its absence there means nothing.
+  It deliberately changes no boot behaviour, so the board must come up exactly as
+  before; what it adds is that `fw_setenv X 1; reboot; fw_printenv X` survives.
+  Verify that before stage 2b, because everything RAUC does with
+  `bootloader=uboot` rests on it, and a wrong `CONFIG_ENV_OFFSET` corrupts U-Boot
+  rather than failing loudly.
   Stage 2b is then the boot script + stripping `root=` from the chosen patch +
   `bootloader=uboot`; the fallback is `radxa/u-boot next-dev-v2024.10`, which
   boots via extlinux (see `conf/machine/microduck-zero3.conf`).
