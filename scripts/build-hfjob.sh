@@ -70,19 +70,23 @@ case "$TARGET" in
 	;;
 esac
 
-# The directory sync below is ADDITIVE: `hf` uploads new and changed files into a
-# stable per-directory bucket prefix and never deletes. So a file removed or
-# renamed locally lives on in the bucket forever, gets mounted beside its
-# replacement, and bitbake sees both.
+# The directory sync below writes into a stable per-directory bucket prefix, and
+# the prefix does not change when the content does.
 #
-# For a .bbappend that is fatal to the whole parse, not a cosmetic leftover:
+# Observed on hf 1.30.0, 2026-09-21: a file renamed locally had its new name
+# uploaded and its old name LEFT IN THE BUCKET, so both were mounted. Do not read
+# that as "the sync never deletes" -- a later run printed a plan with an explicit
+# `Deletes: 0` line, so the machinery exists and the rule is not established. What
+# is established is that a removed file survived a sync.
+#
+# For a .bbappend that is fatal to the whole parse:
 #
 #   ERROR: No recipes in default available for:
 #     .../recipes-bsp/u-boot/u-boot-rockchip_%.bbappend
 #
-# which is what happened on 2026-09-21 after renaming that file. The rename was
-# correct, the new file uploaded, the old one stayed, and two consecutive jobs
-# died 25 s into bitbake -- each after ~39 minutes of cache seed first.
+# which is what happened after renaming that file. The rename was correct, the new
+# file uploaded, the old one stayed, and two consecutive jobs died 25 s into
+# bitbake -- each after ~39 minutes of cache seed first.
 #
 # **.bbappend only, deliberately.** A stale .bb is not the same bug: bitbake just
 # sees two versions of a recipe and takes the highest PV. The bucket currently

@@ -27,24 +27,27 @@ once the job is terminal. Do not read an empty log as "no output yet — fine".
 `hf jobs inspect --json` returns a **single-element array**. `jq '.status.stage'`
 gives empty; use `(.[0]? // .) | .status.stage`.
 
-## The input sync never deletes, and a renamed .bbappend will kill the parse
+## The input sync left a deleted file behind, and it killed the parse
 
 `hf jobs -v ./meta-microduck:/src/meta-microduck` syncs into a **stable**
-per-directory bucket prefix (`jobs-artifacts/meta-microduck-<hash>`) and is
-**additive**: new and changed files are uploaded, removed ones are not deleted.
-The prefix does not change when the content does. So a file you delete or rename
-locally stays in the bucket and gets mounted beside its replacement.
+per-directory bucket prefix (`jobs-artifacts/meta-microduck-<hash>`). The prefix
+does not change when the content does.
 
-For a `.bbappend` that fails the **entire parse**, 25 seconds into bitbake and
+**Observed on hf 1.30.0, 2026-09-21:** renaming a file locally uploaded the new
+name and left the old one in the bucket, so both were mounted. Do not read that
+as "the sync never deletes" — a later run printed a plan with an explicit
+`Deletes: 0` line, so the machinery exists and the exact rule is not established.
+What is established is that a removed file survived a sync and broke two builds.
+Treat divergence as possible and check it, rather than trusting either direction.
+
+For a `.bbappend` this fails the **entire parse**, 25 seconds into bitbake and
 ~39 minutes into the job:
 
     ERROR: No recipes in default available for:
       .../recipes-bsp/u-boot/u-boot-rockchip_%.bbappend
 
-That exact sequence cost two builds on 2026-09-21. The rename was right, the new
-file uploaded, the old one stayed, and re-running changed nothing because the
-second sync was equally additive. `git mv` locally is not enough — remove the
-bucket copy too:
+Re-running changed nothing. `git mv` locally was not enough — the bucket copy had
+to go too:
 
     hf buckets rm -y 'hf://buckets/pollen-robotics/jobs-artifacts/<prefix>/<path>'
 
