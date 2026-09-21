@@ -381,6 +381,23 @@ all go — grep the tag to find them. `microduck_daemon`'s
 > inside the rootfs slot, so a bundle overwrites a hand edit, and an edit made on
 > one slot is not on the other. Tracked on #3.
 
+### The policy set ships in the image
+
+`robotd` loads its gait and its one-shots from `/opt/robot/policies/current`,
+which is outside the daemon release on purpose — a retrained gait should not
+need a daemon release. On a provisioned Armbian board that directory is filled
+by the daemon's `scripts/seed-policies.sh`; **an image installs through neither
+`hooks/postinstall` nor `scripts/install.sh`**, so the first images had no
+policies at all — and a powered robot whose gait file is missing reports
+`unhealthy`, which is what the updater's health gate rolls a release back on.
+
+`recipes-microduck/microduck-policies` seeds the set at build time, from the
+Hub, pinned by commit and checksummed per file, in the layout the seeder and
+`updaterd` both use. That recipe is where this is explained and where the
+version lives: **bump it in step with the daemon**, following `POLICY_VERSION`
+in the pinned release's own `scripts/seed-policies.sh`. Seeding *below* what the
+daemon names is the case that breaks.
+
 ### Before flashing
 
 1. **Built on hardware with a known memory fault** — see `../CONTEXT.md`. Do not

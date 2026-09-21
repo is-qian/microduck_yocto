@@ -405,6 +405,17 @@ pkg_postinst:${PN}-devkey() {
 # the rootfs as a shlib side effect while webrtcbin had no ICE.
 RDEPENDS:${PN} += "systemd ca-certificates networkmanager bluez5"
 
+# curl: hooks/postinstall runs scripts/seed-policies.sh and scripts/seed-detector.sh on
+# every update, and both are POSIX shell fetching with curl. Without it every seeder fails
+# instantly, the hook warns (never fatal), and the update completes having seeded nothing.
+# openssl is already in the rootfs via ssh-server-openssh, so this costs curl alone.
+#
+# Seeding the policy set in the image (recipes-microduck/microduck-policies, which has the
+# why in full) covers a fresh board; this is what lets a board *follow* the pin when a
+# later release moves POLICY_VERSION. updaterd's own policy installer speaks rustls and
+# needs no curl, but it is reached from `robotctl policy update` alone.
+RDEPENDS:${PN} += "curl"
+
 # webrtcsink, and it is a hard dependency rather than a recommendation: mediad
 # calls ElementFactory::make("webrtcsink") during pipeline construction and exits
 # 1 when it is absent, so a rootfs without this has a unit that crash-loops from
@@ -431,3 +442,11 @@ RDEPENDS:${PN} += "gstreamer1.0-plugins-rs gstreamer1.0-rockchip"
 # robotd installs and starts fine without it and only fails when asked to walk, so a
 # minimal image can drop it. ORT_DYLIB_PATH overrides the location.
 RRECOMMENDS:${PN} += "onnxruntime"
+
+# The policy set. RDEPENDS, not RRECOMMENDS: a powered robot with no set reports
+# `unhealthy` (robotd/src/main.rs, policy_error), and unhealthy is what the health gate
+# rolls a release back on -- so every *attempted* update reverts. Seeded here because an
+# image installs through neither hooks/postinstall nor scripts/install.sh; the recipe
+# carries the rest of the story. Bump it with POLICY_VERSION in the daemon's own
+# scripts/seed-policies.sh (v5 at 0.13.0 and at 0.14.1).
+RDEPENDS:${PN} += "microduck-policies"
