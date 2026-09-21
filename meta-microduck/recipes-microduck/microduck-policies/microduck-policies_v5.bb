@@ -1,15 +1,12 @@
 SUMMARY = "The official microduck policy set"
-DESCRIPTION = "The ONNX networks robotd runs: the walking gait, the standing \
-network, and the one-shots the gamepad buttons fire. Installed under \
-/opt/robot/policies, deliberately outside the daemon release -- a gait retrain \
-should not need a daemon release, and a daemon fix should not re-ship six \
-megabytes of unchanged weights."
 HOMEPAGE = "https://huggingface.co/pollen-robotics/microduck-policies"
 
 LICENSE = "Apache-2.0"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/Apache-2.0;md5=89aea4e17d99a7cacdbeed46a0096b10"
 
-# Why this recipe exists.
+# Why this recipe exists. This is the one copy of the story -- AGENTS.md, README.md and
+# microduck-daemon point here rather than retell it, because at v6 there is one file to
+# update and it is this one.
 #
 # robotd resolves every policy slot under /opt/robot/policies/current, and a slot it
 # cannot read is not a limitation -- it is `unhealthy`:
@@ -19,23 +16,32 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/Apache-2.0;md5=89aea4e17d99a7ca
 #         return unhealthy(format!("policy unavailable: {reason}"));
 #     }
 #
-# `unhealthy` is what the updater's health gate rolls a release back on, so an image
-# with no policy set cannot install an update at all. Observed on the board:
+# `unhealthy` is what the updater's health gate rolls a release back on. Observed on the
+# board:
 #
 #     "reason": "health check failed: not healthy within 30s: policy unavailable:
 #      reading /opt/robot/policies/current/velstand.onnx: No such file or directory"
 #
 # Note that is a *rollback*, not a refusal: the release downloaded, verified, swapped,
-# started, failed the gate and was reverted. Every update, forever, with a robot that
-# holds its pose in between.
+# started, failed the gate and was reverted. It repeats on every *attempted* apply --
+# not on every check_interval, since updater.toml sets auto_apply = "mandatory" and
+# 0.14.1's manifest names no min_supported, so a candidate sits there unapplied until
+# someone asks for it.
+#
+# And it is the verdict of a *powered* robot. With servo power off, robotd's health
+# check returns `degraded` at the bus check (ticks == 0 with waiting > 0) before it ever
+# reaches policy_error, and an apply passes the gate. So this does not make a board
+# unupdatable in every state -- it makes it unupdatable in the state the robot is in
+# when anyone would notice, which is the one that matters.
 #
 # Upstream fills that directory from `scripts/seed-policies.sh`, run by
 # `hooks/postinstall` on every update and by `scripts/install.sh` on a fresh board. An
 # image installs through neither, so nothing ever ran it here. Re-running it at first
-# boot would not fix this either: it needs curl, which this image does not carry (see
-# recipes-microduck/onnxruntime for the other half of that discovery), and it needs the
-# network to be up before the first update check -- on a robot provisioned over BLE
-# because it has no wifi yet, that is a robot that cannot walk out of the box.
+# boot would not fix this either: it needs curl, which this image did not carry (see
+# recipes-microduck/onnxruntime for the other half of that discovery, and
+# microduck-daemon for where curl now comes from), and it needs the network to be up
+# before the first update check -- on a robot provisioned over BLE because it has no
+# wifi yet, that is a robot that cannot walk out of the box.
 #
 # So the image ships the set, and the seeder then leaves it alone. That is not a
 # coincidence: seed-policies.sh reads the `.source` record written below, compares
@@ -66,30 +72,32 @@ POLICY_BASE = "https://huggingface.co/${POLICY_REPO}/resolve/${POLICY_REV}"
 #
 # This is what seed-policies.sh installs -- it downloads every `"file"` in the revision's
 # manifest.json -- and matching it is what makes the two paths produce the same board.
-# It also costs nothing to be complete: 7.9 MiB of weights against a 535 MiB image, and
-# the alternative is that `robotctl policy load <slot> roller.onnx` fails on a robot
-# whose set is silently a subset of the one it says it has.
+# It also costs nothing to be complete: 7.9 MiB of weights on a rootfs that is already
+# 1.9 G, and the alternative is that `robotctl policy load <slot> roller.onnx` fails on a
+# robot whose set is silently a subset of the one it says it has.
 #
 # manifest.json comes with them because robotd reads it: robotd-params' `set_manifest()`
 # takes the ground-pick period, the sitstand ramp and which policies are skills from
 # `${POLICY_DIR}/manifest.json`, falling back to the prototype's hard-coded numbers when
 # it is absent. A set without it runs, subtly differently.
 #
-# Only manifest.json takes a downloadfilename. DL_DIR is flat and shared by every recipe
-# in the tree, and `manifest.json` is a name another recipe will plausibly want; the ten
-# weights are distinctive enough to stand on their own.
+# Every file takes a downloadfilename, and the collision that makes it necessary is not
+# between recipes: DL_DIR is flat and keyed by filename alone, so v5 and v6 of
+# velstand.onnx would be the same cache entry holding different bytes. Bitbake does
+# recover from that -- the checksum fails and the file is re-fetched as
+# `_bad-checksum_` -- but on a pre-seeded cache it is a confusing way to find out.
 SRC_URI = "\
     ${POLICY_BASE}/manifest.json;name=manifest;downloadfilename=${BPN}-${PV}-manifest.json \
-    ${POLICY_BASE}/velstand.onnx;name=velstand \
-    ${POLICY_BASE}/alpha_walking.onnx;name=alpha_walking \
-    ${POLICY_BASE}/alpha_stand.onnx;name=alpha_stand \
-    ${POLICY_BASE}/alpha_sitstand.onnx;name=alpha_sitstand \
-    ${POLICY_BASE}/alpha_ground_pick.onnx;name=alpha_ground_pick \
-    ${POLICY_BASE}/ball_kick_left.onnx;name=ball_kick_left \
-    ${POLICY_BASE}/ball_kick_right.onnx;name=ball_kick_right \
-    ${POLICY_BASE}/roulade.onnx;name=roulade \
-    ${POLICY_BASE}/roller.onnx;name=roller \
-    ${POLICY_BASE}/roller_crouch.onnx;name=roller_crouch \
+    ${POLICY_BASE}/velstand.onnx;name=velstand;downloadfilename=${BPN}-${PV}-velstand.onnx \
+    ${POLICY_BASE}/alpha_walking.onnx;name=alpha_walking;downloadfilename=${BPN}-${PV}-alpha_walking.onnx \
+    ${POLICY_BASE}/alpha_stand.onnx;name=alpha_stand;downloadfilename=${BPN}-${PV}-alpha_stand.onnx \
+    ${POLICY_BASE}/alpha_sitstand.onnx;name=alpha_sitstand;downloadfilename=${BPN}-${PV}-alpha_sitstand.onnx \
+    ${POLICY_BASE}/alpha_ground_pick.onnx;name=alpha_ground_pick;downloadfilename=${BPN}-${PV}-alpha_ground_pick.onnx \
+    ${POLICY_BASE}/ball_kick_left.onnx;name=ball_kick_left;downloadfilename=${BPN}-${PV}-ball_kick_left.onnx \
+    ${POLICY_BASE}/ball_kick_right.onnx;name=ball_kick_right;downloadfilename=${BPN}-${PV}-ball_kick_right.onnx \
+    ${POLICY_BASE}/roulade.onnx;name=roulade;downloadfilename=${BPN}-${PV}-roulade.onnx \
+    ${POLICY_BASE}/roller.onnx;name=roller;downloadfilename=${BPN}-${PV}-roller.onnx \
+    ${POLICY_BASE}/roller_crouch.onnx;name=roller_crouch;downloadfilename=${BPN}-${PV}-roller_crouch.onnx \
 "
 
 # The Hub stores these in LFS, and an LFS object's oid *is* its sha256 -- so these came
@@ -111,12 +119,13 @@ SRC_URI[roller_crouch.sha256sum] = "a1a084be240469c76ac9d3fa44d4792f16d4b1da6039
 # serves every machine.
 inherit allarch
 
-# Nothing unpacks to a directory here -- eleven loose files land straight in
-# ${UNPACKDIR} -- so the default S, ${UNPACKDIR}/${BP}, names a directory that never
-# exists and every shell task fails on the `cd` into it before running a line. (The
-# prohibition in AGENTS.md is specific to S = "${UNPACKDIR}/git" on a git recipe, which
+# Loose files, no unpack directory: give the default S somewhere that exists. This is the
+# oe-core idiom for the case -- point S at a directory of its own and unpack into it --
+# rather than S = "${UNPACKDIR}", which works but shadows a variable the tasks still use.
+# (AGENTS.md's prohibition is specific to S = "${UNPACKDIR}/git" on a git recipe, which
 # wrynose rejects in do_unpack; this is the unrelated loose-files case.)
-S = "${UNPACKDIR}"
+S = "${WORKDIR}/sources"
+UNPACKDIR = "${S}"
 
 do_configure[noexec] = "1"
 do_compile[noexec] = "1"
@@ -134,9 +143,12 @@ POLICY_SET = "releases/seed-${PV}"
 
 do_install() {
 	install -d ${D}${POLICY_ROOT}/${POLICY_SET}
-	install -m 0644 ${UNPACKDIR}/*.onnx ${D}${POLICY_ROOT}/${POLICY_SET}/
-	install -m 0644 ${UNPACKDIR}/${BPN}-${PV}-manifest.json \
-		${D}${POLICY_ROOT}/${POLICY_SET}/manifest.json
+
+	# Installed under the name the manifest uses, which means stripping the DL_DIR
+	# prefix back off on the way in.
+	for f in ${UNPACKDIR}/${BPN}-${PV}-*; do
+		install -m 0644 "$f" ${D}${POLICY_ROOT}/${POLICY_SET}/"${f##*/${BPN}-${PV}-}"
+	done
 
 	# Where this set came from, beside the set. It is what lets `robotctl policy check`
 	# ask the Hub whether there is anything newer without anyone configuring the repo a
@@ -153,7 +165,6 @@ do_install() {
 		repo=${POLICY_REPO}
 		version=${PV}
 	EOT
-	chmod 0644 ${D}${POLICY_ROOT}/${POLICY_SET}/.source
 
 	# Relative, not absolute, and for the seeder's stated reason: an absolute target
 	# resolves against the wrong directory the moment POLICY_ROOT is not what it was
