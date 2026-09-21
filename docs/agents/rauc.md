@@ -127,13 +127,17 @@ seed and `updaterd` converges it again — test that deliberately once stage 2 e
 - Nothing can select a slot at boot. Stage 2 is the writable U-Boot env +
   `boot.scr`; the fallback is `radxa/u-boot next-dev-v2024.10`, which boots via
   extlinux (see `conf/machine/microduck-zero3.conf`).
-- First boot on a blank `data` partition, **as flashed by wic**, has not happened
-  yet — every card so far was either unformatted (incomplete download) or
-  formatted by hand. What *is* verified, live on 2026-09-18: `mkfs.ext4` with the
-  wks's exact options → `by-label/data` appears → the mount's condition is true
-  → it mounts → `StateDirectory=` creates `config/` and `updater/` on the empty
-  filesystem → `configd` and `updaterd` start → zero failed units → RAUC's
-  data-directory warning is gone. The wic path only has to reproduce the mkfs.
+- The `data` partition is **done, both paths on hardware**. Blank partition:
+  mount skipped, every daemon up (2026-09-18, incomplete-download card). Correctly
+  flashed card, first boot, no hand-formatting (2026-09-21): wic's own `mkfs`
+  produced `by-label/data`, `var-lib-robot.mount` came up (`/dev/mmcblk1p7 ext4
+  7.7G`), `StateDirectory=` created `config/` and `updater/` on the empty
+  filesystem, all five daemons active, zero failed units, no RAUC
+  data-directory warning. Note that image was built from `c15f752`, *before* the
+  Condition fix in `e8130b0` — which is fine, a correct flash never takes the
+  degraded path — but it means **no image containing `e8130b0` has been built**.
+  The next `HFJOB_TARGET=microduck-bundle` run picks it up; nothing to test, the
+  condition is already proven live as a runtime drop-in.
 - `updater-design.md` in the daemon repo (`:46`) still records A/B as rejected
   ("would be over-engineering"). Its premise — "the OS is static" — expired the
   week the camera DTS and three GStreamer patches each needed a reflash. Update
