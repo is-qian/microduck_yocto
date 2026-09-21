@@ -27,6 +27,40 @@ once the job is terminal. Do not read an empty log as "no output yet — fine".
 `hf jobs inspect --json` returns a **single-element array**. `jq '.status.stage'`
 gives empty; use `(.[0]? // .) | .status.stage`.
 
+## The input sync never deletes, and a renamed .bbappend will kill the parse
+
+`hf jobs -v ./meta-microduck:/src/meta-microduck` syncs into a **stable**
+per-directory bucket prefix (`jobs-artifacts/meta-microduck-<hash>`) and is
+**additive**: new and changed files are uploaded, removed ones are not deleted.
+The prefix does not change when the content does. So a file you delete or rename
+locally stays in the bucket and gets mounted beside its replacement.
+
+For a `.bbappend` that fails the **entire parse**, 25 seconds into bitbake and
+~39 minutes into the job:
+
+    ERROR: No recipes in default available for:
+      .../recipes-bsp/u-boot/u-boot-rockchip_%.bbappend
+
+That exact sequence cost two builds on 2026-09-21. The rename was right, the new
+file uploaded, the old one stayed, and re-running changed nothing because the
+second sync was equally additive. `git mv` locally is not enough — remove the
+bucket copy too:
+
+    hf buckets rm -y 'hf://buckets/pollen-robotics/jobs-artifacts/<prefix>/<path>'
+
+`build-hfjob.sh` now warns about orphaned `.bbappend`s before launching. It is a
+warning rather than a refusal because the bucket holds one prefix per source
+directory (this worktree and the main checkout each have their own) and the run's
+prefix is only known after `hf jobs run` returns — so it necessarily reports on
+prefixes that are not this run's.
+
+Only `.bbappend` is flagged. A stale `.bb` is a different, benign thing: bitbake
+sees two versions of a recipe and takes the highest `PV`.
+
+To see what a job actually mounted:
+
+    hf jobs inspect <ns>/<id> --json | jq -r '(.[0]? // .) | .volumes[]'
+
 ## Verify the artifact before flashing, not after
 
 A build can succeed and produce the wrong thing, and a download can be
