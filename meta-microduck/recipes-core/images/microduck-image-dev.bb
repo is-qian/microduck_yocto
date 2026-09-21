@@ -55,11 +55,8 @@ IMAGE_INSTALL:append = " \
 # microduck-daemon-bash-completion is `robotctl<TAB>`, and it is here rather than in
 # the shipping image for the same reason as everything else on this list: nobody logs
 # into microduck-image, so nothing there should pay for a Tab key. It pulls in
-# bash-completion, which is what was actually missing -- bash itself is already in
-# both images, but without bash-completion there is no /etc/profile.d snippet to load
-# the completion machinery and no /etc/bash_completion.d for the daemon's own
-# scripts/setup-login.sh to write into, so its install_completions() has been
-# returning early on every update since the first image.
+# bash-completion, which is the piece that was actually missing -- bash itself is
+# already in both images. The daemon recipe's package block has the chain.
 #
 # aic8800-bt-test is AICSemi's own bt_test, and it is here rather than in the
 # shipping image because it is a diagnostic for an unsolved problem: the board

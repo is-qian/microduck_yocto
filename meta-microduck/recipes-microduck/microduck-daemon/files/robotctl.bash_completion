@@ -9,10 +9,8 @@
 # This is the same indirection scripts/setup-login.sh writes on a provisioned board,
 # deliberately: two paths to the same board should install the same thing.
 #
-# `eval` rather than `source <(robotctl ...)`: process substitution is not reliable in
-# bash 3.2, and stderr is discarded so a rolled-back release that predates
-# `robotctl completions` leaves the shell with no completions rather than a usage
-# error.
+# stderr is discarded so a rolled-back release that predates `robotctl completions`
+# leaves the shell with no completions rather than a usage error.
 if command -v robotctl >/dev/null 2>&1; then
     eval "$(robotctl completions bash 2>/dev/null)"
 fi
