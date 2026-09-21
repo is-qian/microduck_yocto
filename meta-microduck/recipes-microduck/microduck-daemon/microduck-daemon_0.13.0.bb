@@ -372,6 +372,30 @@ pkg_postinst:${PN}-devkey() {
 		echo "ERROR: could not enable allow_dev_keys in $cfg" >&2
 		exit 1
 	fi
+
+	# And the sentence above it, which upstream wrote for a client robot: "Both false,
+	# and this is the file that makes them false". Left standing, the one line in
+	# updater.toml that is about trust disagrees with the paragraph introducing it --
+	# on a board where root has no password, so "somebody edited this and missed the
+	# comment" is a reading with real consequences. Its file header asks for better:
+	# "every value below is either a decision or a fact".
+	#
+	# Only the first sentence goes. The rest of the paragraph -- what the flag allows,
+	# and that /etc survives an update -- is what a reader of a dev board wants, and is
+	# still true. One line replaces one line: a multi-line right-hand side would need
+	# `\n`, which BusyBox sed on a target-run postinst does not owe us.
+	sed -i -e 's/^# Both false, and this is the file that makes them false on a client robot\./# NOT both false: microduck-daemon-devkey flipped allow_dev_keys on this image./' "$cfg"
+
+	# Upstream prose is not an API. If the sentence is ever reworded, this rewrite
+	# silently stops applying and the board goes back to shipping a file that
+	# contradicts itself -- so fail the build instead, the way the repo rewrite above
+	# does. Assert the sentence we wrote is present, not that theirs is gone: a
+	# rewording that drops "Both false" defeats the sed and a negative grep both.
+	if ! grep -q '^# NOT both false: microduck-daemon-devkey' "$cfg"; then
+		echo "ERROR: could not rewrite the 'Both false' paragraph in $cfg;" >&2
+		echo "       the daemon reworded it -- re-read it and fix this sed" >&2
+		exit 1
+	fi
 }
 
 # updaterd shells out to systemctl for its on_apply restart action, and every
