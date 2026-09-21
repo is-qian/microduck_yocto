@@ -318,41 +318,17 @@ the adapter.
 `robotd` loads its gait and its one-shots from `/opt/robot/policies/current`,
 which is outside the daemon release on purpose — a retrained gait should not
 need a daemon release. On a provisioned Armbian board that directory is filled
-by `scripts/seed-policies.sh`, which the daemon's `hooks/postinstall` runs on
-every update and `scripts/install.sh` runs on a fresh board.
-
-**An image installs through neither**, so the first images had no policies at
-all, and that is not a robot that merely stands still. A slot naming a file it
-cannot read makes `robotd` report `unhealthy`, and `unhealthy` is what the
-updater's health gate rolls a release back on:
-
-```
-"reason": "health check failed: not healthy within 30s: policy unavailable:
- reading /opt/robot/policies/current/velstand.onnx: No such file or directory"
-```
-
-That is a rollback, not a refusal — downloaded, verified, swapped, started,
-reverted — repeating every `check_interval` forever. A board with no policies
-cannot be fixed by an update, which is the one mechanism meant to fix boards.
+by the daemon's `scripts/seed-policies.sh`; **an image installs through neither
+`hooks/postinstall` nor `scripts/install.sh`**, so the first images had no
+policies at all — and a powered robot whose gait file is missing reports
+`unhealthy`, which is what the updater's health gate rolls a release back on.
 
 `recipes-microduck/microduck-policies` seeds the set at build time, from the
-Hub, pinned by commit and checksummed per file. It lands in the layout
-`updaterd` and the seeder both use — `releases/seed-v5/` beside a relative
-`current` symlink — with the `.source` record that says where it came from. The
-seeder then reads that record, finds a version at or above its own pin, and
-leaves it alone; `robotctl policy update` can still move the board forward.
-
-Bump it in step with the daemon: the version to seed is `POLICY_VERSION` in the
-pinned release's own `scripts/seed-policies.sh`. Seeding *below* it is the case
-that breaks, because the daemon's defaults name files only the newer set
-carries.
-
-Seeding is only half of it, though — the board also has to be able to *follow*
-that pin when a later release moves it, and `seed-policies.sh` is the only thing
-that does so unattended. It is POSIX shell and fetches with `curl`, which the
-daemon recipe therefore pulls into the image; `updaterd`'s own policy installer
-speaks rustls and needs no curl, but it is reached from `robotctl policy update`
-alone and never runs on the update path.
+Hub, pinned by commit and checksummed per file, in the layout the seeder and
+`updaterd` both use. That recipe is where this is explained and where the
+version lives: **bump it in step with the daemon**, following `POLICY_VERSION`
+in the pinned release's own `scripts/seed-policies.sh`. Seeding *below* what the
+daemon names is the case that breaks.
 
 ### Before flashing
 

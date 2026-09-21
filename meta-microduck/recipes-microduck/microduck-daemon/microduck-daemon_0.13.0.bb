@@ -385,37 +385,15 @@ pkg_postinst:${PN}-devkey() {
 # the rootfs as a shlib side effect while webrtcbin had no ICE.
 RDEPENDS:${PN} += "systemd ca-certificates networkmanager bluez5"
 
-# curl, because the release's own maintenance scripts are shell and fetch with it.
+# curl: hooks/postinstall runs scripts/seed-policies.sh and scripts/seed-detector.sh on
+# every update, and both are POSIX shell fetching with curl. Without it every seeder fails
+# instantly, the hook warns (never fatal), and the update completes having seeded nothing.
+# openssl is already in the rootfs via ssh-server-openssh, so this costs curl alone.
 #
-# This is not a build dependency and nothing in the workspace links libcurl:
-# every HTTPS fetch the *daemons* make goes through rustls. But a release is more
-# than its binaries. hooks/postinstall runs scripts/seed-policies.sh and
-# scripts/seed-detector.sh on every update, and those are POSIX shell with curl
-# as their only non-coreutils requirement -- deliberately so, since they have to
-# run on a board where nothing else works.
-#
-# Without curl those fetches fail instantly, the hook warns and moves on (never
-# fatal, by design), and the update completes having silently done nothing about
-# the thing it was carrying a pin for. That is how this board reached a rolled-back
-# 0.14.1 with an empty /opt/robot/policies: the release applied, postinstall ran,
-# seed-policies.sh could not fetch a byte, robotd came up `unhealthy` with no gait
-# and the health gate reverted it.
-#
-# recipes-microduck/microduck-policies seeds the set at build time so a fresh image
-# walks without ever needing this. That covers the first half; this is the other
-# half -- when a later daemon release moves POLICY_VERSION, seed-policies.sh is the
-# only thing that moves the board with it. updaterd's own policy installer
-# (updater/src/policy.rs, rustls, no curl) is reached from `robotctl policy update`
-# alone -- engine.rs files it under "explicit transitions" -- so it is not a
-# substitute for this on the unattended path.
-#
-# It also gets the duck detector seeded, by the same route and for the same reason.
-#
-# The cost is openssl, which oe-core's curl takes as its TLS backend by default and
-# which nothing else here pulls in: roughly 4 MB on a 393 MB rootfs. Worth naming
-# rather than discovering, but not worth a second TLS stack's worth of divergence
-# to avoid -- and AGENTS.md's "there is no OpenSSL in the tree" is about the Rust
-# build resolving rustls to aws-lc-rs, not a rule for the rootfs.
+# Seeding the policy set in the image (recipes-microduck/microduck-policies, which has the
+# why in full) covers a fresh board; this is what lets a board *follow* the pin when a
+# later release moves POLICY_VERSION. updaterd's own policy installer speaks rustls and
+# needs no curl, but it is reached from `robotctl policy update` alone.
 RDEPENDS:${PN} += "curl"
 
 # webrtcsink, and it is a hard dependency rather than a recommendation: mediad
@@ -445,25 +423,10 @@ RDEPENDS:${PN} += "gstreamer1.0-plugins-rs gstreamer1.0-rockchip"
 # minimal image can drop it. ORT_DYLIB_PATH overrides the location.
 RRECOMMENDS:${PN} += "onnxruntime"
 
-# The policy set, and RDEPENDS rather than RRECOMMENDS because this one decides whether
-# the robot can be updated at all.
-#
-# robotd reports `unhealthy` -- not `degraded` -- when a policy slot names a file it
-# cannot read, and `unhealthy` is exactly what the updater's health gate reverts a
-# release on. So a board with no set does not merely stand still: it downloads, verifies,
-# swaps, restarts, fails the gate and rolls back, every six hours, forever. Seen on the
-# board as
-#
-#     "health check failed: not healthy within 30s: policy unavailable:
-#      reading /opt/robot/policies/current/velstand.onnx: No such file or directory"
-#
-# Upstream fills that directory from hooks/postinstall on every update and from
-# scripts/install.sh on a fresh board; an image installs through neither, so on this
-# image nothing ever put a policy there. recipes-microduck/microduck-policies does, in
-# the layout and with the `.source` record that make seed-policies.sh leave it alone
-# afterwards.
-#
-# The version to seed is named by the *daemon* release -- POLICY_VERSION in its own
-# scripts/seed-policies.sh -- so on a daemon bump, check it and bump the policies recipe
-# with it. It is v5 at 0.13.0 and still v5 at 0.14.1.
+# The policy set. RDEPENDS, not RRECOMMENDS: a powered robot with no set reports
+# `unhealthy` (robotd/src/main.rs, policy_error), and unhealthy is what the health gate
+# rolls a release back on -- so every *attempted* update reverts. Seeded here because an
+# image installs through neither hooks/postinstall nor scripts/install.sh; the recipe
+# carries the rest of the story. Bump it with POLICY_VERSION in the daemon's own
+# scripts/seed-policies.sh (v5 at 0.13.0 and at 0.14.1).
 RDEPENDS:${PN} += "microduck-policies"
