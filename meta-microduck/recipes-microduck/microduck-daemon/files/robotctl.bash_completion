@@ -1,0 +1,16 @@
+# Tab-completion for robotctl.
+#
+# A *loader* rather than a generated snapshot: it asks the live binary for its own
+# completions, so after an update adds a subcommand the completions describe the
+# release now installed, with nothing to regenerate and nothing for a rollback to
+# leave behind. Cross-compiling cannot produce the snapshot anyway -- generating one
+# at build time would mean running an aarch64 binary on the build host.
+#
+# This is the same indirection scripts/setup-login.sh writes on a provisioned board,
+# deliberately: two paths to the same board should install the same thing.
+#
+# stderr is discarded so a rolled-back release that predates `robotctl completions`
+# leaves the shell with no completions rather than a usage error.
+if command -v robotctl >/dev/null 2>&1; then
+    eval "$(robotctl completions bash 2>/dev/null)"
+fi
