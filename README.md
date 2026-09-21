@@ -313,6 +313,74 @@ Not verified: that `btd` can advertise through the adapter. `btd` is not built
 yet, and the LE checks available from a shell conflict with `bluetoothd` holding
 the adapter.
 
+#### Gamepad pairing: an AIC8800 workaround, tagged `remove-with-real-radio`
+
+An Xbox pad will not bond reliably through this radio without help, and the help
+lives in `microduck_daemon`'s `scripts/setup-board.sh` — driven by
+`provision-board.sh`, the Armbian path, which never runs against a Yocto board.
+So the half that is safe everywhere is applied by a recipe here, and the half
+that is not is left to whoever meets it.
+
+**Shipped in the image.** `microduck-daemon` writes `/var/lib/robot/weird-ble`,
+which is what `provision-board.sh --pause-btd-on-pair` leaves. `robotctl pad
+pair` reads only whether that file exists; when it does, it stops `btd` for the
+pairing window, power-cycles the adapter, pairs and starts `btd` again. Measured
+upstream on `50:37:CD:16:1D:90`, 2026-08-19: with `btd` advertising a **new**
+bond dies ~800 µs after Encryption Change with `Remote User Terminated (0x13)`;
+with `btd` paused it bonds and holds, 45/45 samples. Every earlier failure blamed
+on the aic8800 driver build had `btd` advertising — that was the uncontrolled
+variable. An existing bond is unaffected, so a paired pad connects and drives
+with everything running. It costs a pairing window and nothing else, so it is on
+by default; `sudo rm /var/lib/robot/weird-ble` opts out.
+
+**Not shipped: `Privacy = device`**, the `--weird-ble` half. Some units cannot
+bond under BlueZ's default `Privacy = off` at all, even with `btd` paused, and
+want it. But on a unit that did *not* need it the pad bonds and then flaps with
+`PIN or Key Missing (0x06)` — 46 times in 45 seconds on the same board — never
+creating an input device. That failure looks like success at first, which is the
+worst shape of it, and roughly half of ten Zero 3W units measured upstream fall
+in each camp with nothing to tell them apart. Upstream dropped it as a default
+for that reason, and this image follows: a board that will not bond fails
+loudly, which is the cheaper failure to diagnose. Apply it by hand:
+
+```sh
+sudo sed -i -E 's|^#? *Privacy *=.*|Privacy = device|' /etc/bluetooth/main.conf
+```
+
+```sh
+sudo reboot
+```
+
+That regex is checked against bluez 5.86's own `main.conf`: it rewrites exactly
+one line, `#Privacy = off` at 98 under `[General]`, and the `Privacy Mode` prose
+at 91 and 95 does not false-match. Swap `device` for `off` to reverse it. Reboot
+rather than `systemctl restart bluetooth` — on this board a restart leaves the
+kernel holding `hci0` and `bluetoothd` reporting "No default controller
+available" until a reboot.
+
+**Clear both halves of the bond after any change to `Privacy`, or it will not
+work.** `Privacy` changes the address the stored keys were derived against, so
+every existing bond stops matching and flaps with `PIN or Key Missing` until it
+is re-made — including the one you are trying to fix. On the robot:
+
+```sh
+sudo robotctl pad forget <mac>
+```
+
+And on the pad: an Xbox pad keeps **one** host bond, and a half-completed attempt
+leaves it holding a key this board no longer has, which fails in exactly the way
+a broken board does. Holding it in pairing mode does not reliably release that
+slot — pair it to a laptop once and remove it there. Then pair again.
+
+Both halves are workarounds for the AIC8800, which is not the radio that ships.
+When the real one lands, the marker, this section and `BtdPaused` in `robotctl`
+all go — grep the tag to find them. `microduck_daemon`'s
+`docs/robot/pair-a-gamepad.md` has the full account.
+
+> Under A/B updates these opt-outs stop sticking: `/var` and `/etc` both live
+> inside the rootfs slot, so a bundle overwrites a hand edit, and an edit made on
+> one slot is not on the other. Tracked on #3.
+
 ### Before flashing
 
 1. **Built on hardware with a known memory fault** — see `../CONTEXT.md`. Do not
