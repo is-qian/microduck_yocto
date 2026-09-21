@@ -311,6 +311,26 @@ do_install:append() {
 		${D}${sysconfdir}/systemd/journald.conf.d/
 
 	install -d ${D}${localstatedir}/lib/robot/updater
+
+	# TEMPORARY, remove-with-real-radio -- the btd-pause marker for gamepad pairing.
+	#
+	# The `--pause-btd-on-pair` half of microduck_daemon's scripts/setup-board.sh,
+	# baked in because provision-board.sh is the Armbian path and never runs against
+	# a Yocto board. robotctl reads only this file's existence (WEIRD_BLE_MARKER in
+	# robotctl/src/main.rs) and stops btd for the pairing window of `robotctl pad
+	# pair`. Harmless where it is not needed: it costs a pad-pairing window with no
+	# BLE provisioning, and nothing else. README.md has the measurement and the
+	# opt-out; deleting the file is how a board opts out.
+	#
+	# Under ${localstatedir}, not ${sysconfdir}, because that is where robotctl
+	# looks; it is state, not configuration, and so not a CONFFILE either -- there
+	# is nothing to merge.
+	printf '%s\n' \
+		'This board needs btd paused while a gamepad bonds.' \
+		'robotctl reads only whether this file exists. See README.md,' \
+		'"Gamepad pairing" (TEMPORARY, remove-with-real-radio).' \
+		> ${D}${localstatedir}/lib/robot/weird-ble
+	chmod 0644 ${D}${localstatedir}/lib/robot/weird-ble
 }
 
 CONFFILES:${PN} = "${sysconfdir}/robot/robotd.toml ${sysconfdir}/robot/updater.toml"
