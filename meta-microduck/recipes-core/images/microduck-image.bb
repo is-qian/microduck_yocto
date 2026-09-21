@@ -11,6 +11,7 @@ IMAGE_FEATURES += "ssh-server-openssh"
 IMAGE_INSTALL:append = " \
     microduck-daemon \
     rauc \
+    u-boot-env-config \
     microduck-data \
     packagegroup-microduck-media \
     kernel-modules \
@@ -27,6 +28,13 @@ IMAGE_INSTALL:append = " \
 # rauc is listed here rather than arriving on its own: meta-rauc pulls it in by
 # bbappending packagegroup-base, and this image is built from core-image-base,
 # which does not use that packagegroup.
+
+# u-boot-env-config is /etc/fw_env.config, and it RDEPENDS libubootenv-bin for
+# fw_printenv/fw_setenv. RAUC's uboot backend shells out to those two binaries for
+# every read and write of BOOT_ORDER and BOOT_<slot>_LEFT, so without this package
+# `bootloader=uboot` fails at runtime rather than at build time. libubootenv ships
+# the tools but no configuration; the offsets are ours and have to match both the
+# wks and CONFIG_ENV_OFFSET -- see recipes-bsp/u-boot-env/files/fw_env.config.
 
 # aic8800-bt is the HCI attach unit, in the shipping image rather than the dev
 # one: BLE is how a robot with no network gets provisioned (configd over btd), so

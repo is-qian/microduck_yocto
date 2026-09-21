@@ -50,6 +50,59 @@ Config adaptations go in `rauc-conf.bbappend`, not `rauc_%.bbappend`.
 Still true from that note: Rockchip's `CONFIG_SPL_AB`/`CONFIG_AVB_LIBAVB_AB` is a
 *different, conflicting* A/B mechanism. Do not enable both.
 
+## Stage 2: how the kernel cmdline is actually built, and the trap in it
+
+Read before touching bootargs. All of this is vendor U-Boot 2017.09 at the SRCREV
+meta-rockchip pins, read at that exact ref.
+
+**The env var `bootargs` is the single accumulator, and the DT does not win by
+being the DT — it wins by being merged last.** Three sources fold into one var:
+
+1. `boot.img`'s header cmdline is appended to env `bootargs`
+   (`common/image-android.c:241-259`).
+2. `boot_android` assembles its cmdline starting from env `bootargs` as chunk 0
+   (`common/android_bootloader.c:403-405`), then writes the result back with
+   `env_update` (`:1370-1371`).
+3. The DTB's `/chosen/bootargs` is read out and merged *into the env var*
+   (`arch/arm/mach-rockchip/board.c:1300-1333`), and the final env value is what
+   `board_fdt_chosen_bootargs()` returns as the kernel's cmdline (`:1372-1376`).
+
+So a boot script setting `bootargs` **does** reach the kernel. That is the good
+news and it means one `boot.img` can serve both slots.
+
+**The trap: `env_update()` replaces a same-key argument, it does not append.**
+`cmd/nvedit.c:406-535` tokenises both strings on spaces, splits each on `=`, and
+on a matching key calls `env_replace` (`:511-513`). So if the DTB's
+`/chosen/bootargs` carries a `root=` — ours does — it **silently overwrites the
+`root=` a boot script set**, with no error from either side. The guard that strips
+the DT's `root=` (`board.c:1328`) is compiled only under `CONFIG_ANDROID_AB`,
+which `rk3568_defconfig` does not set. This is why "set bootargs in boot.scr" is
+not on its own a design.
+
+Three ways out, and the second is ours because it deletes code rather than adding
+a mechanism:
+
+1. Set env `android_rootdev` instead — a purpose-built hook that becomes `root=`
+   (`android_bootloader.c:432-445`). Still loses to a DT `root=`.
+2. **Strip `root=` from the chosen-node patch**, keeping `rw rootwait
+   console=ttyFIQ0 console=tty0`. Then the env's `root=` is the only one. Note
+   `console=tty0` is load-bearing when `MICRODUCK_MOTOR_UART = "1"`.
+3. Enable `CONFIG_ANDROID_AB` for the filter — pulls in Rockchip's *conflicting*
+   AVB A/B machinery. No.
+
+Two more facts that shape the rest of stage 2:
+
+- **The kernel partition name is an exact `strcmp` against the literal `"boot"`**
+  (`include/android_image.h:14`, `disk/part.c:727`), with no env override. The
+  suffix-append path needs `CONFIG_ANDROID_AB`, which is off. So `boot_b` is inert
+  — safe to leave reserved — and there is no runtime way to point this U-Boot at
+  it. Kernel A/B needs a different mechanism than rootfs A/B, and is not stage 2.
+- `bootcmd` is `boot_android ${devtype} ${devnum};boot_fit;bootrkp;run
+  distro_bootcmd;` (`include/configs/rockchip-common.h:172-176`). `distro_bootcmd`
+  — and therefore any `boot.scr` autodiscovery — runs **last**, only if all three
+  earlier arms fail. A `boot.scr` that must be authoritative needs
+  `CONFIG_BOOTCOMMAND` changed, not just a file dropped on a partition.
+
 ## `bootloader=noop` is deliberate, and two outputs look wrong because of it
 
 The board has no boot-time slot selection: `root=` is compiled into the DTB
@@ -124,9 +177,17 @@ seed and `updaterd` converges it again — test that deliberately once stage 2 e
 ## What is not done
 
 - Kernel is not A/B. `boot_b` is reserved and empty.
-- Nothing can select a slot at boot. Stage 2 is the writable U-Boot env +
-  `boot.scr`; the fallback is `radxa/u-boot next-dev-v2024.10`, which boots via
-  extlinux (see `conf/machine/microduck-zero3.conf`).
+- Nothing can select a slot at boot. Stage 2a is **done in the tree, untested on
+  hardware**: a writable U-Boot environment
+  (`recipes-bsp/u-boot/files/rauc-env.cfg`) plus `/etc/fw_env.config` and
+  `libubootenv-bin` (`recipes-bsp/u-boot-env/`). It deliberately changes no boot
+  behaviour, so the board must come up exactly as before; what it adds is that
+  `fw_setenv X 1; reboot; fw_printenv X` survives. Verify that before stage 2b,
+  because everything RAUC does with `bootloader=uboot` rests on it, and a wrong
+  `CONFIG_ENV_OFFSET` corrupts U-Boot rather than failing loudly.
+  Stage 2b is then the boot script + stripping `root=` from the chosen patch +
+  `bootloader=uboot`; the fallback is `radxa/u-boot next-dev-v2024.10`, which
+  boots via extlinux (see `conf/machine/microduck-zero3.conf`).
 - The `data` partition is **done, both paths on hardware**. Blank partition:
   mount skipped, every daemon up (2026-09-18, incomplete-download card). Correctly
   flashed card, first boot, no hand-formatting (2026-09-21): wic's own `mkfs`
