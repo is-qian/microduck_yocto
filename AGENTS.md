@@ -26,6 +26,13 @@ you didn't look. This repo already has a scar for each:
   **every SoC-specific config override is silently missing** and you get radxa's
   family-wide defconfig alone. Never trust the effective kernel config from the
   defconfig name — read `${B}/.config` after `do_configure`.
+- **Name a bbappend after the upstream *filename*, not the recipe's version.**
+  `_%.bbappend` matches `<name>_<version>.bb`. meta-rockchip's U-Boot recipe file
+  is `u-boot-rockchip.bb` with `PV` set *inside* it, and meta-rauc's config recipe
+  is `rauc-conf.bb` — for both, the correct append has no `_%`. An unmatched
+  bbappend is not ignored; it fails the entire parse with `ERROR: No recipes in
+  default available for: <path>`. This has now cost two builds. `ls` the upstream
+  directory before you name the file.
 - **Do not set `S = "${WORKDIR}/git"` or `S = "${UNPACKDIR}/git"`** in a git-based
   recipe. wrynose fails `do_unpack` outright if you do: the fetcher now unpacks to
   `${UNPACKDIR}/${BP}`, which bitbake.conf's default `S` already points at. Omit
