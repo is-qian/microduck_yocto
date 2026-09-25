@@ -133,10 +133,13 @@ tests the Miniloader path and radxa's defconfig is SPL+ATF.
 Two findings from reading those defconfigs, recorded in
 `conf/machine/microduck-zero3.conf`:
 
-- **No Rockchip defconfig sets `CONFIG_ENV_IS_IN_*`.** That, plus
-  `fw_printenv`/`fw_setenv` and an `/etc/fw_env.config`, is what RAUC's `uboot`
-  backend actually requires. This U-Boot instead has Android/AVB A/B
-  (`CONFIG_SPL_AB`, `CONFIG_AVB_LIBAVB_AB`) — a different mechanism.
+- **No Rockchip defconfig sets `CONFIG_ENV_IS_IN_*`**, so out of the box this
+  U-Boot has no persistent environment at all: the Kconfig choice falls to
+  `ENV_IS_NOWHERE`, and `saveenv` silently does nothing. RAUC's `uboot` backend
+  needs one, plus `fw_printenv`/`fw_setenv` and `/etc/fw_env.config`. On the
+  `rauc-ab` branch `recipes-bsp/` now provides all of it — see the RAUC section.
+  This U-Boot also has Android/AVB A/B (`CONFIG_SPL_AB`, `CONFIG_AVB_LIBAVB_AB`),
+  a different mechanism that must not be enabled alongside RAUC's.
 
   This bullet used to say RAUC needs `CONFIG_BOOTCOUNT_LIMIT` too. **It does
   not**, and that was never checked: `grep -ri bootcount` over RAUC's own
@@ -239,10 +242,13 @@ Artifacts in `tmp/deploy/images/microduck-zero3/`: `.wic` (SD/eMMC),
 `update.img` (Rockchip flashing), `boot.img`/`zboot.img`, `Image`, both device
 trees, `idblock.img`, `uboot.img`, plus a `.manifest` and an SPDX SBOM.
 
-Partition layout comes from meta-rockchip's `generic-gptdisk.wks`: raw
-`idblock.img` outside the table, `uboot` at 2 MiB, `boot`, then `rootfs`.
-(`trust.img` is absent and skipped — this U-Boot is SPL+FIT, so ATF is inside
-`uboot.img`.)
+On `main`, the partition layout comes from meta-rockchip's `generic-gptdisk.wks`:
+raw `idblock.img` outside the table, `uboot` at 2 MiB, `boot`, then `rootfs`.
+(`trust.img` is absent and skipped — ATF rides inside `uboot.img`'s FIT.) That
+layout has a latent bug: `uboot` at 2 MiB spans Rockchip's vendor storage at
+3.5 MiB, so U-Boot overwrites part of its own primary copy on first boot. The
+`rauc-ab` branch replaces it with Rockchip's documented layout; the table is in
+the RAUC section below.
 
 ### WiFi/BT: AIC8800 built in
 
@@ -425,11 +431,53 @@ Being built on the `rauc-ab` branch, in a worktree, because it changes the
 partition layout and later the bootloader — and `main` is what a colleague
 flashes. Nothing merges until stage 1 is verified on hardware.
 
-**Stage 1 (here): RAUC userspace and signed bundles, no bootloader change.**
-`meta-rauc` is pinned in `kas/microduck.yml`; the layout is
-`meta-microduck/files/wic/microduck-ab.wks.in` (explicit offsets and fixed sizes
-throughout, `uboot_env` reserved for stage 2, slots addressed by `PARTLABEL`);
-`bitbake microduck-bundle` produces a signed verity `.raucb`.
+Where it stands:
+
+| stage | what | state |
+|---|---|---|
+| 1 | RAUC userspace, signed verity bundles, install to the inactive slot | verified on hardware 2026-09-18 |
+| — | `data` partition for user data, at `/var/lib/robot` | verified on hardware 2026-09-21 |
+| 2a | writable U-Boot environment, `fw_setenv` from Linux | verified on hardware 2026-09-25 |
+| — | first 16 MiB moved to Rockchip's layout | built 2026-09-25, flashing |
+| 2b | boot script that picks a slot, `bootloader=uboot` | not started |
+| 3 | move the daemon hooks' OS work into the image | not started |
+
+`meta-rauc` is pinned in `kas/microduck.yml`, and `bitbake microduck-bundle`
+produces a signed verity `.raucb`.
+
+### Partition layout
+
+`meta-microduck/files/wic/microduck-ab.wks.in`. Every partition has an explicit
+offset and fixed size, so wic fails rather than shifting anything: a bundle built
+against one layout must never write into another. Everything addresses
+partitions by GPT **label**, never by number.
+
+| # | label | offset | size | contents |
+|---|---|---|---|---|
+| — | *(idblock)* | 32 KiB | 3552 KiB | loader; no GPT entry, the boot ROM reads sector 64 |
+| 1 | `v_storage` | 3.5 MiB | 256 KiB | Rockchip vendor storage: MAC, serial. Written by U-Boot only |
+| 2 | `uboot_env` | 0x3F8000 | 32 KiB | U-Boot environment: `BOOT_ORDER`, `BOOT_x_LEFT` |
+| 3 | `uboot` | 8 MiB | 4 MiB | `uboot.img`, two 2 MiB FIT copies |
+| 4 | `boot` | 16 MiB | 32 MiB | kernel + DTB (Android `boot.img`) |
+| 5 | `boot_b` | 48 MiB | 32 MiB | reserved, empty |
+| 6 | `rootfs_a` | 80 MiB | 2 GiB | slot A, ext4 |
+| 7 | `rootfs_b` | 2128 MiB | 2 GiB | slot B, written by RAUC |
+| 8 | `data` | 4176 MiB | 8 GiB | ext4, `/var/lib/robot`, survives updates |
+
+Total 12.08 GiB, for the 32 GB card. The unused 20 GB can be claimed later
+without a reflash. 4–8 MiB and 12–16 MiB are left empty, as Rockchip's table
+reserves them.
+
+**The first 16 MiB are not ours to choose.** Vendor code writes three regions at
+fixed byte offsets without reading the partition table: vendor storage at
+3.5 MiB, the environment at `0x3F8000`, and U-Boot is loaded from 8 MiB. The
+layout copied from JeffyCN's generic wks put `uboot` at 2 MiB, which spans
+3.5 MiB. On 2026-09-25 a freshly flashed card was measured differing from its
+`.wic` in exactly one 64 KiB window after first boot: U-Boot had written a
+generated MAC into the primary copy of itself. The board still booted, inferred
+from the backup copy. `scripts/check-wks-layout.py` now asserts the fixed
+offsets, and cross-checks the wks, `rauc-env.cfg` and `fw_env.config` against
+each other.
 
 **The kernel partition is named `boot`, not `boot_a`, and that is load-bearing.**
 Vendor U-Boot finds the kernel by GPT partition *name* — its environment carries
@@ -442,12 +490,12 @@ only the name was wrong. So rootfs is A/B today and the kernel is not; `boot_b`
 keeps its offset, and renaming the pair is stage 2's job, at the point where a
 `boot.scr` can actually choose between them.
 
-`system.conf` ships `bootloader=noop`. That is not a placeholder to forget
-about: this board has **no boot-time slot selection mechanism at all**. `root=`
-is compiled into the DTB, which is packed inside an Android `boot.img` on a raw
-partition — no extlinux, no U-Boot `bootargs`, no `boot.img` header cmdline. So
-RAUC can write the inactive slot and honestly reports that it cannot make the
-board boot it.
+`system.conf` ships `bootloader=noop` until stage 2b. That is not a placeholder
+to forget about: nothing on this board picks a slot at boot yet. `root=` is
+compiled into the DTB, which is packed inside an Android `boot.img` on a raw
+partition, with no extlinux and no `boot.img` header cmdline. So RAUC can write
+the inactive slot and honestly reports that it cannot make the board boot it.
+`noop` becomes `uboot` once the boot script exists.
 
 **Signing keys are not in this repo.** Generate once, into the build directory
 (bind-mounted by kas-container, and already in `.gitignore`):
@@ -483,7 +531,7 @@ anything. In CI the private key becomes an org-scoped GitHub secret written to
 ```
 rauc status
   Compatible:  microduck-zero3
-  Booted from: rootfs.0 (/dev/mmcblk1p5)
+  Booted from: rootfs.0 (/dev/mmcblk1p5)     # p6 since v_storage was added
   [rootfs.0] /dev/disk/by-partlabel/rootfs_a  bootname A  booted
   [rootfs.1] /dev/disk/by-partlabel/rootfs_b  bootname B  inactive
 
@@ -505,9 +553,10 @@ capability ends, saying so rather than pretending.
 
 Two things that look wrong and are not. Both slots report `boot status: bad` --
 `noop` cannot answer, and RAUC's default for unknown is bad; they become real
-answers under `bootloader=uboot`. And `rauc info` warns `No data directory or
-status file set`: RAUC wants somewhere persistent for its own slot bookkeeping,
-which is the reserved `data` partition, unmounted until something needs it.
+answers under `bootloader=uboot`. And that day `rauc info` warned `No data
+directory or status file set`. It no longer does: `system.conf` now sets
+`data-directory=/var/lib/robot/rauc`, on the `data` partition, so RAUC's slot
+bookkeeping survives a slot being rewritten.
 
 Reproduce with:
 
@@ -534,23 +583,34 @@ formatting it with the wks's exact `mkfs.ext4` options, `by-label/data`
 appeared, the mount came up (`/dev/mmcblk1p7 ext4 7.7G`), and `StateDirectory=`
 created `config/` and `updater/` on the empty filesystem with zero failed units.
 
-**The kernel partition must be named `boot`.** This cost a flash: called `boot_a`,
-the board writes and verifies perfectly and never boots, because vendor U-Boot
-looks the kernel up by that exact GPT name. See the comment on the part line in
-the wks.
-
 **Build the bundle, not the image, and it builds the dev image too.**
 `RAUC_SLOT_rootfs` is `microduck-image-dev` on this branch, so `HFJOB_TARGET=microduck-bundle`
 produces both a flashable card and the bundle that matches it. It was briefly
 `microduck-image`, which built a prod card with no password-less root -- a board
 that came up, answered ping, and could not be logged into.
 
-**Stage 2 (not started): boot-time slot selection.** A writable U-Boot
-environment in the reserved `uboot_env` partition, a `boot.scr` that walks
-`BOOT_ORDER`, and `bootloader=uboot`. The unknown is that vendor U-Boot is
-Rockchip downstream 2017.09 built via `make.sh` — the one variant neither
-reference integration targets. The fallback is `radxa/u-boot next-dev-v2024.10`,
-which boots via extlinux.
+**Stage 2a (verified on hardware 2026-09-25): a U-Boot environment Linux can
+write.** `recipes-bsp/u-boot/` enables `CONFIG_ENV_IS_IN_BLK_DEV` and
+`CONFIG_CMD_SETEXPR`; `recipes-bsp/u-boot-env/` ships `/etc/fw_env.config`,
+`fw_printenv`/`fw_setenv` and U-Boot's default environment. The proof was that
+U-Boot reads what Linux writes, not just that Linux reads back its own bytes: a
+`bootargs` token set with `fw_setenv` appeared in `/proc/cmdline` after a reboot.
+
+The default environment file, `/etc/u-boot-initial-env`, is load-bearing. A
+freshly flashed card's environment region is zeros, so its CRC fails. Without
+that file, the first `fw_setenv` writes an environment holding only the one
+variable, with a valid CRC. U-Boot then loads it *instead of* its defaults, loses
+`bootcmd`, and stops at a prompt you cannot see without a serial console. RAUC's
+first write would do exactly that.
+
+**Stage 2b (next): boot-time slot selection.** A boot script that walks
+`BOOT_ORDER` and decrements `BOOT_x_LEFT`, then `bootloader=uboot`. One trap is
+already known: U-Boot does pass a script's `bootargs` to the kernel, but it merges
+the DTB's own `/chosen/bootargs` in afterwards and a matching key *replaces*
+rather than appends. So the DTB's `root=` would silently override the script's
+slot choice, and the chosen-node patch has to lose its `root=`. Details, with
+source references, in `docs/agents/rauc.md`. The fallback, if this U-Boot resists,
+is `radxa/u-boot next-dev-v2024.10`, which boots via extlinux.
 
 **Stage 3 (not started): reconcile with `updaterd`.** Both stay. RAUC owns the
 kernel, DTB, rootfs and everything the daemon's install hooks currently drop
