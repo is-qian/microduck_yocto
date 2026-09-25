@@ -1,0 +1,99 @@
+From dfb22120542c876896a7163a9be7455ceee7964c Mon Sep 17 00:00:00 2001
+From: Fabien Danieau <fabien.danieau@pollen-robotics.com>
+Date: Fri, 25 Sep 2026 12:01:33 +0200
+Subject: [PATCH] evb_rk3568: select the RAUC slot before Rockchip's boot chain
+
+Prepend an A/B selection to CONFIG_BOOTCOMMAND: walk BOOT_ORDER, take the first
+bootname with attempts left in BOOT_<name>_LEFT, decrement and save it, and set
+bootargs to root=PARTLABEL=rootfs_<a|b> rauc.slot=<A|B>. Then fall through to
+the unchanged RKIMG_BOOTCOMMAND.
+
+It has to be this header, not Kconfig: this file #undefs CONFIG_BOOTCOMMAND
+and redefines it, so a CONFIG_BOOTCOMMAND in a defconfig fragment is silently
+discarded.
+
+Upstream-Status: Inappropriate [microduck RAUC integration]
+---
+ include/configs/evb_rk3568.h | 65 +++++++++++++++++++++++++++++++++++-
+ 1 file changed, 64 insertions(+), 1 deletion(-)
+
+diff --git a/include/configs/evb_rk3568.h b/include/configs/evb_rk3568.h
+index f7318c3..07ca7e2 100644
+--- a/include/configs/evb_rk3568.h
++++ b/include/configs/evb_rk3568.h
+@@ -19,8 +19,71 @@
+ 
+ #define CONFIG_SYS_MMC_ENV_DEV		0
+ 
++/*
++ * microduck: RAUC A/B slot selection, run before Rockchip's own boot chain.
++ *
++ * RAUC's uboot backend owns two things in the environment: BOOT_ORDER, a
++ * space-separated list of bootnames, and BOOT_<name>_LEFT, the attempts left for
++ * each, written in HEX without a prefix (src/bootloaders/uboot.c). This picks the
++ * first slot in BOOT_ORDER with attempts left, decrements it, saves, and points
++ * the kernel at that slot. A boot that never reaches userspace has spent its
++ * attempt; `rauc status mark-good` restores it once userspace is up.
++ *
++ * Transcribed from RAUC's contrib/uboot.sh, with these deliberate differences:
++ *
++ * - Nested ifs, not `&&`, and no empty then-branch: the forms this 2017.09 hush
++ *   is least likely to mis-parse.
++ * - `test 0x${...}`: test parses base 0, so without the prefix "a" (10) reads as
++ *   0, and an empty value collapses to `test -gt 0` and aborts the script.
++ *   setexpr already reads and writes hex.
++ * - BOOT_ORDER is iterated, never compared as a whole, and never rewritten here:
++ *   removing a name from it is RAUC's mark-bad, not the bootloader's call.
++ * - A fallback bootargs is set first, so a script that dies half way still boots
++ *   slot A rather than a kernel with no root= at all.
++ *
++ * The kernel sees this bootargs because U-Boot uses the env var as the
++ * accumulator for the command line. The DTB's /chosen/bootargs is merged in
++ * after, and a same-key argument REPLACES rather than appends
++ * (env_update_filter, cmd/nvedit.c), so the DTB must carry no root= of its own.
++ *
++ * This lives in the compiled-in default environment, and a saved environment
++ * keeps whatever bootcmd it was saved with. That is consistent only because
++ * U-Boot is not a RAUC slot: it changes by reflashing the whole card, which also
++ * zeros uboot_env. If U-Boot ever becomes updatable in the field, move this into
++ * a script loaded from a partition, or an old bootcmd will outlive its U-Boot.
++ */
++#define MICRODUCK_RAUC_SELECT \
++	"setenv bootargs root=PARTLABEL=rootfs_a rauc.slot=A; " \
++	"test -n \"${BOOT_ORDER}\" || setenv BOOT_ORDER \"A B\"; " \
++	"test -n \"${BOOT_A_LEFT}\" || setenv BOOT_A_LEFT 3; " \
++	"test -n \"${BOOT_B_LEFT}\" || setenv BOOT_B_LEFT 3; " \
++	"setenv rauc_part; " \
++	"for BOOT_SLOT in \"${BOOT_ORDER}\"; do " \
++		"if test \"x${rauc_part}\" = \"x\"; then " \
++			"if test \"x${BOOT_SLOT}\" = \"xA\"; then " \
++				"if test 0x${BOOT_A_LEFT} -gt 0; then " \
++					"setexpr BOOT_A_LEFT ${BOOT_A_LEFT} - 1; " \
++					"setenv rauc_part rootfs_a; setenv rauc_slot A; " \
++				"fi; " \
++			"fi; " \
++			"if test \"x${BOOT_SLOT}\" = \"xB\"; then " \
++				"if test 0x${BOOT_B_LEFT} -gt 0; then " \
++					"setexpr BOOT_B_LEFT ${BOOT_B_LEFT} - 1; " \
++					"setenv rauc_part rootfs_b; setenv rauc_slot B; " \
++				"fi; " \
++			"fi; " \
++		"fi; " \
++	"done; " \
++	"if test -n \"${rauc_part}\"; then " \
++		"echo \"RAUC: booting slot ${rauc_slot} (${rauc_part})\"; saveenv; " \
++	"else " \
++		"echo \"RAUC: no slot has attempts left, resetting both to 3\"; " \
++		"setenv BOOT_A_LEFT 3; setenv BOOT_B_LEFT 3; saveenv; reset; " \
++	"fi; " \
++	"setenv bootargs root=PARTLABEL=${rauc_part} rauc.slot=${rauc_slot}; "
++
+ #undef CONFIG_BOOTCOMMAND
+-#define CONFIG_BOOTCOMMAND RKIMG_BOOTCOMMAND
++#define CONFIG_BOOTCOMMAND MICRODUCK_RAUC_SELECT RKIMG_BOOTCOMMAND
+ 
+ #ifdef CONFIG_USB_FUNCTION_DFU
+ #define CONFIG_SET_DFU_ALT_INFO
+-- 
+2.47.3
+

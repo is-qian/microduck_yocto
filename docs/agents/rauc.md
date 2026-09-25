@@ -200,9 +200,18 @@ seed and `updaterd` converges it again — test that deliberately once stage 2 e
   `X`, with a valid CRC, and U-Boot then imports that in place of its defaults —
   no `bootcmd`, board stuck at an invisible prompt. It was copied onto the test
   board by hand before any write; the image now ships it (not yet rebuilt).
-  Stage 2b is next: the boot script + stripping `root=` from the chosen patch +
-  `bootloader=uboot`; the fallback is `radxa/u-boot next-dev-v2024.10`, which
-  boots via extlinux (see `conf/machine/microduck-zero3.conf`).
+  Stage 2b is **written and sandbox-tested (2026-09-25), not yet built or on
+  hardware**: the U-Boot header patch that prepends slot selection to
+  `bootcmd`, the chosen node without `root=`, and `bootloader=uboot`. Before
+  editing the script, run `scripts/test-uboot-bootcmd.sh <v2017.09 sandbox>`.
+  The header of that script explains why a mainline sandbox is a faithful stand-in
+  and how to build one. Two facts it established that are easy to get wrong:
+  `CONFIG_SYS_CBSIZE` (1024) does **not** limit `bootcmd`, since a 4000-character
+  script ran to the end; and `saveenv` cannot be tested there, because the
+  sandbox has no env storage. On hardware, prove U-Boot's own `saveenv` works by
+  masking `rauc-mark-good` for one reboot: `BOOT_A_LEFT` should read 2, not 3.
+  The fallback is `radxa/u-boot next-dev-v2024.10`, which boots via extlinux
+  (see `conf/machine/microduck-zero3.conf`).
 - **Fixed and verified on hardware 2026-09-25: U-Boot was corrupting its own
   primary copy on first boot.** Rockchip "vendor storage" (MAC address, serial number)
   lives at a fixed `EMMC_VENDOR_PART_OFFSET = 1024 * 7` sectors = **3.5 MiB

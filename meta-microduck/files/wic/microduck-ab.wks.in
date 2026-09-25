@@ -102,11 +102,11 @@ part --source rawcopy --sourceparams="file=uboot.img" --offset 8M --fixed-size 4
 part --source rawcopy --sourceparams="file=boot.img" --offset 16M --fixed-size 32M --part-name boot
 part --offset 48M --fixed-size 32M --fstype=none --part-name boot_b
 
-# rootfs_a keeps RK_ROOTDEV_UUID. That is not decoration: the kernel's
-# root=PARTUUID=614e0000-... comes from the chosen-node patch compiled into the
-# DTB (recipes-kernel/linux/patches/0001-*), so slot A must carry that partition
-# GUID or the board does not boot at all. Stage 2 replaces this with
-# root=PARTLABEL= from boot.scr, and then this UUID stops mattering.
+# rootfs_a keeps RK_ROOTDEV_UUID. It no longer matters for booting -- the kernel
+# gets root=PARTLABEL= from U-Boot's boot script, and the chosen-node patch
+# carries no root= any more -- but it is harmless and keeps the GUID stable
+# across builds. It did matter until stage 2b: root=PARTUUID=614e0000-... was
+# compiled into the DTB, and a slot A without that GUID did not boot at all.
 #
 # One line per partition, no trailing backslashes: wic's parser reads the file a
 # line at a time and shlex.splits it, with no continuation handling at all

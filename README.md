@@ -439,7 +439,7 @@ Where it stands:
 | — | `data` partition for user data, at `/var/lib/robot` | verified on hardware 2026-09-21 |
 | 2a | writable U-Boot environment, `fw_setenv` from Linux | verified on hardware 2026-09-25 |
 | — | first 16 MiB moved to Rockchip's layout | verified on hardware 2026-09-25 |
-| 2b | boot script that picks a slot, `bootloader=uboot` | not started |
+| 2b | boot script that picks a slot, `bootloader=uboot` | written and sandbox-tested 2026-09-25, not built |
 | 3 | move the daemon hooks' OS work into the image | not started |
 
 `meta-rauc` is pinned in `kas/microduck.yml`, and `bitbake microduck-bundle`
@@ -603,14 +603,32 @@ variable, with a valid CRC. U-Boot then loads it *instead of* its defaults, lose
 `bootcmd`, and stops at a prompt you cannot see without a serial console. RAUC's
 first write would do exactly that.
 
-**Stage 2b (next): boot-time slot selection.** A boot script that walks
-`BOOT_ORDER` and decrements `BOOT_x_LEFT`, then `bootloader=uboot`. One trap is
-already known: U-Boot does pass a script's `bootargs` to the kernel, but it merges
-the DTB's own `/chosen/bootargs` in afterwards and a matching key *replaces*
-rather than appends. So the DTB's `root=` would silently override the script's
-slot choice, and the chosen-node patch has to lose its `root=`. Details, with
-source references, in `docs/agents/rauc.md`. The fallback, if this U-Boot resists,
-is `radxa/u-boot next-dev-v2024.10`, which boots via extlinux.
+**Stage 2b (written, sandbox-tested, not yet on hardware): boot-time slot
+selection.** Three changes:
+
+- `recipes-bsp/u-boot/files/0001-evb_rk3568-*.patch` prepends a slot selection
+  to U-Boot's `bootcmd`. It walks `BOOT_ORDER`, takes the first slot with
+  attempts left, decrements and saves the counter, and sets
+  `root=PARTLABEL=rootfs_a|b rauc.slot=A|B`. It has to be a header patch:
+  `evb_rk3568.h` `#undef`s `CONFIG_BOOTCOMMAND`, so a Kconfig value is ignored.
+- The device tree's chosen node loses its `root=`. U-Boot merges the DTB's
+  bootargs in *after* the script's, and a matching key replaces rather than
+  appends, so a `root=` there would pin every boot to one slot.
+- `system.conf` switches to `bootloader=uboot`. `rauc-mark-good.service`, which
+  has been installed all along but only runs when `rauc.slot=` is on the kernel
+  command line, now restores the counter on every boot that completes.
+
+The board has no serial console, so a syntax error in `bootcmd` would leave it
+at an invisible prompt. The script is therefore tested first, in a U-Boot
+sandbox built from mainline v2017.09, whose shell, `test` and `setexpr` are
+byte-identical to the vendor tree's. `scripts/test-uboot-bootcmd.sh` compiles the
+macro out of the patch and runs nine cases: fresh environment, B first after an
+install, fallback when B is exhausted, a slot RAUC marked bad, hex counters, an
+empty counter, an unknown slot name, and both slots exhausted. A deliberately
+broken copy fails with a `syntax error`, so the test does catch it.
+
+The fallback, if this U-Boot resists on hardware, is
+`radxa/u-boot next-dev-v2024.10`, which boots via extlinux.
 
 **Stage 3 (not started): reconcile with `updaterd`.** Both stay. RAUC owns the
 kernel, DTB, rootfs and everything the daemon's install hooks currently drop

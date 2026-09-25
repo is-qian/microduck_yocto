@@ -21,6 +21,17 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 # name the cause. AGENTS.md:20.
 SRC_URI += "file://rauc-env.cfg"
 
+# A/B slot selection, prepended to bootcmd. A header patch rather than a
+# CONFIG_BOOTCOMMAND in rauc-env.cfg, because include/configs/evb_rk3568.h
+# #undefs CONFIG_BOOTCOMMAND and redefines it -- a Kconfig value would be
+# compiled and silently discarded. The patch carries the full rationale.
+#
+# Tested before it ever reached a board, since a hush syntax error here means
+# bootcmd aborts at a prompt no one can see: scripts/test-uboot-bootcmd.sh runs
+# the exact preprocessed string through a U-Boot v2017.09 sandbox, whose
+# cli_hush.c, test.c and setexpr.c are byte-identical to this vendor tree's.
+SRC_URI += "file://0001-evb_rk3568-select-the-RAUC-slot-before-Rockchip-s-boot.patch"
+
 # Ship U-Boot's default environment as /etc/u-boot-initial-env, the exact path
 # libubootenv falls back to (DEFAULT_ENV_FILE in src/fw_printenv.c) when the env
 # region fails its CRC. oe-core's u-boot.inc names the file after
