@@ -66,7 +66,7 @@ python microduck_check_env_offset() {
     # Numbers compared as numbers: Kconfig is free to write 0x00080000 for what we
     # wrote as 0x80000, and a string compare would fail a build over the spelling.
     want = {"CONFIG_ENV_IS_IN_BLK_DEV": "y",
-            "CONFIG_ENV_OFFSET": 512 * 1024,
+            "CONFIG_ENV_OFFSET": 0x3f8000,
             "CONFIG_ENV_SIZE": 32 * 1024,
             "CONFIG_CMD_SETEXPR": "y"}
     got = {}
@@ -94,8 +94,9 @@ python microduck_check_env_offset() {
                      "u-boot-rockchip.bbappend -- the recipe file carries no version, "
                      "so a _%%.bbappend matches nothing and bitbake fails at parse. "
                      "If merge_config.sh stopped running, every value here silently "
-                     "reverts to the vendor default, and CONFIG_ENV_OFFSET's default "
-                     "0x3f8000 is inside our uboot partition."
+                     "reverts to the vendor default -- in particular no writable "
+                     "environment at all (CONFIG_ENV_IS_NOWHERE), which RAUC cannot "
+                     "work without."
                      % (key, actual, expected))
 
     bb.note("microduck: U-Boot env at %s size %s, setexpr on"

@@ -30,6 +30,31 @@ ARTIFACTS = {
 
 UNITS = {"s": 512, "S": 512, "K": 1024, "k": 1024, "M": 1 << 20, "G": 1 << 30}
 
+LAYER = WKS.parent.parent.parent
+ENV_CFG = LAYER / "recipes-bsp/u-boot/files/rauc-env.cfg"
+FW_ENV = LAYER / "recipes-bsp/u-boot-env/files/fw_env.config"
+
+# Byte offsets that vendor code writes to WITHOUT reading the partition table, so
+# the partition carrying that name has to start exactly there. Not wic-checkable:
+# wic only knows about overlaps between its own partitions.
+#
+# uboot_env is filled in from rauc-env.cfg at runtime, so the wks, the U-Boot
+# config and fw_env.config are checked against each other rather than each
+# against a number copied into this file. That triple used to be held together by
+# comments saying "these must agree".
+FIXED = {
+    "v_storage": 7168 * 512,  # EMMC_VENDOR_PART_OFFSET, arch/arm/mach-rockchip/vendor.c:30
+    "uboot": 16384 * 512,     # the loader's default U-Boot position, 8 MiB
+}
+
+
+def kconfig(path, key):
+    """Value of `key=...` in a Kconfig fragment, or None."""
+    for line in path.read_text().splitlines():
+        if line.startswith(key + "="):
+            return int(line.split("=", 1)[1], 0)
+    return None
+
 
 def to_bytes(text, default_unit):
     """wic's sizetype(): a bare number takes the argument's default unit."""
@@ -80,6 +105,39 @@ def main():
         fits = ARTIFACTS.get(name)
         if fits is not None and fits > size:
             errors.append(f"{name}: artifact {fits} B does not fit reserved {size} B")
+
+    # The environment: one region, reached three ways. U-Boot writes the raw byte
+    # offset CONFIG_ENV_OFFSET on the whole device (env_blk.c never reads the
+    # GPT); fw_setenv opens the uboot_env partition and writes at the offset in
+    # fw_env.config. Both must land on the same bytes, and all three sizes agree.
+    byname = {n: (s, z) for n, s, z in parts}
+    env_off = kconfig(ENV_CFG, "CONFIG_ENV_OFFSET")
+    env_size = kconfig(ENV_CFG, "CONFIG_ENV_SIZE")
+    if env_off is None or env_size is None:
+        errors.append(f"{ENV_CFG.name}: CONFIG_ENV_OFFSET/CONFIG_ENV_SIZE not found")
+    else:
+        FIXED["uboot_env"] = env_off
+        fw = [l.split() for l in FW_ENV.read_text().splitlines()
+              if l.strip() and not l.lstrip().startswith("#")]
+        if len(fw) != 1 or fw[0][0] != "/dev/disk/by-partlabel/uboot_env":
+            errors.append(f"{FW_ENV.name}: expected one line on by-partlabel/uboot_env, got {fw}")
+        else:
+            fw_off, fw_size = int(fw[0][1], 0), int(fw[0][2], 0)
+            if fw_off != 0:
+                errors.append(f"{FW_ENV.name}: offset {fw_off:#x} within the partition, "
+                              "but U-Boot writes at the partition's start")
+            if fw_size != env_size:
+                errors.append(f"{FW_ENV.name}: size {fw_size:#x} != CONFIG_ENV_SIZE {env_size:#x}")
+        if "uboot_env" in byname and byname["uboot_env"][1] != env_size:
+            errors.append(f"uboot_env is {byname['uboot_env'][1]:#x} B, "
+                          f"CONFIG_ENV_SIZE is {env_size:#x}")
+
+    for name, want in FIXED.items():
+        if name not in byname:
+            errors.append(f"{name}: missing -- vendor code writes at {want:#x} regardless")
+        elif byname[name][0] != want:
+            errors.append(f"{name} starts at {byname[name][0]:#x}, must be {want:#x}: "
+                          "vendor code writes there without reading the GPT")
 
     for (an, astart, asize), (bn, bstart, _) in zip(parts, parts[1:]):
         if astart + asize > bstart:

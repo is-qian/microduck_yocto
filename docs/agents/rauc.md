@@ -185,7 +185,9 @@ seed and `updaterd` converges it again — test that deliberately once stage 2 e
   writes**, not merely that Linux reads back its own write: `fw_setenv bootargs
   microduck.envprobe=1`, reboot, and the token led `/proc/cmdline`. `bootargs` is
   the accumulator U-Boot builds the kernel cmdline from, so only a U-Boot that
-  loaded our region at 0x80000 could have put it there. A probe variable also
+  loaded our region could have put it there. (Verified at the old 0x80000 offset;
+  the layout has since moved it to Rockchip's 0x3F8000 — see the next item — so
+  the next flash re-runs this same probe.) A probe variable also
   survived, the board booted normally, 0 failed units.
   Build-time evidence, for when this is suspected: the deployed `uboot-*.bin`
   gains `setexpr` (0 → 8 occurrences) and `ENV_BLK` (0 → 2) against a pre-2a
@@ -201,20 +203,27 @@ seed and `updaterd` converges it again — test that deliberately once stage 2 e
   Stage 2b is next: the boot script + stripping `root=` from the chosen patch +
   `bootloader=uboot`; the fallback is `radxa/u-boot next-dev-v2024.10`, which
   boots via extlinux (see `conf/machine/microduck-zero3.conf`).
-- **U-Boot corrupts its own primary copy on first boot, on every image.** Rockchip
-  "vendor storage" (MAC address, serial number) lives at a fixed
-  `EMMC_VENDOR_PART_OFFSET = 1024 * 7` sectors = **3.5 MiB absolute**, 128 sectors
-  = 64 KiB (`arch/arm/mach-rockchip/vendor.c:30-35`). Our `uboot` partition spans
-  2–6 MiB, so that window is 1.5 MiB into `uboot.img`. `uboot.img` is two
-  identical 2 MiB FIT copies (0–2 MiB primary, 2–4 MiB backup), so the write
-  lands in the **primary**. Measured: a freshly flashed card differs from the
-  `.wic` in exactly that 64 KiB and nowhere else, after the first boot generated
-  a MAC and wrote it back (`board.c` `need_write`). The board still boots —
-  inferred to be from the backup copy, not seen, since no console is attached.
-  Not caused by stage 2a (the env is 32 KiB at 512 KiB) and not specific to the
-  A/B layout: JeffyCN's generic layout puts `uboot` at 2 MiB too, so `main` has
-  it. Rockchip's own layout starts `uboot` at 8 MiB, which is why this offset is
-  free there. Fixing it moves the partition table. Undecided.
+- **Fixed 2026-09-25, not yet flashed: U-Boot was corrupting its own primary
+  copy on first boot.** Rockchip "vendor storage" (MAC address, serial number)
+  lives at a fixed `EMMC_VENDOR_PART_OFFSET = 1024 * 7` sectors = **3.5 MiB
+  absolute**, 128 sectors = 64 KiB (`arch/arm/mach-rockchip/vendor.c:30-35`).
+  The old layout, copied from JeffyCN's generic wks, put `uboot` at 2–6 MiB, so
+  that window was 1.5 MiB into `uboot.img` — two identical 2 MiB FIT copies,
+  hence inside the **primary**. Measured on the board: a freshly flashed card
+  differed from the `.wic` in exactly that 64 KiB and nowhere else, after the
+  first boot generated a MAC and wrote it back (`board.c` `need_write`). It still
+  booted, inferred from the backup copy (no console to see it).
+  The fix is to stop improvising the first 16 MiB: they now follow Rockchip's
+  table (opensource.rock-chips.com/wiki_Partitions, as transcribed by upstream
+  Yocto meta-rockchip) — `v_storage` reserved at sector 7168, `uboot_env` at
+  8128 = `0x3F8000` (the vendor default, so the offset override is no longer
+  working around anything), `uboot` at 8 MiB (the loader's default, and still
+  named `uboot`, so both by-name and by-sector lookup find it). Everything after
+  shifts down 10 MiB. `scripts/check-wks-layout.py` now asserts those three fixed
+  offsets and cross-checks the wks, `rauc-env.cfg` and `fw_env.config`, which
+  previously agreed only because comments said they must.
+  On the next flash, verify: the card's `uboot` partition hashes identically to
+  the `.wic`'s 8–12 MiB region *after* first boot, and `v_storage` is non-zero.
 - The `data` partition is **done, both paths on hardware**. Blank partition:
   mount skipped, every daemon up (2026-09-18, incomplete-download card). Correctly
   flashed card, first boot, no hand-formatting (2026-09-21): wic's own `mkfs`
