@@ -138,6 +138,25 @@ part --offset 2128M --fixed-size 2048M --fstype=none --part-name rootfs_b --uuid
 # the mount unit addresses -- /dev/disk/by-partlabel/data -- never a partition
 # number, which moved from p3 to p5 for rootfs in this very layout.
 #
+# **Seeded from the image's own /var/lib/robot** (--source rootfs
+# --change-directory), not created empty. Anything a recipe installs under
+# /var/lib/robot would otherwise be *hidden* on first boot, because this
+# partition mounts on top of it. That is not hypothetical: main's gamepad
+# workaround installs /var/lib/robot/weird-ble, a marker robotctl checks for by
+# existence, and on an empty data partition it silently vanished -- workaround
+# off, with no error anywhere. Seeding keeps its semantics exactly: present on a
+# fresh card, and deleting it (the documented opt-out) persists, because only a
+# full reflash re-seeds this partition. RAUC slot updates never touch it, which
+# is the flip side: a *later* image adding a new file here does not reach a board
+# that already has a data partition. Anything that must track the image belongs
+# on the rootfs, not here.
+#
+# Ownership survives: --change-directory relocates wic's pseudo database to the
+# subdirectory (wic plugins/source/rootfs.py, the "Convert the pseudo directory"
+# block), so files keep the owners the recipes gave them rather than the build
+# user's. The rootfs keeps its copy too, under the mount point, which is exactly
+# what the mount unit's skip-if-missing fallback wants a board to see.
+#
 # Deliberately NOT a wic --mountpoint: that writes an /etc/fstab line, and a
 # missing partition then drops the robot into an emergency shell. It is a .mount
 # unit with ConditionPathExists=/dev/disk/by-label/data instead, so a missing or
@@ -145,4 +164,4 @@ part --offset 2128M --fixed-size 2048M --fstype=none --part-name rootfs_b --uuid
 # was learned the hard way: a *failed* mount cascades through the daemons'
 # StateDirectory= (an implicit RequiresMountsFor=) and kills configd and
 # updaterd -- the two units that could fix the board. See the unit file.
-part --offset 4176M --fixed-size 8192M --fstype=ext4 --label data --part-name data --mkfs-extraopts "-F -i 8192 -b 4096"
+part --source rootfs --change-directory=var/lib/robot --offset 4176M --fixed-size 8192M --fstype=ext4 --label data --part-name data --mkfs-extraopts "-F -i 8192 -b 4096"
