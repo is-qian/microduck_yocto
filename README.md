@@ -438,7 +438,7 @@ Where it stands:
 | 1 | RAUC userspace, signed verity bundles, install to the inactive slot | verified on hardware 2026-09-18 |
 | — | `data` partition for user data, at `/var/lib/robot` | verified on hardware 2026-09-21 |
 | 2a | writable U-Boot environment, `fw_setenv` from Linux | verified on hardware 2026-09-25 |
-| — | first 16 MiB moved to Rockchip's layout | built 2026-09-25, flashing |
+| — | first 16 MiB moved to Rockchip's layout | verified on hardware 2026-09-25 |
 | 2b | boot script that picks a slot, `bootloader=uboot` | not started |
 | 3 | move the daemon hooks' OS work into the image | not started |
 

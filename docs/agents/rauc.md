@@ -203,8 +203,8 @@ seed and `updaterd` converges it again — test that deliberately once stage 2 e
   Stage 2b is next: the boot script + stripping `root=` from the chosen patch +
   `bootloader=uboot`; the fallback is `radxa/u-boot next-dev-v2024.10`, which
   boots via extlinux (see `conf/machine/microduck-zero3.conf`).
-- **Fixed 2026-09-25, not yet flashed: U-Boot was corrupting its own primary
-  copy on first boot.** Rockchip "vendor storage" (MAC address, serial number)
+- **Fixed and verified on hardware 2026-09-25: U-Boot was corrupting its own
+  primary copy on first boot.** Rockchip "vendor storage" (MAC address, serial number)
   lives at a fixed `EMMC_VENDOR_PART_OFFSET = 1024 * 7` sectors = **3.5 MiB
   absolute**, 128 sectors = 64 KiB (`arch/arm/mach-rockchip/vendor.c:30-35`).
   The old layout, copied from JeffyCN's generic wks, put `uboot` at 2–6 MiB, so
@@ -222,8 +222,13 @@ seed and `updaterd` converges it again — test that deliberately once stage 2 e
   shifts down 10 MiB. `scripts/check-wks-layout.py` now asserts those three fixed
   offsets and cross-checks the wks, `rauc-env.cfg` and `fw_env.config`, which
   previously agreed only because comments said they must.
-  On the next flash, verify: the card's `uboot` partition hashes identically to
-  the `.wic`'s 8–12 MiB region *after* first boot, and `v_storage` is non-zero.
+  Verified on the flashed card (build `6ab6290c`): after first boot *and* after a
+  second reboot, the `uboot` partition hashes identically to the `.wic`'s
+  8–12 MiB region (`179013ba…`), and `v_storage` holds U-Boot's data, so the
+  MAC went where it belongs. The environment probe passed again at `0x3F8000`:
+  `microduck.envprobe=1` led `/proc/cmdline` after reboot. This time
+  `/etc/u-boot-initial-env` came from the image, so the first `fw_setenv` saved
+  the 43 defaults plus the probe with nothing copied by hand. 0 failed units.
 - The `data` partition is **done, both paths on hardware**. Blank partition:
   mount skipped, every daemon up (2026-09-18, incomplete-download card). Correctly
   flashed card, first boot, no hand-formatting (2026-09-21): wic's own `mkfs`
