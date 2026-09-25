@@ -33,10 +33,17 @@ you didn't look. This repo already has a scar for each:
   bbappend is not ignored; it fails the entire parse with `ERROR: No recipes in
   default available for: <path>`. This has now cost two builds. `ls` the upstream
   directory before you name the file.
-- **Do not set `S = "${WORKDIR}/git"` or `S = "${UNPACKDIR}/git"`** in a git-based
-  recipe. wrynose fails `do_unpack` outright if you do: the fetcher now unpacks to
-  `${UNPACKDIR}/${BP}`, which bitbake.conf's default `S` already points at. Omit
-  the assignment. (This will bite the `microduck-daemon` recipe too.)
+- **Never put `${WORKDIR}` in `S` at all** — not `${WORKDIR}/git`, and not
+  `${WORKDIR}/sources` either. The pinned oe-core's `do_qa_unpack`
+  (`insane.bbclass:1448`) checks the *unexpanded* value and fails any `S` that
+  contains `${WORKDIR}`, whatever it expands to. It also fails
+  `S = "${UNPACKDIR}/git"` on a git recipe. For a git recipe, omit `S`: the
+  fetcher unpacks to `${UNPACKDIR}/${BP}`, which bitbake.conf's default already
+  points at. For loose `file://`/`https://` files, use `S = "${UNPACKDIR}"`, the
+  idiom oe-core's own `systemd-conf` and `base-files` use. The narrower wording
+  this rule used to have let `microduck-policies` through review with
+  `${WORKDIR}/sources`, and `main` failed every build from 2026-09-21 to
+  2026-09-25 on it.
 - `do_patch` is a **Python** task (patch.bbclass). `do_patch:append() { ... }`
   with a shell body makes bitbake parse shell as Python and fail with a
   `TabError`. Use `do_patch[postfuncs] += "your_shell_func"`.
