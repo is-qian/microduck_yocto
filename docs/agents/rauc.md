@@ -177,24 +177,44 @@ seed and `updaterd` converges it again — test that deliberately once stage 2 e
 ## What is not done
 
 - Kernel is not A/B. `boot_b` is reserved and empty.
-- Nothing can select a slot at boot. Stage 2a is **built and verified at build
-  time; untested on hardware**: a writable U-Boot environment
-  (`recipes-bsp/u-boot/files/rauc-env.cfg`) plus `/etc/fw_env.config` and
-  `libubootenv-bin` (`recipes-bsp/u-boot-env/`). Build `6ab11671` (2026-09-21)
-  completed with 0 errors, and the config provably took effect: comparing the
-  deployed `uboot-*.bin` against the previous build's, the string `setexpr` goes
-  0 → 8 and `ENV_BLK` goes 0 → 2. That is the check to repeat if this is ever
-  suspected — `bb.note` from the `do_configure` postfunc goes to the per-recipe
-  task log, which `rm_work` deletes, so it is *not* visible in the job log and
-  its absence there means nothing.
-  It deliberately changes no boot behaviour, so the board must come up exactly as
-  before; what it adds is that `fw_setenv X 1; reboot; fw_printenv X` survives.
-  Verify that before stage 2b, because everything RAUC does with
-  `bootloader=uboot` rests on it, and a wrong `CONFIG_ENV_OFFSET` corrupts U-Boot
-  rather than failing loudly.
-  Stage 2b is then the boot script + stripping `root=` from the chosen patch +
+- Nothing can select a slot at boot yet. **Stage 2a is verified on hardware
+  (2026-09-25)**: a writable U-Boot environment
+  (`recipes-bsp/u-boot/files/rauc-env.cfg`) plus `/etc/fw_env.config`,
+  `libubootenv-bin` and U-Boot's default env as `/etc/u-boot-initial-env`
+  (`recipes-bsp/u-boot-env/`). The proof is that **U-Boot reads what Linux
+  writes**, not merely that Linux reads back its own write: `fw_setenv bootargs
+  microduck.envprobe=1`, reboot, and the token led `/proc/cmdline`. `bootargs` is
+  the accumulator U-Boot builds the kernel cmdline from, so only a U-Boot that
+  loaded our region at 0x80000 could have put it there. A probe variable also
+  survived, the board booted normally, 0 failed units.
+  Build-time evidence, for when this is suspected: the deployed `uboot-*.bin`
+  gains `setexpr` (0 → 8 occurrences) and `ENV_BLK` (0 → 2) against a pre-2a
+  build. The `bb.note` from the `do_configure` postfunc is *not* in the job log —
+  it goes to the per-recipe log that `rm_work` deletes — so its absence means
+  nothing.
+  **The default-env file is load-bearing, and the first image lacked it.** A
+  fresh card's env region is zeros, so the CRC fails; without
+  `/etc/u-boot-initial-env`, `fw_setenv X 1` writes an environment holding only
+  `X`, with a valid CRC, and U-Boot then imports that in place of its defaults —
+  no `bootcmd`, board stuck at an invisible prompt. It was copied onto the test
+  board by hand before any write; the image now ships it (not yet rebuilt).
+  Stage 2b is next: the boot script + stripping `root=` from the chosen patch +
   `bootloader=uboot`; the fallback is `radxa/u-boot next-dev-v2024.10`, which
   boots via extlinux (see `conf/machine/microduck-zero3.conf`).
+- **U-Boot corrupts its own primary copy on first boot, on every image.** Rockchip
+  "vendor storage" (MAC address, serial number) lives at a fixed
+  `EMMC_VENDOR_PART_OFFSET = 1024 * 7` sectors = **3.5 MiB absolute**, 128 sectors
+  = 64 KiB (`arch/arm/mach-rockchip/vendor.c:30-35`). Our `uboot` partition spans
+  2–6 MiB, so that window is 1.5 MiB into `uboot.img`. `uboot.img` is two
+  identical 2 MiB FIT copies (0–2 MiB primary, 2–4 MiB backup), so the write
+  lands in the **primary**. Measured: a freshly flashed card differs from the
+  `.wic` in exactly that 64 KiB and nowhere else, after the first boot generated
+  a MAC and wrote it back (`board.c` `need_write`). The board still boots —
+  inferred to be from the backup copy, not seen, since no console is attached.
+  Not caused by stage 2a (the env is 32 KiB at 512 KiB) and not specific to the
+  A/B layout: JeffyCN's generic layout puts `uboot` at 2 MiB too, so `main` has
+  it. Rockchip's own layout starts `uboot` at 8 MiB, which is why this offset is
+  free there. Fixing it moves the partition table. Undecided.
 - The `data` partition is **done, both paths on hardware**. Blank partition:
   mount skipped, every daemon up (2026-09-18, incomplete-download card). Correctly
   flashed card, first boot, no hand-formatting (2026-09-21): wic's own `mkfs`

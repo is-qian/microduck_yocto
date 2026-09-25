@@ -21,6 +21,22 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 # name the cause. AGENTS.md:20.
 SRC_URI += "file://rauc-env.cfg"
 
+# Ship U-Boot's default environment as /etc/u-boot-initial-env, the exact path
+# libubootenv falls back to (DEFAULT_ENV_FILE in src/fw_printenv.c) when the env
+# region fails its CRC. oe-core's u-boot.inc names the file after
+# UBOOT_INITIAL_ENV, default "${PN}-initial-env" -- /etc/u-boot-rockchip-initial-env,
+# which libubootenv never looks at. Hence the override.
+#
+# Not optional, and this is the failure it prevents, found on hardware 2026-09-25:
+# a freshly flashed card's env region is all zeros, so the CRC fails. With no
+# default file, `fw_setenv X 1` prints "Cannot read default environment from file"
+# and then writes an environment holding ONLY X -- with a valid CRC. At the next
+# boot U-Boot imports that in place of its compiled-in defaults, bootcmd included,
+# and the board stops at a U-Boot prompt nobody can see. RAUC's first
+# `fw_setenv BOOT_ORDER ...` would do exactly this. With the file present the
+# same write saves all 43 defaults plus X, which is what was verified.
+UBOOT_INITIAL_ENV = "u-boot-initial-env"
+
 # Why a plain .cfg is enough, given this recipe builds via Rockchip's make.sh:
 #
 # make.sh does not bypass Yocto's defconfig handling. meta-rockchip hooks it in as

@@ -20,6 +20,9 @@ do_install() {
     install -m 0644 ${UNPACKDIR}/fw_env.config ${D}${sysconfdir}/fw_env.config
 }
 
-# The tools this config is for. Installing the config without them is useless, and
-# libubootenv-bin is what RPROVIDES u-boot-fw-utils on wrynose.
-RDEPENDS:${PN} += "libubootenv-bin"
+# The tools this config is for, and U-Boot's default environment. Installing the
+# config without the tools is useless; installing both without the defaults is
+# dangerous -- see UBOOT_INITIAL_ENV in recipes-bsp/u-boot/u-boot-rockchip.bbappend
+# for the brick that the -env package prevents. libubootenv-bin is what RPROVIDES
+# u-boot-fw-utils on wrynose.
+RDEPENDS:${PN} += "libubootenv-bin u-boot-rockchip-env"
