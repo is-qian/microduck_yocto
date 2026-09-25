@@ -1,10 +1,10 @@
-From dfb22120542c876896a7163a9be7455ceee7964c Mon Sep 17 00:00:00 2001
+From 4ae611c5611121fff94d9c40dd4916b3c06e5bf1 Mon Sep 17 00:00:00 2001
 From: Fabien Danieau <fabien.danieau@pollen-robotics.com>
-Date: Fri, 25 Sep 2026 12:01:33 +0200
+Date: Fri, 25 Sep 2026 17:15:39 +0200
 Subject: [PATCH] evb_rk3568: select the RAUC slot before Rockchip's boot chain
 
 Prepend an A/B selection to CONFIG_BOOTCOMMAND: walk BOOT_ORDER, take the first
-bootname with attempts left in BOOT_<name>_LEFT, decrement and save it, and set
+bootname whose BOOT_<name>_LEFT is not "0", decrement and save it, and set
 bootargs to root=PARTLABEL=rootfs_<a|b> rauc.slot=<A|B>. Then fall through to
 the unchanged RKIMG_BOOTCOMMAND.
 
@@ -12,16 +12,20 @@ It has to be this header, not Kconfig: this file #undefs CONFIG_BOOTCOMMAND
 and redefines it, so a CONFIG_BOOTCOMMAND in a defconfig fragment is silently
 discarded.
 
+The attempt counter is compared as a string, not with `test 0x${x} -gt 0` as
+RAUC's example does: this tree's simple_strtol honours the base 10 that test
+passes, so "0x3" parses as 0 and no slot would ever qualify.
+
 Upstream-Status: Inappropriate [microduck RAUC integration]
 ---
- include/configs/evb_rk3568.h | 65 +++++++++++++++++++++++++++++++++++-
- 1 file changed, 64 insertions(+), 1 deletion(-)
+ include/configs/evb_rk3568.h | 73 +++++++++++++++++++++++++++++++++++-
+ 1 file changed, 72 insertions(+), 1 deletion(-)
 
 diff --git a/include/configs/evb_rk3568.h b/include/configs/evb_rk3568.h
-index f7318c3..07ca7e2 100644
+index f7318c3..48647d7 100644
 --- a/include/configs/evb_rk3568.h
 +++ b/include/configs/evb_rk3568.h
-@@ -19,8 +19,71 @@
+@@ -19,8 +19,79 @@
  
  #define CONFIG_SYS_MMC_ENV_DEV		0
  
@@ -39,9 +43,17 @@ index f7318c3..07ca7e2 100644
 + *
 + * - Nested ifs, not `&&`, and no empty then-branch: the forms this 2017.09 hush
 + *   is least likely to mis-parse.
-+ * - `test 0x${...}`: test parses base 0, so without the prefix "a" (10) reads as
-+ *   0, and an empty value collapses to `test -gt 0` and aborts the script.
-+ *   setexpr already reads and writes hex.
++ * - "Attempts left" is a STRING compare against "0", never a numeric test.
++ *   RAUC's own example says `test 0x${BOOT_A_LEFT} -gt 0`, and on this U-Boot
++ *   that is always false: test calls simple_strtol(..., 10) (cmd/test.c), and
++ *   this vendor tree's lib/strto.c honours the base it is given, so "0x3" in
++ *   base 10 parses as 0. Mainline's parser switches to hex on a "0x" prefix
++ *   whatever base it was asked for, which is why the idiom works elsewhere --
++ *   and why a mainline sandbox passed this script while the board looped
++ *   through the give-up branch forever. RAUC writes the counter with "%x" and
++ *   setexpr with "%lx", both minimal lowercase hex, so "no attempts left" is
++ *   exactly the string "0". The counters are seeded above, so never empty.
++ *   setexpr itself parses base 16, which the vendor parser handles correctly.
 + * - BOOT_ORDER is iterated, never compared as a whole, and never rewritten here:
 + *   removing a name from it is RAUC's mark-bad, not the bootloader's call.
 + * - A fallback bootargs is set first, so a script that dies half way still boots
@@ -67,13 +79,13 @@ index f7318c3..07ca7e2 100644
 +	"for BOOT_SLOT in \"${BOOT_ORDER}\"; do " \
 +		"if test \"x${rauc_part}\" = \"x\"; then " \
 +			"if test \"x${BOOT_SLOT}\" = \"xA\"; then " \
-+				"if test 0x${BOOT_A_LEFT} -gt 0; then " \
++				"if test \"x${BOOT_A_LEFT}\" != \"x0\"; then " \
 +					"setexpr BOOT_A_LEFT ${BOOT_A_LEFT} - 1; " \
 +					"setenv rauc_part rootfs_a; setenv rauc_slot A; " \
 +				"fi; " \
 +			"fi; " \
 +			"if test \"x${BOOT_SLOT}\" = \"xB\"; then " \
-+				"if test 0x${BOOT_B_LEFT} -gt 0; then " \
++				"if test \"x${BOOT_B_LEFT}\" != \"x0\"; then " \
 +					"setexpr BOOT_B_LEFT ${BOOT_B_LEFT} - 1; " \
 +					"setenv rauc_part rootfs_b; setenv rauc_slot B; " \
 +				"fi; " \

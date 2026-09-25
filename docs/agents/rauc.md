@@ -200,6 +200,19 @@ seed and `updaterd` converges it again — test that deliberately once stage 2 e
   `X`, with a valid CRC, and U-Boot then imports that in place of its defaults —
   no `bootcmd`, board stuck at an invisible prompt. It was copied onto the test
   board by hand before any write; the image now ships it (not yet rebuilt).
+  Stage 2b's first flash (build `6ab677a0`, 2026-09-25) **did not boot**, and
+  the card said why without a console. U-Boot had saved the environment, so it
+  ran the script, but with `BOOT_A_LEFT=3 BOOT_B_LEFT=3` and no `rauc_slot`:
+  the give-up branch, on every boot, followed by `reset`. The kernel never
+  mounted `rootfs_a`. Cause: `test 0x${BOOT_A_LEFT} -gt 0`, RAUC's own idiom, is
+  always false on this U-Boot. `test` calls `simple_strtol(..., 10)`, and the
+  vendor's `lib/strto.c` honours that base, so `0x3` parses as 0. Mainline's
+  parser switches to hex on `0x` regardless, which is why the idiom works
+  elsewhere and why the mainline sandbox passed. Fixed by comparing the
+  counter as a string against `"0"`. The sandbox now builds with the vendor's
+  `strto.c`, and with it reproduced the board failure exactly (8 of 9 cases)
+  before passing the fix (9 of 9). The failed card also proved U-Boot's own
+  `saveenv` works.
   Stage 2b is **written and sandbox-tested (2026-09-25), not yet built or on
   hardware**: the U-Boot header patch that prepends slot selection to
   `bootcmd`, the chosen node without `root=`, and `bootloader=uboot`. Before
@@ -208,8 +221,8 @@ seed and `updaterd` converges it again — test that deliberately once stage 2 e
   and how to build one. Two facts it established that are easy to get wrong:
   `CONFIG_SYS_CBSIZE` (1024) does **not** limit `bootcmd`, since a 4000-character
   script ran to the end; and `saveenv` cannot be tested there, because the
-  sandbox has no env storage. On hardware, prove U-Boot's own `saveenv` works by
-  masking `rauc-mark-good` for one reboot: `BOOT_A_LEFT` should read 2, not 3.
+  sandbox has no env storage. It is proven on hardware instead: the card that
+  failed to boot carried an environment U-Boot itself had saved.
   The fallback is `radxa/u-boot next-dev-v2024.10`, which boots via extlinux
   (see `conf/machine/microduck-zero3.conf`).
 - **Fixed and verified on hardware 2026-09-25: U-Boot was corrupting its own

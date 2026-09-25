@@ -6,16 +6,26 @@
 # and the only recovery is reflashing the card. So every change to the patch
 # gets run here first.
 #
-# Why a *mainline* v2017.09 sandbox is faithful: the vendor tree the board runs
-# (JeffyCN/mirrors u-boot @ a93658f8) has common/cli_hush.c, cmd/test.c and
-# cmd/setexpr.c byte-identical to v2017.09, and autoboot runs bootcmd through the
-# same run_command_list() that `u-boot -c` uses. The vendor tree's own sandbox
-# does not build (Rockchip code is compiled unconditionally). Checked 2026-09-25.
+# Why a *mainline* v2017.09 sandbox is faithful -- ONLY WITH THE VENDOR'S
+# lib/strto.c COPIED IN. The vendor tree the board runs (JeffyCN/mirrors u-boot
+# @ a93658f8) has common/cli_hush.c, cmd/test.c, cmd/setexpr.c, lib/ctype.c and
+# the setenv/env_get functions of cmd/nvedit.c byte-identical to v2017.09, and
+# autoboot runs bootcmd through the same run_command_list() that `u-boot -c`
+# uses. lib/strto.c is the exception, and it matters: the vendor's
+# simple_strtol honours the base it is given, so `test 0x3 -gt 0` (test passes
+# base 10) is FALSE there, while mainline's switches to hex on "0x" and says
+# true. A plain mainline sandbox passed a script that looped forever on the
+# board (2026-09-25). With the vendor's strto.c the sandbox reproduced that
+# board failure exactly, 8 of 9 cases, which is what makes it trustworthy now.
+# The vendor tree's own sandbox does not build (Rockchip code is compiled
+# unconditionally).
 #
 # Build the sandbox once (a few minutes; GCC 14 needs the relaxed flags):
 #
 #   git clone --depth 1 -b v2017.09 https://source.denx.de/u-boot/u-boot.git
-#   cd u-boot && make sandbox_defconfig
+#   cd u-boot
+#   curl -sfL https://raw.githubusercontent.com/JeffyCN/mirrors/a93658f8f45dc0266be21840931131b10c325e03/lib/strto.c -o lib/strto.c
+#   make sandbox_defconfig
 #   sed -i 's/^CONFIG_SANDBOX_SDL=y/# CONFIG_SANDBOX_SDL is not set/' .config
 #   make olddefconfig
 #   sed -i '/always += .*_libfdt.so/s/^/#/' tools/Makefile   # needs python2 otherwise

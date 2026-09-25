@@ -439,7 +439,7 @@ Where it stands:
 | — | `data` partition for user data, at `/var/lib/robot` | verified on hardware 2026-09-21 |
 | 2a | writable U-Boot environment, `fw_setenv` from Linux | verified on hardware 2026-09-25 |
 | — | first 16 MiB moved to Rockchip's layout | verified on hardware 2026-09-25 |
-| 2b | boot script that picks a slot, `bootloader=uboot` | written and sandbox-tested 2026-09-25, not built |
+| 2b | boot script that picks a slot, `bootloader=uboot` | first flash looped in U-Boot (2026-09-25); fixed and sandbox-tested, not rebuilt |
 | 3 | move the daemon hooks' OS work into the image | not started |
 
 `meta-rauc` is pinned in `kas/microduck.yml`, and `bitbake microduck-bundle`
@@ -620,8 +620,12 @@ selection.** Three changes:
 
 The board has no serial console, so a syntax error in `bootcmd` would leave it
 at an invisible prompt. The script is therefore tested first, in a U-Boot
-sandbox built from mainline v2017.09, whose shell, `test` and `setexpr` are
-byte-identical to the vendor tree's. `scripts/test-uboot-bootcmd.sh` compiles the
+sandbox built from mainline v2017.09 **with the vendor's `lib/strto.c` copied
+in**. Without that file the sandbox lies: the first flash looped forever in
+U-Boot because `test 0x3 -gt 0` is false on the vendor's number parser and true
+on mainline's, and the plain sandbox passed it. The shell, `test`, `setexpr` and
+`setenv` are byte-identical between the two trees; the number parser is the one
+difference on the script's path. `scripts/test-uboot-bootcmd.sh` compiles the
 macro out of the patch and runs nine cases: fresh environment, B first after an
 install, fallback when B is exhausted, a slot RAUC marked bad, hex counters, an
 empty counter, an unknown slot name, and both slots exhausted. A deliberately
