@@ -213,8 +213,16 @@ seed and `updaterd` converges it again — test that deliberately once stage 2 e
   `strto.c`, and with it reproduced the board failure exactly (8 of 9 cases)
   before passing the fix (9 of 9). The failed card also proved U-Boot's own
   `saveenv` works.
-  Stage 2b is **written and sandbox-tested (2026-09-25), not yet built or on
-  hardware**: the U-Boot header patch that prepends slot selection to
+  Stage 2b is **verified on hardware (2026-09-29, build `6ab69578`)**: A→B via
+  `rauc install`, a boot from B, user data intact across the switch, and
+  rollback to A after `rauc status mark-bad booted`, with no power-cycle.
+  **One thing that switch exposed, and it looks exactly like a failed boot:** a
+  slot with no wifi profile. NetworkManager kept profiles in the rootfs, so B
+  came up healthy and unreachable, and it took two power-cycles and Bluetooth
+  provisioning to tell the two apart. Profiles now live on the data partition
+  (`recipes-core/microduck-data`). When a slot "does not boot", check over BLE
+  (`duckctl scan`, `duckctl health`) before concluding it did not.
+  Stage 2b was first **written and sandbox-tested (2026-09-25)**: the U-Boot header patch that prepends slot selection to
   `bootcmd`, the chosen node without `root=`, and `bootloader=uboot`. Before
   editing the script, run `scripts/test-uboot-bootcmd.sh <v2017.09 sandbox>`.
   The header of that script explains why a mainline sandbox is a faithful stand-in

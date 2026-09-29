@@ -439,7 +439,7 @@ Where it stands:
 | — | `data` partition for user data, at `/var/lib/robot` | verified on hardware 2026-09-21 |
 | 2a | writable U-Boot environment, `fw_setenv` from Linux | verified on hardware 2026-09-25 |
 | — | first 16 MiB moved to Rockchip's layout | verified on hardware 2026-09-25 |
-| 2b | boot script that picks a slot, `bootloader=uboot` | first flash looped in U-Boot (2026-09-25); fixed and sandbox-tested, not rebuilt |
+| 2b | boot script that picks a slot, `bootloader=uboot` | verified on hardware 2026-09-29: A→B update, boot from B, rollback to A |
 | 3 | move the daemon hooks' OS work into the image | not started |
 
 `meta-rauc` is pinned in `kas/microduck.yml`, and `bitbake microduck-bundle`
@@ -603,8 +603,13 @@ variable, with a valid CRC. U-Boot then loads it *instead of* its defaults, lose
 `bootcmd`, and stops at a prompt you cannot see without a serial console. RAUC's
 first write would do exactly that.
 
-**Stage 2b (written, sandbox-tested, not yet on hardware): boot-time slot
-selection.** Three changes:
+**Stage 2b (verified on hardware 2026-09-29): boot-time slot selection.**
+Build `6ab69578`. The full cycle ran on the board: booted A with
+`root=PARTLABEL=rootfs_a rauc.slot=A` and `rauc-mark-good` marking it good;
+`rauc install` wrote B and U-Boot made it primary (`BOOT_ORDER=B A`); the board
+booted B (`/dev/mmcblk1p7`); a file written on A was still on the data partition
+from B; `rauc status mark-bad booted` then sent it back to A on the next boot,
+unattended. Three changes:
 
 - `recipes-bsp/u-boot/files/0001-evb_rk3568-*.patch` prepends a slot selection
   to U-Boot's `bootcmd`. It walks `BOOT_ORDER`, takes the first slot with
@@ -633,6 +638,16 @@ broken copy fails with a `syntax error`, so the test does catch it.
 
 The fallback, if this U-Boot resists on hardware, is
 `radxa/u-boot next-dev-v2024.10`, which boots via extlinux.
+
+**Wifi credentials live on the data partition.** The first A→B update booted B
+perfectly and left it unreachable: NetworkManager kept profiles in
+`/etc/NetworkManager/system-connections`, inside the slot, and B was written from
+a clean image. It looked like a boot failure, and U-Boot's counters cannot tell a
+kernel that booted with no network from one that did not boot. `microduck-data`
+now points NetworkManager at `/var/lib/robot/network`
+(`/usr/lib/NetworkManager/conf.d/90-microduck-keyfile.conf`), so a profile
+survives every update however it was created. `utils/seed-wifi.sh` writes there
+on images that have it. Not yet built.
 
 **Stage 3 (not started): reconcile with `updaterd`.** Both stay. RAUC owns the
 kernel, DTB, rootfs and everything the daemon's install hooks currently drop
