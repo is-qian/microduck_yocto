@@ -24,9 +24,14 @@
 # SRCREV alone is enough: the base SRC_URI carries nobranch=1, so the branch name
 # in it (mpp-dev-2024_06_27, which no longer exists upstream) is never checked.
 #
-# This changes the hardware codec library under the camera and WebRTC path, which
-# was verified on b29e4b7. Re-verify the WebRTC stream on the board after the
-# first image with it. Drop this file when meta-rockchip moves both pins itself.
+# This moves the hardware codec library under the camera and WebRTC path, which
+# was verified on b29e4b7. Re-verified on c5b8620, 2026-09-29, on the board: the
+# WebRTC stream reaches a browser at 30 fps, and mpph264enc holds its bitrate
+# (978 kbit/s for bps=1000000, 3914 for 4000000, over 10 s of 720p30). A page
+# reload shows black until "connect" is pressed again -- the viewer page does not
+# reconnect on its own, which the mediad log confirms (no new signalling session),
+# so that is the daemon's viewer, not this library.
+# Drop this file when meta-rockchip moves both pins itself.
 #
 # Named rockchip-mpp.bbappend, no _%: the recipe file is rockchip-mpp.bb.
 
