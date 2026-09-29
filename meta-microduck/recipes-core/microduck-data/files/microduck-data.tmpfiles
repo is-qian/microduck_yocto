@@ -1,9 +1,4 @@
-# NetworkManager's profile directory on the data partition -- see
-# /usr/lib/NetworkManager/conf.d/90-microduck-keyfile.conf.
-#
-# Created at boot rather than only shipped in the image, because a data partition
-# is seeded once, at flash time, and never again: a board whose data partition
-# predates this file would otherwise have no directory. Ordering needs nothing
-# extra: systemd-tmpfiles-setup runs after local-fs.target, which the data mount
-# is part of, and NetworkManager starts after that. 0700: the files hold PSKs.
+# NetworkManager's profile directory (90-microduck-keyfile.conf). Created at boot as
+# well as shipped, because a data partition flashed before it existed never gets
+# re-seeded. Runs after the data mount; 0700 because the files hold PSKs.
 d /var/lib/robot/network 0700 root root -

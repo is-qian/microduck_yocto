@@ -39,10 +39,6 @@ cd "$(dirname "$0")/.."
 FLAVOR=${HFJOB_FLAVOR:-cpu-performance}
 TIMEOUT=${HFJOB_TIMEOUT:-8h}
 BUCKET=${HFJOB_BUCKET:-pollen-robotics/microduck-yocto-cache}
-# Where `hf` syncs the -v local directories. Not passed to hf (it picks this
-# itself); named here so the staleness preflight below can read the same place
-# hf writes to. Both buckets are private.
-ARTIFACTS_BUCKET=${HFJOB_ARTIFACTS_BUCKET:-pollen-robotics/jobs-artifacts}
 TARGET=${HFJOB_TARGET:-}
 KAS_CMD=${1:-build}
 
@@ -69,64 +65,6 @@ case "$TARGET" in
 	done
 	;;
 esac
-
-# The directory sync below writes into a stable per-directory bucket prefix, and
-# the prefix does not change when the content does.
-#
-# Observed on hf 1.30.0, 2026-09-21: a file renamed locally had its new name
-# uploaded and its old name LEFT IN THE BUCKET, so both were mounted. Do not read
-# that as "the sync never deletes" -- a later run printed a plan with an explicit
-# `Deletes: 0` line, so the machinery exists and the rule is not established. What
-# is established is that a removed file survived a sync.
-#
-# For a .bbappend that is fatal to the whole parse:
-#
-#   ERROR: No recipes in default available for:
-#     .../recipes-bsp/u-boot/u-boot-rockchip_%.bbappend
-#
-# which is what happened after renaming that file. The rename was correct, the new
-# file uploaded, the old one stayed, and two consecutive jobs died 25 s into
-# bitbake -- each after ~39 minutes of cache seed first.
-#
-# **.bbappend only, deliberately.** A stale .bb is not the same bug: bitbake just
-# sees two versions of a recipe and takes the highest PV. The bucket currently
-# holds a few such leftovers (old microduck-daemon versions) and they break
-# nothing. Flagging them would be noise.
-#
-# **A warning, not an exit.** The bucket holds one prefix per source directory --
-# this worktree and the main checkout each have their own -- and there is no way
-# to tell from here which one this run will be assigned before `hf jobs run`
-# returns it. So this necessarily reports on prefixes that are not ours, and
-# refusing to launch over another checkout's leftovers would be worse than the
-# problem. Printed at launch, it is in front of whoever ran the build immediately,
-# which is all that was needed the day it cost 80 minutes.
-#
-# Fails open throughout: no `hf`, a failed listing or an empty bucket all print
-# nothing and let the build proceed.
-stale=$(hf buckets ls -R "hf://buckets/$ARTIFACTS_BUCKET/" 2>/dev/null | awk '{print $NF}' |
-	while IFS= read -r p; do
-		case "$p" in
-			*/) continue ;;                 # directory marker, not a file
-			*.bbappend) ;;                  # the only kind that fails a parse
-			*) continue ;;
-		esac
-		first=${p%%/*}                      # meta-microduck-0f866394
-		rel=${p#*/}                         # path beneath the prefix
-		[ "$rel" = "$p" ] && continue       # no slash: a bare prefix line
-		# Strip the -<hash> suffix, not the first dash: `meta-microduck-0f866394`
-		# has to yield `meta-microduck`, never `meta`.
-		d=${first%-*}
-		[ -e "$d/$rel" ] || echo "$p"
-	done) || stale=""
-
-if [ -n "$stale" ]; then
-	echo "$0: WARNING -- the build-input bucket holds .bbappend files that no" >&2
-	echo "  longer exist locally. Any in THIS run's prefix will fail the parse" >&2
-	echo "  after the cache seed. Others belong to a different checkout." >&2
-	echo "$stale" | sed 's|^|    |' >&2
-	echo "  To remove one:" >&2
-	echo "$stale" | sed "s|^|    hf buckets rm -y 'hf://buckets/$ARTIFACTS_BUCKET/|;s|$|'|" >&2
-fi
 
 # This repo is on no git host -- only coach's bare repo and local checkouts -- so
 # the build inputs travel as local-directory volumes: hf syncs them (incrementally)
@@ -363,8 +301,8 @@ if [ -n "${SSH_PRIVATE_KEY_B64:-}" ]; then
 fi
 
 # The RAUC signing pair, written where microduck-bundle.bb looks for it:
-# MICRODUCK_RAUC_KEYDIR defaults to ${TOPDIR}/rauc-keys, and under kas TOPDIR is
-# KAS_BUILD_DIR. Absent for an image build, which needs neither.
+# ${TOPDIR}/rauc-keys, and under kas TOPDIR is KAS_BUILD_DIR. Absent for an image
+# build, which needs neither.
 #
 # umask before the mkdir, so the directory itself is not group-readable either --
 # the job container is ours alone, but a key readable by anything that wanders

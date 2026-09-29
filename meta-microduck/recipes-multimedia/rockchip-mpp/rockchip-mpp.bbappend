@@ -1,38 +1,11 @@
-# Move MPP forward to match the gstreamer-rockchip base our fork now uses.
+# MPP to match the gstreamer-rockchip base our fork builds on (a0d45af,
+# 2026-08-26), whose mppjpegdec needs MPP's MppSysCfg API. meta-rockchip still pins
+# b29e4b7 (2024-06-27), which lacks it, so that GStreamer does not compile.
 #
-# gstreamer1.0-rockchip.bbappend builds pollen-robotics/gstreamer_rockship on top
-# of a0d45af (gstreamer-rockchip tip, 2026-08-26). Since 666203a (2026-03-06),
-# mppjpegdec calls MPP's system-config API -- MppSysCfg, mpp_sys_cfg_get/ioctl/
-# set_u32/get_u32/put -- which MPP only gained in 78ad332 (2024-12-18). meta-rockchip
-# still pins b29e4b7 (2024-06-27), so that base never compiled:
-#
-#   gstmppjpegdec.c:219: error: unknown type name 'MppSysCfg'
-#
-# c5b8620 is mpp-dev as it stood on 2026-08-26, the same day as a0d45af -- the
-# closest pairing to what upstream built that GStreamer against, rather than
-# whatever mpp-dev's tip is today. Checked before building, against that exact
-# commit:
-#
-#   - all 63 mpp_* functions gstreamer-rockchip a0d45af calls are declared in its
-#     inc/, reached from <rockchip/rk_mpi.h> via rk_mpi_cmd.h -> rk_venc_cfg.h ->
-#     rk_mpp_cfg.h, and the whole of inc/ is installed
-#   - LICENSES/Apache-2.0 and LICENSES/MIT hash to the base recipe's
-#     LIC_FILES_CHKSUM unchanged
-#   - install() destinations are the same set (bin, include/rockchip, lib,
-#     lib/pkgconfig), so the base recipe's FILES still cover everything
-#
-# SRCREV alone is enough: the base SRC_URI carries nobranch=1, so the branch name
-# in it (mpp-dev-2024_06_27, which no longer exists upstream) is never checked.
-#
-# This moves the hardware codec library under the camera and WebRTC path, which
-# was verified on b29e4b7. Re-verified on c5b8620, 2026-09-29, on the board: the
-# WebRTC stream reaches a browser at 30 fps, and mpph264enc holds its bitrate
-# (978 kbit/s for bps=1000000, 3914 for 4000000, over 10 s of 720p30). A page
-# reload shows black until "connect" is pressed again -- the viewer page does not
-# reconnect on its own, which the mediad log confirms (no new signalling session),
-# so that is the daemon's viewer, not this library.
-# Drop this file when meta-rockchip moves both pins itself.
-#
-# Named rockchip-mpp.bbappend, no _%: the recipe file is rockchip-mpp.bb.
+# c5b8620 is mpp-dev as of the same day as a0d45af. Checked against it: every MPP
+# function the GStreamer tip calls is declared, the license checksums and install
+# paths are unchanged. SRCREV alone is enough, since the base SRC_URI is nobranch=1.
+# Verified on the board 2026-09-29: WebRTC at 30 fps in a browser, and mpph264enc
+# holds its bitrate. Drop this when meta-rockchip moves both pins itself.
 
 SRCREV = "c5b8620973c7e22224fcc78ad5016740979c2e0a"

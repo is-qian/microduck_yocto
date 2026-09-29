@@ -32,7 +32,7 @@ UNITS = {"s": 512, "S": 512, "K": 1024, "k": 1024, "M": 1 << 20, "G": 1 << 30}
 
 LAYER = WKS.parent.parent.parent
 ENV_CFG = LAYER / "recipes-bsp/u-boot/files/rauc-env.cfg"
-FW_ENV = LAYER / "recipes-bsp/u-boot-env/files/fw_env.config"
+FW_ENV = LAYER / "recipes-bsp/u-boot/files/fw_env.config"
 
 # Byte offsets that vendor code writes to WITHOUT reading the partition table, so
 # the partition carrying that name has to start exactly there. Not wic-checkable:

@@ -1,167 +1,55 @@
-# microduck A/B disk layout (RAUC).
-#
-# The first 16 MiB follow Rockchip's documented layout exactly
-# (https://opensource.rock-chips.com/wiki_Partitions, and the upstream Yocto
-# meta-rockchip's files/wic/rockchip.wks, which transcribes it). That is not
-# deference, it is load-bearing: vendor code writes to three FIXED byte offsets
-# without consulting any partition table, and a layout that puts something else
-# there gets it overwritten.
-#
-#   what           sector   offset     written by, and why it cannot move
-#   idblock            64    32 KiB    bootrom reads it there
-#   vendor storage   7168   3.5 MiB    U-Boot, on first boot: generated MAC and
-#                                      serial. EMMC_VENDOR_PART_OFFSET = 1024*7
-#                                      (arch/arm/mach-rockchip/vendor.c:30)
-#   U-Boot env       8128   0x3F8000   U-Boot `saveenv`, fw_setenv. The vendor
-#                                      default CONFIG_ENV_OFFSET (env/Kconfig:516)
-#   uboot           16384     8 MiB    the loader's default U-Boot position
-#
-# The previous layout followed JeffyCN's generic-gptdisk.wks.in, which puts uboot
-# at 2 MiB -- and so across vendor storage at 3.5 MiB. Measured 2026-09-25: on
-# first boot U-Boot wrote a generated MAC into those 64 KiB, which is 1.5 MiB into
-# uboot.img and inside its *primary* copy. The card still booted, inferred from
-# the backup copy. Every image built from that layout damaged its own bootloader
-# once, silently. It also forced uboot_env to a non-standard 512 KiB, which meant
-# overriding CONFIG_ENV_OFFSET and a vendor default that would otherwise have
-# pointed into U-Boot.
-#
-# Two things beyond Rockchip's table:
-#
-#  1. Every partition has an explicit --offset and --fixed-size. In the generic
-#     layout each raw partition is sized by its source artifact, so a boot.img
-#     that grew by one byte shifted rootfs. Under A/B that is not cosmetic: a
-#     bundle built against one layout would write over the wrong partition of
-#     another. wic errors out ("File system image of partition ... is larger
-#     than its allowed size") rather than shifting anything, which is the point.
-#
-#  2. The b slots and data are reserved, not populated: they carry no --source,
-#     so wic only puts them in the GPT. RAUC writes rootfs_b from the bundle.
-#
-# Sizes, measured rather than guessed (2026-09-17, deploy artifacts on lotus):
-#   idblock.img   306 KiB   -> bounded at 3552K, Rockchip's loader1 extent
-#   uboot.img       4 MiB   -> 4M    (two identical 2 MiB FIT copies)
-#   boot.img     16.22 MiB  -> 32M   (it has already grown once, for the camera)
-#   rootfs        489 MB used of 844 MB -> 2G
+# microduck A/B disk layout (RAUC). The why, with measurements and source
+# references, is in docs/agents/rauc.md; run scripts/check-wks-layout.py after any
+# change -- it asserts the fixed offsets and the env triple, in 0.1 s.
 #
 #   part          offset      size
-#   idblock        32 KiB    3552 KiB   (no GPT entry; the bootrom reads sector 64)
-#   v_storage    3584 KiB     256 KiB   (vendor storage; never written by us)
-#   uboot_env    4064 KiB      32 KiB   (= 0x3F8000)
+#   idblock        32 KiB    3552 KiB   no GPT entry; the bootrom reads sector 64
+#   v_storage    3584 KiB     256 KiB   Rockchip vendor storage (MAC, serial)
+#   uboot_env    4064 KiB      32 KiB   = 0x3F8000
 #   uboot           8 MiB       4 MiB
-#   boot           16 MiB      32 MiB   (named `boot`: see the part line below)
-#   boot_b         48 MiB      32 MiB
+#   boot           16 MiB      32 MiB   kernel + DTB, shared by both slots
+#   boot_b         48 MiB      32 MiB   reserved, empty
 #   rootfs_a       80 MiB       2 GiB
-#   rootfs_b     2128 MiB       2 GiB
-#   data         4176 MiB       8 GiB   (ext4, mounted at /var/lib/robot)
-#                            ~12.1 GiB total -- for the 32 GB card, NOT the 2 GB one.
+#   rootfs_b     2128 MiB       2 GiB   written by RAUC
+#   data         4176 MiB       8 GiB   /var/lib/robot, survives updates
+#                            ~12.1 GiB -- needs a 16 GB card or larger.
 #
-# Deliberately left unallocated, per Rockchip's table: 3840..4064 KiB and
-# 4..8 MiB (legacy DRM key, parameters/ATAGS), and 12..16 MiB, Rockchip's `atf`
-# slot. This board does not use a separate trust.img -- ATF rides inside
-# uboot.img's FIT -- but switching to the SPL boot flow (RK_UBOOT_SPL) could want
-# it, and a hole costs nothing where a later move costs a reflash.
+# The first 16 MiB are Rockchip's documented table, not a choice: vendor code
+# writes vendor storage, the environment and U-Boot at fixed byte offsets without
+# reading the GPT. 4..8 and 12..16 MiB stay empty as Rockchip reserves them.
 #
-# Partition *labels* are load-bearing, never numbers. RAUC's system.conf, the
-# data mount, fw_env.config and the stage 2 boot script all address partitions
-# by label, which is why adding v_storage (renumbering everything after it) is
-# free. scripts/check-wks-layout.py asserts the fixed offsets above.
+# Every partition has an explicit --offset and --fixed-size, so wic fails rather
+# than shifts: a bundle built against one layout must never write into another.
+# Partitions are addressed by label everywhere, never by number. One line per
+# part: wic's parser has no line continuation.
 
 bootloader --ptable gpt
 
-# --fixed-size, even though this has no GPT entry and nothing reads its length.
-# It is a bound, not a size: idblock.img is 306 KiB today, and with no partition
-# table entry wic has nothing to detect an overlap against. 3552K is Rockchip's
-# loader1 extent, ending exactly where vendor storage begins.
+# --fixed-size here is a bound, not a size: with no GPT entry, nothing else would
+# stop idblock growing into vendor storage.
 part --source rawcopy --sourceparams="file=idblock.img" --align 32 --fixed-size 3552K --no-table
 
-# A GPT entry for a region nothing here writes, so that nothing here ever can: the
-# checker and wic both see it as occupied. 256K is Rockchip's reservation; the
-# code uses the first 64 KiB. Never flashed -- wic writes zeros, U-Boot fills it.
+# Reserved so nothing of ours can ever land on it. U-Boot fills it on first boot.
 part --offset 7168s --fixed-size 256K --fstype=none --part-name v_storage
 
 part --offset 8128s --fixed-size 32K --fstype=none --part-name uboot_env
 
 part --source rawcopy --sourceparams="file=uboot.img" --offset 8M --fixed-size 4M --part-name uboot
 
-# **Named `boot`, not `boot_a`, and that is not cosmetic.** This vendor U-Boot
-# finds the kernel by GPT partition *name*: its built-in environment carries
-#
-#   partitions=...;name=boot,size=32M,bootable,uuid=${uuid_gpt_boot};...
-#   bootcmd=boot_android ${devtype} ${devnum};boot_fit;bootrkp;run distro_bootcmd;
-#
-# so with this partition called `boot_a` there is no `boot` to find, every arm of
-# that bootcmd falls through, and the board never loads a kernel. It cost a flash
-# to learn: the card was written perfectly, RKNS was at sector 64, uboot.img at
-# 2 MiB and a valid ANDROID! image sat in boot_a -- and nothing reached Linux, so
-# btd never advertised and the board looked dead over both wifi and BLE.
-#
-# boot_b keeps its name and its offset, reserved for stage 2. Renaming both to
-# `boot_a`/`boot_b` is stage 2's job, at the point where a boot.scr can choose
-# between them; until something can make that choice, one of them has to answer
-# to the name the bootloader already knows.
+# Named `boot`, not `boot_a`: vendor U-Boot looks the kernel up by that exact GPT
+# name, and a card without it flashes fine and never boots.
 part --source rawcopy --sourceparams="file=boot.img" --offset 16M --fixed-size 32M --part-name boot
 part --offset 48M --fixed-size 32M --fstype=none --part-name boot_b
 
-# rootfs_a keeps RK_ROOTDEV_UUID. It no longer matters for booting -- the kernel
-# gets root=PARTLABEL= from U-Boot's boot script, and the chosen-node patch
-# carries no root= any more -- but it is harmless and keeps the GUID stable
-# across builds. It did matter until stage 2b: root=PARTUUID=614e0000-... was
-# compiled into the DTB, and a slot A without that GUID did not boot at all.
-#
-# One line per partition, no trailing backslashes: wic's parser reads the file a
-# line at a time and shlex.splits it, with no continuation handling at all
-# (ksparser.py, `for line in conf`). A continued line is a silent syntax error.
+# The kernel's root= comes from U-Boot's boot script (root=PARTLABEL=rootfs_a|b).
+# The fixed GUIDs only keep two builds of one commit byte-identical.
 part / --source rootfs --offset 80M --fixed-size 2048M --fstype=ext4 --part-name rootfs_a --uuid ${RK_ROOTDEV_UUID} --mkfs-extraopts "${RK_ROOTFS_EXTRAOPTS}"
-
-# Slot B, deliberately empty. RAUC writes the bundle's ext4 image here raw, so
-# there is nothing to format at flash time. Its partition GUID is fixed rather
-# than random so two builds of the same commit produce the same GPT.
 part --offset 2128M --fixed-size 2048M --fstype=none --part-name rootfs_b --uuid 614e0001-0000-4b53-8000-1d28000054a9
 
-# Persistent user data -- what a person adds to their robot and would be upset to
-# lose: RL policies under /var/lib/robot/policies, the sound bank, configd's
-# state, wifi credentials. Mounted at /var/lib/robot by
-# recipes-core/microduck-data/, which is where every one of those already lives
-# (POLICY_LIBRARY, StateDirectory=robot/*), so the daemon needs no change at all.
-#
-# Neither rootfs slot touches it, so it survives a RAUC slot switch as well as a
-# daemon update. It does not survive a reflash of the whole .wic, and should not
-# be described as if it did.
-#
-# 8 GiB, not the remaining ~24: unallocated space costs nothing and can be
-# claimed later without a reflash, whereas shrinking a partition someone has
-# filled cannot. The fixed size also keeps this layout identical on a smaller
-# card. Policies are tens of MB each; this is years of collecting them.
-#
-# Formatted here (ext4) rather than at first boot, so a freshly flashed card
-# mounts on its first boot with nothing having to run first. The label is what
-# the mount unit addresses -- /dev/disk/by-partlabel/data -- never a partition
-# number, which moved from p3 to p5 for rootfs in this very layout.
-#
-# **Seeded from the image's own /var/lib/robot** (--source rootfs
-# --change-directory), not created empty. Anything a recipe installs under
-# /var/lib/robot would otherwise be *hidden* on first boot, because this
-# partition mounts on top of it. That is not hypothetical: main's gamepad
-# workaround installs /var/lib/robot/weird-ble, a marker robotctl checks for by
-# existence, and on an empty data partition it silently vanished -- workaround
-# off, with no error anywhere. Seeding keeps its semantics exactly: present on a
-# fresh card, and deleting it (the documented opt-out) persists, because only a
-# full reflash re-seeds this partition. RAUC slot updates never touch it, which
-# is the flip side: a *later* image adding a new file here does not reach a board
-# that already has a data partition. Anything that must track the image belongs
-# on the rootfs, not here.
-#
-# Ownership survives: --change-directory relocates wic's pseudo database to the
-# subdirectory (wic plugins/source/rootfs.py, the "Convert the pseudo directory"
-# block), so files keep the owners the recipes gave them rather than the build
-# user's. The rootfs keeps its copy too, under the mount point, which is exactly
-# what the mount unit's skip-if-missing fallback wants a board to see.
-#
-# Deliberately NOT a wic --mountpoint: that writes an /etc/fstab line, and a
-# missing partition then drops the robot into an emergency shell. It is a .mount
-# unit with ConditionPathExists=/dev/disk/by-label/data instead, so a missing or
-# unformatted partition SKIPS the mount rather than failing it. The distinction
-# was learned the hard way: a *failed* mount cascades through the daemons'
-# StateDirectory= (an implicit RequiresMountsFor=) and kills configd and
-# updaterd -- the two units that could fix the board. See the unit file.
+# User data: policies, sounds, configd state, wifi profiles. Seeded from the image's
+# own /var/lib/robot, because the mount hides whatever the rootfs has there; wic
+# keeps ownership across --change-directory. Only a full reflash re-seeds it, so a
+# later image's new files here never reach a board that already has one.
+# Mounted by recipes-core/microduck-data, not --mountpoint, so a missing partition
+# is skipped rather than failing the daemons that need it.
 part --source rootfs --change-directory=var/lib/robot --offset 4176M --fixed-size 8192M --fstype=ext4 --label data --part-name data --mkfs-extraopts "-F -i 8192 -b 4096"

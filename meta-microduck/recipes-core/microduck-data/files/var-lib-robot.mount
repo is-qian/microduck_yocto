@@ -1,35 +1,11 @@
 [Unit]
-Description=Persistent robot data (policies, sounds, config)
-Documentation=file:///usr/share/doc/microduck-data/README
+Description=Persistent robot data (policies, sounds, config, wifi profiles)
 
-# The partition is addressed by GPT label, never by number: rootfs itself moved
-# from p3 to p5 when this layout was introduced, and a number here would have
-# silently mounted the wrong thing. The label is set by the wks.
-#
-# udev creates the by-partlabel symlink asynchronously; systemd knows to wait for
-# the device unit behind a mount's What=, so no explicit After= is needed.
-
-# Skip, do not fail, when there is no filesystem to mount -- and the difference
-# is not cosmetic.
-#
-# The daemon units carry StateDirectory=robot/config and robot/updater, and
-# systemd turns those into an implicit RequiresMountsFor=/var/lib/robot/..., which
-# is a Requires= on THIS unit. So if this unit *fails*, configd and updaterd never
-# start: no wifi configuration, no updater -- the two things that could repair a
-# board -- taken down by a data partition. That is exactly what happened on the
-# first card flashed with this layout, which had been written from a download
-# that was still in progress and so carried an unformatted data partition.
-#
-# A unit whose Condition is false is *skipped*: its start job succeeds, the
-# Requires= is satisfied, and the daemons start against the directories the
-# rootfs already ships. Persistence is lost until the partition is fixed, and
-# that is the right failure -- degraded, visible in `systemctl status`, and the
-# updater is still alive to help.
-#
-# by-label rather than by-partlabel for the condition, because udev creates
-# /dev/disk/by-label/<x> only when blkid finds a filesystem labelled <x>. So
-# this one path answers both "is there a partition" and "is it formatted".
-# What= keeps by-partlabel: it is the stable identity; the label is the check.
+# Skip, never fail, when the partition is missing or blank. The daemons'
+# StateDirectory= makes this unit a Requires= of configd and updaterd, so a failed
+# mount would stop the two units that can repair a board; a skipped one satisfies
+# Requires= and they run on the rootfs directories. by-label exists only once blkid
+# finds the filesystem, so one path checks "present" and "formatted".
 ConditionPathExists=/dev/disk/by-label/data
 
 [Mount]
@@ -39,8 +15,6 @@ Type=ext4
 Options=defaults,noatime
 
 [Install]
-# WantedBy local-fs.target, not RequiredBy. Note this alone was NOT enough to make
-# a missing partition survivable -- see the Condition above for why. It still
-# matters: with RequiredBy, a genuine mount failure (a formatted partition that
-# will not mount) would take local-fs.target down and the robot with it.
+# WantedBy, not RequiredBy: a partition that exists but will not mount must not
+# take local-fs.target down with it.
 WantedBy=local-fs.target

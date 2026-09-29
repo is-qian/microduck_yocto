@@ -1,116 +1,33 @@
-# A writable U-Boot environment for RAUC. See files/rauc-env.cfg for the why.
+# A writable U-Boot environment and A/B slot selection for RAUC.
+# docs/agents/rauc.md has the why and the traps.
 #
-# **The filename has no `_%`, and that is not a style choice.** meta-rockchip's
-# recipe file is `u-boot-rockchip.bb` -- the version lives in a `PV = "2017.09"`
-# line inside it, not in the name. A `_%.bbappend` matches `<name>_<version>.bb`,
-# so `u-boot-rockchip_%.bbappend` matches nothing, and bitbake does not treat an
-# unmatched bbappend as harmless: it fails the whole parse with
-#
-#   ERROR: No recipes in default available for:
-#     .../recipes-bsp/u-boot/u-boot-rockchip_%.bbappend
-#
-# Cheap to hit and cheap to fix, but on HF it costs the ~35-minute cache seed that
-# runs before bitbake starts. Second time in this layer -- `rauc-conf.bbappend` is
-# the same trap. Check the upstream filename before naming a bbappend.
+# Named without `_%`: the upstream recipe file is u-boot-rockchip.bb, and an
+# unmatched bbappend fails the whole parse.
 
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
-# `+=`, never `=`. u-boot-rockchip's SRC_URI carries a SECOND git entry -- rkbin,
-# with destsuffix=rkbin -- which make.sh requires to pack the loader and idblock.
-# Replacing SRC_URI wholesale drops it and breaks the build in a way that does not
-# name the cause. AGENTS.md:20.
-SRC_URI += "file://rauc-env.cfg"
-
-# A/B slot selection, prepended to bootcmd. A header patch rather than a
-# CONFIG_BOOTCOMMAND in rauc-env.cfg, because include/configs/evb_rk3568.h
-# #undefs CONFIG_BOOTCOMMAND and redefines it -- a Kconfig value would be
-# compiled and silently discarded. The patch carries the full rationale.
+# `+=`, never `=`: SRC_URI carries a second git entry, rkbin, that make.sh needs.
 #
-# Tested before it ever reached a board, since a hush syntax error here means
-# bootcmd aborts at a prompt no one can see: scripts/test-uboot-bootcmd.sh runs
-# the exact preprocessed string through a U-Boot v2017.09 sandbox, whose
-# cli_hush.c, test.c and setexpr.c are byte-identical to this vendor tree's.
-SRC_URI += "file://0001-evb_rk3568-select-the-RAUC-slot-before-Rockchip-s-boot.patch"
+# rauc-env.cfg reaches the defconfig despite make.sh: oe-core's uboot_configure()
+# still runs merge_config.sh over every .cfg in SRC_URI. fw_env.config is installed
+# by oe-core's u-boot.inc into ${PN}-env. The patch prepends slot selection to
+# bootcmd; run scripts/test-uboot-bootcmd.sh before changing it.
+SRC_URI += " \
+    file://rauc-env.cfg \
+    file://fw_env.config \
+    file://0001-evb_rk3568-select-the-RAUC-slot-before-Rockchip-s-boot.patch \
+"
 
-# Ship U-Boot's default environment as /etc/u-boot-initial-env, the exact path
-# libubootenv falls back to (DEFAULT_ENV_FILE in src/fw_printenv.c) when the env
-# region fails its CRC. oe-core's u-boot.inc names the file after
-# UBOOT_INITIAL_ENV, default "${PN}-initial-env" -- /etc/u-boot-rockchip-initial-env,
-# which libubootenv never looks at. Hence the override.
-#
-# Not optional, and this is the failure it prevents, found on hardware 2026-09-25:
-# a freshly flashed card's env region is all zeros, so the CRC fails. With no
-# default file, `fw_setenv X 1` prints "Cannot read default environment from file"
-# and then writes an environment holding ONLY X -- with a valid CRC. At the next
-# boot U-Boot imports that in place of its compiled-in defaults, bootcmd included,
-# and the board stops at a U-Boot prompt nobody can see. RAUC's first
-# `fw_setenv BOOT_ORDER ...` would do exactly this. With the file present the
-# same write saves all 43 defaults plus X, which is what was verified.
+# The name libubootenv falls back to on a blank environment. Without that file the
+# first fw_setenv saves only one variable, and U-Boot then loses bootcmd.
 UBOOT_INITIAL_ENV = "u-boot-initial-env"
 
-# Why a plain .cfg is enough, given this recipe builds via Rockchip's make.sh:
-#
-# make.sh does not bypass Yocto's defconfig handling. meta-rockchip hooks it in as
-# do_configure:prepend and do_compile:append, so oe-core's own tasks still run in
-# full: uboot_configure() does `make rk3568_defconfig`, then
-# `merge_config.sh -m .config <every .cfg in SRC_URI>`, then oldconfig.
-# find_cfgs() (cml1.bbclass) collects any SRC_URI entry ending in .cfg, so this
-# file is merged with no further wiring. do_compile then builds against that merged
-# .config, and make.sh -- sed-stripped of its own `make` lines by the prepend --
-# only packs the already-built output.
-#
-# Do NOT reach for UBOOT_CONFIG_FRAGMENTS: it is only read on the UBOOT_CONFIG
-# multi-config path, and uboot-config.bbclass:164 raises SkipRecipe if UBOOT_CONFIG
-# and UBOOT_MACHINE are both set -- and the machine conf sets UBOOT_MACHINE.
-
-# The environment must actually land where rauc-env.cfg says, and a wrong offset
-# corrupts U-Boot rather than failing the build. Assert it at the end of
-# do_configure, against the merged .config, where a mismatch costs a build instead
-# of a flash.
-python microduck_check_env_offset() {
-    import os
-
-    config = os.path.join(d.getVar("B"), ".config")
-    if not os.path.exists(config):
-        bb.fatal("no .config after do_configure; the merge path changed")
-
-    # Numbers compared as numbers: Kconfig is free to write 0x00080000 for what we
-    # wrote as 0x80000, and a string compare would fail a build over the spelling.
-    want = {"CONFIG_ENV_IS_IN_BLK_DEV": "y",
-            "CONFIG_ENV_OFFSET": 0x3f8000,
-            "CONFIG_ENV_SIZE": 32 * 1024,
-            "CONFIG_CMD_SETEXPR": "y"}
-    got = {}
-    with open(config) as f:
-        for line in f:
-            if "=" in line and not line.startswith("#"):
-                key, _, value = line.strip().partition("=")
-                if key in want:
-                    got[key] = value
-
-    for key, expected in sorted(want.items()):
-        actual = got.get(key)
-        ok = False
-        if actual is not None:
-            if isinstance(expected, int):
-                try:
-                    ok = int(actual, 0) == expected
-                except ValueError:
-                    ok = False
-            else:
-                ok = actual == expected
-        if not ok:
-            bb.fatal("%s is %r in the merged .config, expected %r. rauc-env.cfg did "
-                     "not take effect. Check that the bbappend is named "
-                     "u-boot-rockchip.bbappend -- the recipe file carries no version, "
-                     "so a _%%.bbappend matches nothing and bitbake fails at parse. "
-                     "If merge_config.sh stopped running, every value here silently "
-                     "reverts to the vendor default -- in particular no writable "
-                     "environment at all (CONFIG_ENV_IS_NOWHERE), which RAUC cannot "
-                     "work without."
-                     % (key, actual, expected))
-
-    bb.note("microduck: U-Boot env at %s size %s, setexpr on"
-            % (got["CONFIG_ENV_OFFSET"], got["CONFIG_ENV_SIZE"]))
+# Fail the build, not the board, if the fragment did not take effect: every line of
+# rauc-env.cfg must appear verbatim in the merged .config. Without it the env
+# silently reverts to ENV_IS_NOWHERE.
+microduck_check_uboot_config() {
+	for line in $(grep -vE '^[[:space:]]*(#|$)' ${UNPACKDIR}/rauc-env.cfg); do
+		grep -qxF "$line" ${B}/.config || bbfatal "rauc-env.cfg: '$line' is not in the merged ${B}/.config"
+	done
 }
-do_configure[postfuncs] += "microduck_check_env_offset"
+do_configure[postfuncs] += "microduck_check_uboot_config"

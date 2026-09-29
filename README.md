@@ -427,30 +427,31 @@ daemon names is the case that breaks.
 
 ## A/B OS updates (RAUC)
 
-Being built on the `rauc-ab` branch, in a worktree, because it changes the
-partition layout and later the bootloader — and `main` is what a colleague
-flashes. Nothing merges until stage 1 is verified on hardware.
-
-Where it stands:
+Signed RAUC bundles update the root filesystem into the inactive slot, U-Boot
+boots the new slot, and a slot marked bad rolls back to the other one. User data
+and wifi profiles live on their own partition and survive every update.
+`docs/agents/rauc.md` has the design, the traps and how each piece was verified.
 
 | stage | what | state |
 |---|---|---|
 | 1 | RAUC userspace, signed verity bundles, install to the inactive slot | verified on hardware 2026-09-18 |
-| — | `data` partition for user data, at `/var/lib/robot` | verified on hardware 2026-09-21 |
+| — | `data` partition at `/var/lib/robot`, wifi profiles on it | verified on hardware 2026-09-21 / 2026-09-29 |
 | 2a | writable U-Boot environment, `fw_setenv` from Linux | verified on hardware 2026-09-25 |
 | — | first 16 MiB moved to Rockchip's layout | verified on hardware 2026-09-25 |
-| 2b | boot script that picks a slot, `bootloader=uboot` | verified on hardware 2026-09-29: A→B update, boot from B, rollback to A |
+| 2b | U-Boot picks the slot, `bootloader=uboot` | verified on hardware 2026-09-29: A→B, boot B, rollback to A |
 | 3 | move the daemon hooks' OS work into the image | not started |
 
-`meta-rauc` is pinned in `kas/microduck.yml`, and `bitbake microduck-bundle`
-produces a signed verity `.raucb`.
+**Limits today.** A bundle carries the rootfs only: the kernel and device tree sit
+in the shared `boot` partition, so changing them still needs a reflash. U-Boot
+itself is not a slot either. The bundle wraps the dev image
+(`RAUC_SLOT_rootfs` in `recipes-core/bundles/microduck-bundle.bb`); switch it to
+`microduck-image` before shipping.
 
 ### Partition layout
 
 `meta-microduck/files/wic/microduck-ab.wks.in`. Every partition has an explicit
-offset and fixed size, so wic fails rather than shifting anything: a bundle built
-against one layout must never write into another. Everything addresses
-partitions by GPT **label**, never by number.
+offset and size, and everything addresses partitions by GPT **label**, never by
+number. Run `scripts/check-wks-layout.py` after changing it.
 
 | # | label | offset | size | contents |
 |---|---|---|---|---|
@@ -458,204 +459,70 @@ partitions by GPT **label**, never by number.
 | 1 | `v_storage` | 3.5 MiB | 256 KiB | Rockchip vendor storage: MAC, serial. Written by U-Boot only |
 | 2 | `uboot_env` | 0x3F8000 | 32 KiB | U-Boot environment: `BOOT_ORDER`, `BOOT_x_LEFT` |
 | 3 | `uboot` | 8 MiB | 4 MiB | `uboot.img`, two 2 MiB FIT copies |
-| 4 | `boot` | 16 MiB | 32 MiB | kernel + DTB (Android `boot.img`) |
+| 4 | `boot` | 16 MiB | 32 MiB | kernel + DTB, shared by both slots; the name is load-bearing |
 | 5 | `boot_b` | 48 MiB | 32 MiB | reserved, empty |
-| 6 | `rootfs_a` | 80 MiB | 2 GiB | slot A, ext4 |
+| 6 | `rootfs_a` | 80 MiB | 2 GiB | slot A |
 | 7 | `rootfs_b` | 2128 MiB | 2 GiB | slot B, written by RAUC |
-| 8 | `data` | 4176 MiB | 8 GiB | ext4, `/var/lib/robot`, survives updates |
+| 8 | `data` | 4176 MiB | 8 GiB | `/var/lib/robot`: policies, sounds, config, wifi |
 
-Total 12.08 GiB, for the 32 GB card. The unused 20 GB can be claimed later
-without a reflash. 4–8 MiB and 12–16 MiB are left empty, as Rockchip's table
-reserves them.
+12.1 GiB in total, so it needs a 16 GB card or larger; the rest of a bigger card
+can be claimed later without a reflash. The first 16 MiB are Rockchip's documented
+table, because vendor code writes vendor storage, the environment and U-Boot at
+fixed offsets without reading the GPT. The data partition survives updates but
+not a reflash of the whole `.wic`.
 
-**The first 16 MiB are not ours to choose.** Vendor code writes three regions at
-fixed byte offsets without reading the partition table: vendor storage at
-3.5 MiB, the environment at `0x3F8000`, and U-Boot is loaded from 8 MiB. The
-layout copied from JeffyCN's generic wks put `uboot` at 2 MiB, which spans
-3.5 MiB. On 2026-09-25 a freshly flashed card was measured differing from its
-`.wic` in exactly one 64 KiB window after first boot: U-Boot had written a
-generated MAC into the primary copy of itself. The board still booted, inferred
-from the backup copy. `scripts/check-wks-layout.py` now asserts the fixed
-offsets, and cross-checks the wks, `rauc-env.cfg` and `fw_env.config` against
-each other.
+### Signing keys
 
-**The kernel partition is named `boot`, not `boot_a`, and that is load-bearing.**
-Vendor U-Boot finds the kernel by GPT partition *name* — its environment carries
-`name=boot,size=32M,bootable` and `bootcmd=boot_android ...;boot_fit;bootrkp;run
-distro_bootcmd;`. The first flash of this layout called it `boot_a`, so there was
-no `boot` to find, every arm of that bootcmd fell through, and the board never
-loaded a kernel: no wifi, no BLE, nothing. The card itself was written correctly
-(RKNS at sector 64, `uboot.img` at 2 MiB, a valid `ANDROID!` image in the slot) —
-only the name was wrong. So rootfs is A/B today and the kernel is not; `boot_b`
-keeps its offset, and renaming the pair is stage 2's job, at the point where a
-`boot.scr` can actually choose between them.
-
-`system.conf` ships `bootloader=noop` until stage 2b. That is not a placeholder
-to forget about: nothing on this board picks a slot at boot yet. `root=` is
-compiled into the DTB, which is packed inside an Android `boot.img` on a raw
-partition, with no extlinux and no `boot.img` header cmdline. So RAUC can write
-the inactive slot and honestly reports that it cannot make the board boot it.
-`noop` becomes `uboot` once the boot script exists.
-
-**Signing keys are not in this repo.** Generate once, into the build directory
-(bind-mounted by kas-container, and already in `.gitignore`):
+The private key is never in this repo or the image. Generate it once, into the
+build directory (bind-mounted by kas-container, and already in `.gitignore`):
 
 ```sh
 . kas/lotus.env                        # or coach.env -- this sets KAS_BUILD_DIR
 mkdir -p "$KAS_BUILD_DIR/rauc-keys" && cd "$KAS_BUILD_DIR/rauc-keys"
-
-# The script comes from the meta-rauc layer. kas clones it next to
-# meta-microduck on the first build; before that, fetch just the script:
 curl -sfLO https://raw.githubusercontent.com/rauc/meta-rauc/wrynose/scripts/openssl-ca.sh
 chmod +x openssl-ca.sh && ./openssl-ca.sh                # edit ORG=/CA= at the top first
-
 cp openssl-ca/dev/development-1.cert.pem .
 cp openssl-ca/dev/private/development-1.key.pem .
 chmod 600 development-1.key.pem
 ```
 
-Then copy the **public** CA certificate into the layer, so the image trusts
-bundles signed by that key:
+Then commit the **public** CA so the image trusts bundles signed by that key:
 
 ```sh
 cp openssl-ca/dev/ca.cert.pem <repo>/meta-microduck/recipes-core/rauc/files/
 ```
 
-Until that certificate exists, `rauc-conf` falls back to meta-rauc's example and
-says so (`Please overwrite example ca.cert.pem ...`), and the image cannot verify
-anything. In CI the private key becomes an org-scoped GitHub secret written to
-`$KAS_BUILD_DIR/rauc-keys/` before the build.
+CI builds the card image only; bundles are built where the key is.
 
-**Verified on hardware 2026-09-18**, on the 32 GB card, dev image, RAUC 1.15.2:
-
-```
-rauc status
-  Compatible:  microduck-zero3
-  Booted from: rootfs.0 (/dev/mmcblk1p5)     # p6 since v_storage was added
-  [rootfs.0] /dev/disk/by-partlabel/rootfs_a  bootname A  booted
-  [rootfs.1] /dev/disk/by-partlabel/rootfs_b  bootname B  inactive
-
-rauc info microduck-bundle-*.raucb
-  Verified inline signature by 'O = Pollen Robotics, CN = Pollen Robotics Development-1'
-  Compatible: 'microduck-zero3'   Bundle Format: verity
-  1 Image: rootfs -> microduck-image-dev-microduck-zero3.rootfs.ext4, 720.8 MB
-
-rauc install microduck-bundle-*.raucb
-  Copying image to rootfs.1 done.
-  noop bootloader: ignore setting slot rootfs.1 as primary
-  Installing succeeded          (exit 0)
-```
-
-So the CA committed here validates a bundle signed by a key that only ever
-existed on the build host; 720 MB reached `rootfs_b`, which held zeroes before
-and carries an ext4 superblock after; and RAUC stopped exactly where this board's
-capability ends, saying so rather than pretending.
-
-Two things that look wrong and are not. Both slots report `boot status: bad` --
-`noop` cannot answer, and RAUC's default for unknown is bad; they become real
-answers under `bootloader=uboot`. And that day `rauc info` warned `No data
-directory or status file set`. It no longer does: `system.conf` now sets
-`data-directory=/var/lib/robot/rauc`, on the `data` partition, so RAUC's slot
-bookkeeping survives a slot being rewritten.
-
-Reproduce with:
+### Building, flashing and updating
 
 ```sh
-bitbake microduck-bundle                 # -> tmp/deploy/images/.../microduck-bundle-*.raucb
-rauc info  microduck-bundle-*.raucb      # signature verifies, compatible matches
-rauc install microduck-bundle-*.raucb    # writes rootfs_b, logs the noop refusal to switch
+# The bundle target builds the matching .wic as well.
+KAS_BUILD_DIR=/mnt/data/fabien/yocto/build HFJOB_TARGET=microduck-bundle scripts/build-hfjob.sh
+
+# A fresh card: flash the .wic, then give it wifi, over Bluetooth
+# (duckctl wifi connect) or by writing a keyfile onto the card:
+sudo utils/seed-wifi.sh /dev/mmcblk0          # lives beside the worktrees, not in it
+
+# A running board: copy the bundle over and install it.
+rauc install microduck-bundle-*.raucb          # writes the inactive slot, makes it primary
+reboot                                          # boots the new slot
+rauc status mark-bad booted && reboot           # rolls back to the other slot
 ```
 
-**User data has its own partition.** `data` (ext4, 8 GiB, formatted at image
-build) is mounted at `/var/lib/robot` by `recipes-core/microduck-data/`, which is
-where the daemon already keeps everything a person adds — the policy library,
-the sound bank, `configd`'s state — so no daemon change was needed. It survives
-daemon updates and, once stage 2 exists, RAUC slot switches. It does **not**
-survive a reflash of the whole `.wic`. If the partition is missing or blank, the
-mount is *skipped* rather than failed (`ConditionPathExists=/dev/disk/by-label/data`)
-and the daemons start against the rootfs directories: a failed mount would
-otherwise cascade through their `StateDirectory=` and stop `configd` and
-`updaterd`, which was observed on a card flashed from an incomplete download.
+`rauc status` names the booted slot. `fw_printenv BOOT_ORDER BOOT_A_LEFT
+BOOT_B_LEFT` shows what U-Boot will try next. **A slot that comes up with no
+network looks exactly like one that did not boot**; check over Bluetooth
+(`duckctl scan`, `duckctl health`) before concluding it failed.
 
-Both halves are verified on hardware (2026-09-18), on that same card: with the
-partition blank, the mount was skipped and every daemon started; after
-formatting it with the wks's exact `mkfs.ext4` options, `by-label/data`
-appeared, the mount came up (`/dev/mmcblk1p7 ext4 7.7G`), and `StateDirectory=`
-created `config/` and `updater/` on the empty filesystem with zero failed units.
+Changing U-Boot's boot script? Run `scripts/test-uboot-bootcmd.sh` first. The
+board has no serial console, so a mistake there leaves it at an invisible prompt.
 
-**Build the bundle, not the image, and it builds the dev image too.**
-`RAUC_SLOT_rootfs` is `microduck-image-dev` on this branch, so `HFJOB_TARGET=microduck-bundle`
-produces both a flashable card and the bundle that matches it. It was briefly
-`microduck-image`, which built a prod card with no password-less root -- a board
-that came up, answered ping, and could not be logged into.
+### Stage 3: reconcile with `updaterd`
 
-**Stage 2a (verified on hardware 2026-09-25): a U-Boot environment Linux can
-write.** `recipes-bsp/u-boot/` enables `CONFIG_ENV_IS_IN_BLK_DEV` and
-`CONFIG_CMD_SETEXPR`; `recipes-bsp/u-boot-env/` ships `/etc/fw_env.config`,
-`fw_printenv`/`fw_setenv` and U-Boot's default environment. The proof was that
-U-Boot reads what Linux writes, not just that Linux reads back its own bytes: a
-`bootargs` token set with `fw_setenv` appeared in `/proc/cmdline` after a reboot.
-
-The default environment file, `/etc/u-boot-initial-env`, is load-bearing. A
-freshly flashed card's environment region is zeros, so its CRC fails. Without
-that file, the first `fw_setenv` writes an environment holding only the one
-variable, with a valid CRC. U-Boot then loads it *instead of* its defaults, loses
-`bootcmd`, and stops at a prompt you cannot see without a serial console. RAUC's
-first write would do exactly that.
-
-**Stage 2b (verified on hardware 2026-09-29): boot-time slot selection.**
-Build `6ab69578`. The full cycle ran on the board: booted A with
-`root=PARTLABEL=rootfs_a rauc.slot=A` and `rauc-mark-good` marking it good;
-`rauc install` wrote B and U-Boot made it primary (`BOOT_ORDER=B A`); the board
-booted B (`/dev/mmcblk1p7`); a file written on A was still on the data partition
-from B; `rauc status mark-bad booted` then sent it back to A on the next boot,
-unattended. Three changes:
-
-- `recipes-bsp/u-boot/files/0001-evb_rk3568-*.patch` prepends a slot selection
-  to U-Boot's `bootcmd`. It walks `BOOT_ORDER`, takes the first slot with
-  attempts left, decrements and saves the counter, and sets
-  `root=PARTLABEL=rootfs_a|b rauc.slot=A|B`. It has to be a header patch:
-  `evb_rk3568.h` `#undef`s `CONFIG_BOOTCOMMAND`, so a Kconfig value is ignored.
-- The device tree's chosen node loses its `root=`. U-Boot merges the DTB's
-  bootargs in *after* the script's, and a matching key replaces rather than
-  appends, so a `root=` there would pin every boot to one slot.
-- `system.conf` switches to `bootloader=uboot`. `rauc-mark-good.service`, which
-  has been installed all along but only runs when `rauc.slot=` is on the kernel
-  command line, now restores the counter on every boot that completes.
-
-The board has no serial console, so a syntax error in `bootcmd` would leave it
-at an invisible prompt. The script is therefore tested first, in a U-Boot
-sandbox built from mainline v2017.09 **with the vendor's `lib/strto.c` copied
-in**. Without that file the sandbox lies: the first flash looped forever in
-U-Boot because `test 0x3 -gt 0` is false on the vendor's number parser and true
-on mainline's, and the plain sandbox passed it. The shell, `test`, `setexpr` and
-`setenv` are byte-identical between the two trees; the number parser is the one
-difference on the script's path. `scripts/test-uboot-bootcmd.sh` compiles the
-macro out of the patch and runs nine cases: fresh environment, B first after an
-install, fallback when B is exhausted, a slot RAUC marked bad, hex counters, an
-empty counter, an unknown slot name, and both slots exhausted. A deliberately
-broken copy fails with a `syntax error`, so the test does catch it.
-
-The fallback, if this U-Boot resists on hardware, is
-`radxa/u-boot next-dev-v2024.10`, which boots via extlinux.
-
-**Wifi credentials live on the data partition.** The first A→B update booted B
-perfectly and left it unreachable: NetworkManager kept profiles in
-`/etc/NetworkManager/system-connections`, inside the slot, and B was written from
-a clean image. It looked like a boot failure, and U-Boot's counters cannot tell a
-kernel that booted with no network from one that did not boot. `microduck-data`
-now points NetworkManager at `/var/lib/robot/network`
-(`/usr/lib/NetworkManager/conf.d/90-microduck-keyfile.conf`), so a profile
-survives every update however it was created. `utils/seed-wifi.sh` writes there
-on images that have it. **Verified on hardware 2026-09-29, build `6abb8c0a`:**
-with the profile on the data partition and none inside slot B, a switch to B
-came back on wifi 21 s into boot, with no Bluetooth provisioning;
-`nmcli` showed the active connection loaded from
-`/var/lib/robot/network/wifi.nmconnection`.
-
-**Stage 3 (not started): reconcile with `updaterd`.** Both stay. RAUC owns the
-kernel, DTB, rootfs and everything the daemon's install hooks currently drop
-into `/usr/local/lib` and `/usr/lib/sysusers.d`; `updaterd` shrinks to the daemon
-binaries under `/opt/robot/daemon`. A daemon fix should not cost a reboot
-(~20 s symlink swap and a 13 MB payload today, versus a reboot and ~200 MB), and
-a developer should not wait on a 50-minute image build to try one.
+Not started. Both stay. RAUC owns the kernel, DTB, rootfs and everything the
+daemon's install hooks currently drop into `/usr/local/lib` and
+`/usr/lib/sysusers.d`; `updaterd` shrinks to the daemon binaries under
+`/opt/robot/daemon`. A daemon fix should not cost a reboot (~20 s symlink swap and
+a 13 MB payload today, versus a reboot and ~200 MB), and a developer should not
+wait on a 50-minute image build to try one.

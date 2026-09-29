@@ -179,9 +179,10 @@ seed and `updaterd` converges it again — test that deliberately once stage 2 e
 - Kernel is not A/B. `boot_b` is reserved and empty.
 - Nothing can select a slot at boot yet. **Stage 2a is verified on hardware
   (2026-09-25)**: a writable U-Boot environment
-  (`recipes-bsp/u-boot/files/rauc-env.cfg`) plus `/etc/fw_env.config`,
-  `libubootenv-bin` and U-Boot's default env as `/etc/u-boot-initial-env`
-  (`recipes-bsp/u-boot-env/`). The proof is that **U-Boot reads what Linux
+  (`recipes-bsp/u-boot/files/rauc-env.cfg`) plus `/etc/fw_env.config` and
+  U-Boot's default env as `/etc/u-boot-initial-env`, both installed by oe-core's
+  `u-boot.inc` into `u-boot-rockchip-env`; `fw_printenv`/`fw_setenv` arrive via
+  meta-rauc's own RDEPENDS. The proof is that **U-Boot reads what Linux
   writes**, not merely that Linux reads back its own write: `fw_setenv bootargs
   microduck.envprobe=1`, reboot, and the token led `/proc/cmdline`. `bootargs` is
   the accumulator U-Boot builds the kernel cmdline from, so only a U-Boot that

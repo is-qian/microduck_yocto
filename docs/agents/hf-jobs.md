@@ -51,14 +51,9 @@ to go too:
 
     hf buckets rm -y 'hf://buckets/pollen-robotics/jobs-artifacts/<prefix>/<path>'
 
-`build-hfjob.sh` now warns about orphaned `.bbappend`s before launching. It is a
-warning rather than a refusal because the bucket holds one prefix per source
-directory (this worktree and the main checkout each have their own) and the run's
-prefix is only known after `hf jobs run` returns — so it necessarily reports on
-prefixes that are not this run's.
-
-Only `.bbappend` is flagged. A stale `.bb` is a different, benign thing: bitbake
-sees two versions of a recipe and takes the highest `PV`.
+Check before a build that follows a rename or a deletion: list the prefix the
+last job mounted and compare it with the repo. Only a stale `.bbappend` breaks the
+parse; a stale `.bb` is benign, since bitbake takes the highest `PV`.
 
 To see what a job actually mounted:
 
