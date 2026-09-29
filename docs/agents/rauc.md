@@ -220,7 +220,9 @@ seed and `updaterd` converges it again — test that deliberately once stage 2 e
   slot with no wifi profile. NetworkManager kept profiles in the rootfs, so B
   came up healthy and unreachable, and it took two power-cycles and Bluetooth
   provisioning to tell the two apart. Profiles now live on the data partition
-  (`recipes-core/microduck-data`). When a slot "does not boot", check over BLE
+  (`recipes-core/microduck-data`), verified on hardware the same day: a switch
+  to a slot with no profile of its own came back on wifi by itself, 21 s into
+  boot. When a slot "does not boot", check over BLE
   (`duckctl scan`, `duckctl health`) before concluding it did not.
   Stage 2b was first **written and sandbox-tested (2026-09-25)**: the U-Boot header patch that prepends slot selection to
   `bootcmd`, the chosen node without `root=`, and `bootloader=uboot`. Before

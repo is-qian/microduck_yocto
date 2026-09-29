@@ -647,7 +647,11 @@ kernel that booted with no network from one that did not boot. `microduck-data`
 now points NetworkManager at `/var/lib/robot/network`
 (`/usr/lib/NetworkManager/conf.d/90-microduck-keyfile.conf`), so a profile
 survives every update however it was created. `utils/seed-wifi.sh` writes there
-on images that have it. Not yet built.
+on images that have it. **Verified on hardware 2026-09-29, build `6abb8c0a`:**
+with the profile on the data partition and none inside slot B, a switch to B
+came back on wifi 21 s into boot, with no Bluetooth provisioning;
+`nmcli` showed the active connection loaded from
+`/var/lib/robot/network/wifi.nmconnection`.
 
 **Stage 3 (not started): reconcile with `updaterd`.** Both stay. RAUC owns the
 kernel, DTB, rootfs and everything the daemon's install hooks currently drop
