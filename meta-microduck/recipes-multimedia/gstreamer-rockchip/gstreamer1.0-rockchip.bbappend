@@ -1,6 +1,6 @@
 # Build from our fork, pollen-robotics/gstreamer_rockship (a GitHub fork of
-# JeffyCN/mirrors), on the branch that carries the two mpph264enc commits we are
-# about to send upstream as a PR against `gstreamer-rockchip`. They are a pair.
+# JeffyCN/mirrors), on the branch that carries the two mpph264enc commits we
+# sent upstream as JeffyCN/mirrors#83, against `gstreamer-rockchip`. They are a pair.
 #
 # The first lets mpph264enc say `constrained-baseline`, without which webrtcsink's
 # discovery pass finds no codec at all and every session dies on not-negotiated.
@@ -28,4 +28,4 @@
 # named to match it exactly -- a _%.bbappend would not attach to it.
 
 SRC_URI = "git://github.com/pollen-robotics/gstreamer_rockship.git;protocol=https;branch=mpph264enc-webrtc"
-SRCREV = "7b6a6914765380da522ddc4c75e2df7c04d5c233"
+SRCREV = "e404bf996cc89cdb9e91aca2dbd2d4c0b3eb4d5a"
