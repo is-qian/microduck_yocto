@@ -55,6 +55,8 @@ SRC_URI = "git://git@github.com/pollen-robotics/microduck_daemon.git;protocol=ss
            git://github.com/pollen-robotics/bmi088-rs;protocol=https;nobranch=1;name=bmi088;destsuffix=bmi088-rs \
            file://60-robot-i2c.rules \
            file://robotctl.bash_completion \
+           file://microduck-slot-health \
+           file://microduck-slot-health.service \
 "
 SRCREV_daemon = "84684dbf104b12c581db7bfa38ccb2a0b4af466e"
 SRCREV_bmi088 = "bd113f317b14923f50f9a12a06678fe162b7fe06"
@@ -211,12 +213,11 @@ USERADD_PARAM:${PN} = "-r -g btd -d / -s /sbin/nologin -c 'Robot BLE transport a
 # SYSTEMD_PACKAGES has to name both, since it otherwise defaults to ${PN} alone
 # and padd.service would be installed but never enabled.
 #
-# robot-boot-check.service is the one that stays out entirely: its ExecStart is
-# /usr/local/sbin/robot-boot-check, a path belonging to updaterd's release-tree
-# layout, which this packaging deliberately does not use. Installing it would
-# ship a unit that cannot work.
+# robot-boot-check.service has no [Install] by design -- only its timer starts it
+# -- so the timer is what gets enabled. microduck-slot-health.service is enabled
+# into boot-complete.target, which gates rauc-mark-good.
 SYSTEMD_PACKAGES = "${PN} ${PN}-padd"
-SYSTEMD_SERVICE:${PN} = "robotd.service updaterd.service configd.service btd.service mediad.service tofd.service"
+SYSTEMD_SERVICE:${PN} = "robotd.service updaterd.service configd.service btd.service mediad.service tofd.service robot-boot-check.timer microduck-slot-health.service"
 SYSTEMD_SERVICE:${PN}-padd = "padd.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
@@ -293,6 +294,22 @@ do_install:append() {
 	install -m 0644 ${S}/mediad/systemd/mediad.service ${D}${systemd_system_unitdir}/
 	install -m 0644 ${S}/tof/systemd/tofd.service ${D}${systemd_system_unitdir}/
 	install -m 0644 ${S}/padd/systemd/padd.service ${D}${systemd_system_unitdir}/
+
+	# The boot recovery net, verbatim from the release: the timer runs
+	# robot-boot-check 180 s after boot, which hands a release whose daemons did
+	# not come up to robot-rescue (current -> golden, reboot). Both units name
+	# /usr/local/sbin, so that is where the scripts go: outside the release tree,
+	# because they run exactly when the release cannot be trusted.
+	install -m 0644 ${S}/updater/systemd/robot-boot-check.service ${D}${systemd_system_unitdir}/
+	install -m 0644 ${S}/updater/systemd/robot-boot-check.timer ${D}${systemd_system_unitdir}/
+	install -d ${D}${prefix}/local/sbin
+	install -m 0755 ${S}/scripts/robot-boot-check ${D}${prefix}/local/sbin/
+	install -m 0755 ${S}/scripts/robot-rescue ${D}${prefix}/local/sbin/
+
+	# RAUC marks a slot good only if the same check passes; see the script.
+	install -m 0644 ${UNPACKDIR}/microduck-slot-health.service ${D}${systemd_system_unitdir}/
+	install -d ${D}${libexecdir}
+	install -m 0755 ${UNPACKDIR}/microduck-slot-health ${D}${libexecdir}/
 
 	# /dev/i2c-* arrives 0600 root:root, so tofd's SupplementaryGroups=i2c buys it
 	# nothing without this -- the same shape of silent failure that left
@@ -374,6 +391,9 @@ FILES:${PN} += " \
     /opt/robot/daemon \
     ${bindir}/robotctl \
     ${systemd_system_unitdir} \
+    ${prefix}/local/sbin/robot-boot-check \
+    ${prefix}/local/sbin/robot-rescue \
+    ${libexecdir}/microduck-slot-health \
     ${nonarch_base_libdir}/udev/rules.d/60-robot-i2c.rules \
     ${sysconfdir}/robot \
     ${sysconfdir}/systemd/journald.conf.d/10-robot.conf \
@@ -488,6 +508,11 @@ RDEPENDS:${PN} += "systemd ca-certificates networkmanager bluez5"
 # later release moves POLICY_VERSION. updaterd's own policy installer speaks rustls and
 # needs no curl, but it is reached from `robotctl policy update` alone.
 RDEPENDS:${PN} += "curl"
+
+# robot-rescue swaps current -> golden with GNU `mv -fT`, falling back to BSD
+# `mv -fh` when `mv --version` fails. Busybox's mv has neither, so on an image
+# without coreutils the rescue would fail at the one moment it exists for.
+RDEPENDS:${PN} += "coreutils"
 
 # webrtcsink, and it is a hard dependency rather than a recommendation: mediad
 # calls ElementFactory::make("webrtcsink") during pipeline construction and exits

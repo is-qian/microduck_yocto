@@ -447,6 +447,15 @@ itself is not a slot either. The bundle wraps the dev image
 (`RAUC_SLOT_rootfs` in `recipes-core/bundles/microduck-bundle.bb`); switch it to
 `microduck-image` before shipping.
 
+**"Good" means healthy, not just booted.** RAUC marks a slot good only once
+`microduck-slot-health.service` passes, which `boot-complete.target` requires: at
+the 180 s deadline, the four core daemons must be up and not crash-looping —
+the same verdict as the daemon's own `robot-boot-check`, which the image now
+ships along with `robot-rescue`. An unhealthy slot is left unmarked, not
+rebooted: the daemon's rescue reboots when a non-golden daemon release is at
+fault, and every later reboot counts against the slot until U-Boot falls back.
+No reboot is automatic when the slot itself is the cause, so a bench board with a
+genuinely missing peripheral cannot loop between two unhealthy slots.
 ### Partition layout
 
 `meta-microduck/files/wic/microduck-ab.wks.in`. Every partition has an explicit

@@ -1,0 +1,37 @@
+#!/bin/sh
+# Is this boot healthy enough for RAUC to call the slot good?
+#
+# Run by microduck-slot-health.service, which boot-complete.target requires. RAUC's
+# rauc-mark-good.service in turn requires boot-complete.target, so a non-zero exit
+# here means the slot is never marked good. The daemon's robot-boot-check then gets
+# the same verdict at the same moment and hands over to robot-rescue, which reboots;
+# after enough bad boots U-Boot falls back to the other slot on its own.
+#
+# The verdict mirrors robot-boot-check's exactly -- the same members, the same
+# restart threshold, the same 180 s deadline -- so the two never disagree about a
+# boot. ponytail: the list is copied from the daemon's scripts/robot-boot-check;
+# replace this with its exit status once it reports one (stage 3, daemon side).
+set -eu
+
+MEMBERS="updaterd.service robotd.service configd.service btd.service"
+MAX_RESTARTS=3
+DEADLINE=180
+
+up=$(cut -d. -f1 /proc/uptime)
+[ "$up" -ge "$DEADLINE" ] || sleep $((DEADLINE - up))
+
+bad=""
+for unit in $MEMBERS; do
+	state=$(systemctl show -p ActiveState --value "$unit")
+	restarts=$(systemctl show -p NRestarts --value "$unit")
+	case "$restarts" in ''|*[!0-9]*) restarts=0 ;; esac
+	if [ "$state" = failed ] || [ "$restarts" -ge "$MAX_RESTARTS" ]; then
+		bad="$bad $unit($state,${restarts} restarts)"
+	fi
+done
+
+if [ -n "$bad" ]; then
+	echo "slot not healthy, not marking it good:$bad"
+	exit 1
+fi
+echo "every daemon came up; the slot can be marked good"
