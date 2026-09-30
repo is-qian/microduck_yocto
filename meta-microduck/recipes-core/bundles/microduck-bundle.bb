@@ -15,6 +15,27 @@ RAUC_BUNDLE_FORMAT = "verity"
 # does not update: a kernel or device-tree change still needs a reflash.
 RAUC_BUNDLE_SLOTS = "rootfs"
 
+# ...and the hook enforces that: it refuses to install unless the card's `boot`
+# holds the exact boot.img this bundle was built with. See the hook for why a
+# `uname -r` match is not enough.
+SRC_URI = "file://microduck-bundle-hook"
+RAUC_BUNDLE_HOOKS[file] = "microduck-bundle-hook"
+RAUC_BUNDLE_HOOKS[hooks] = "install-check"
+
+# [meta.boot] size= and sha256= of that boot.img, which the hook reads as
+# RAUC_META_BOOT_SIZE / RAUC_META_BOOT_SHA256. Filled in at build time, because
+# boot.img exists only once the kernel has deployed it.
+RAUC_META_SECTIONS = "boot"
+do_configure[depends] += "virtual/kernel:do_deploy"
+do_configure[prefuncs] += "microduck_boot_fingerprint"
+python microduck_boot_fingerprint() {
+    import hashlib
+    with open(d.expand("${DEPLOY_DIR_IMAGE}/boot.img"), "rb") as f:
+        img = f.read()
+    d.setVarFlag("RAUC_META_boot", "size", str(len(img)))
+    d.setVarFlag("RAUC_META_boot", "sha256", hashlib.sha256(img).hexdigest())
+}
+
 # The dev image, so the card built alongside and every updated slot keep a
 # password-less root to test with. Switch to microduck-image before shipping.
 RAUC_SLOT_rootfs = "microduck-image-dev"
