@@ -25,6 +25,10 @@
 #   git clone --depth 1 -b v2017.09 https://source.denx.de/u-boot/u-boot.git
 #   cd u-boot
 #   curl -sfL https://raw.githubusercontent.com/JeffyCN/mirrors/a93658f8f45dc0266be21840931131b10c325e03/lib/strto.c -o lib/strto.c
+#   # and the vendor's counter format: its env_set_hex writes "0x%lx", mainline "%lx".
+#   # A mainline-format sandbox passed a script that would never have fallen back
+#   # on the board (2026-09-30): U-Boot's own "0x0" is not the string "0".
+#   sed -i '/^int env_set_hex(/,/^}/{s/char str\[17\];/char str[19];/;s/"%lx", value/"0x%lx", value/}' cmd/nvedit.c
 #   make sandbox_defconfig
 #   sed -i 's/^CONFIG_SANDBOX_SDL=y/# CONFIG_SANDBOX_SDL is not set/' .config
 #   make olddefconfig
@@ -66,33 +70,39 @@ check() {  # name, env setup, then expected substrings
 }
 
 check "virgin env: seeds, picks A, decrements" "" \
-	"booting slot A (rootfs_a)" "BOOT_ORDER=A B" "BOOT_A_LEFT=2" "BOOT_B_LEFT=3" \
+	"booting slot A (rootfs_a)" "BOOT_ORDER=A B" "BOOT_A_LEFT=0x2" "BOOT_B_LEFT=3" \
 	"bootargs=root=PARTLABEL=rootfs_a rauc.slot=A" "SAVEENV_CALLED" "REACHED_BOOT_CHAIN"
 check "after rauc install: B first" \
 	"setenv BOOT_ORDER 'B A'; setenv BOOT_A_LEFT 3; setenv BOOT_B_LEFT 3;" \
-	"booting slot B (rootfs_b)" "BOOT_A_LEFT=3" "BOOT_B_LEFT=2" "bootargs=root=PARTLABEL=rootfs_b rauc.slot=B"
-check "B exhausted: falls back to A, BOOT_ORDER untouched" \
+	"booting slot B (rootfs_b)" "BOOT_A_LEFT=3" "BOOT_B_LEFT=0x2" "bootargs=root=PARTLABEL=rootfs_b rauc.slot=B"
+check "B exhausted by RAUC (0): falls back to A, BOOT_ORDER untouched" \
 	"setenv BOOT_ORDER 'B A'; setenv BOOT_A_LEFT 3; setenv BOOT_B_LEFT 0;" \
-	"booting slot A (rootfs_a)" "BOOT_ORDER=B A" "BOOT_A_LEFT=2" "BOOT_B_LEFT=0"
+	"booting slot A (rootfs_a)" "BOOT_ORDER=B A" "BOOT_A_LEFT=0x2" "BOOT_B_LEFT=0"
+check "B exhausted by U-Boot itself (0x0): falls back to A" \
+	"setenv BOOT_ORDER 'B A'; setenv BOOT_A_LEFT 3; setenv BOOT_B_LEFT 0x0;" \
+	"booting slot A (rootfs_a)" "BOOT_A_LEFT=0x2" "BOOT_B_LEFT=0x0"
+check "a counter U-Boot wrote (0x2) still boots, to 0x1" \
+	"setenv BOOT_ORDER 'B A'; setenv BOOT_A_LEFT 3; setenv BOOT_B_LEFT 0x2;" \
+	"booting slot B (rootfs_b)" "BOOT_B_LEFT=0x1"
 check "A marked bad by RAUC (absent from BOOT_ORDER)" \
 	"setenv BOOT_ORDER B; setenv BOOT_A_LEFT 0; setenv BOOT_B_LEFT 3;" \
-	"booting slot B (rootfs_b)" "BOOT_ORDER=B" "BOOT_B_LEFT=2"
+	"booting slot B (rootfs_b)" "BOOT_ORDER=B" "BOOT_B_LEFT=0x2"
 check "hex counter: a (=10) is > 0, decrements to 9" \
 	"setenv BOOT_ORDER 'A B'; setenv BOOT_A_LEFT a; setenv BOOT_B_LEFT 3;" \
-	"booting slot A" "BOOT_A_LEFT=9"
+	"booting slot A" "BOOT_A_LEFT=0x9"
 check "counter 1 still boots, reaches 0" \
 	"setenv BOOT_ORDER 'A B'; setenv BOOT_A_LEFT 1; setenv BOOT_B_LEFT 3;" \
-	"booting slot A" "BOOT_A_LEFT=0"
+	"booting slot A" "BOOT_A_LEFT=0x0"
 check "empty BOOT_A_LEFT: seeded, no abort" \
 	"setenv BOOT_ORDER 'A B'; setenv BOOT_B_LEFT 3;" \
-	"booting slot A" "BOOT_A_LEFT=2"
+	"booting slot A" "BOOT_A_LEFT=0x2"
 check "unknown bootname skipped" \
 	"setenv BOOT_ORDER 'X B'; setenv BOOT_A_LEFT 3; setenv BOOT_B_LEFT 3;" \
 	"booting slot B"
 
-# Both exhausted: counters reset, then `reset` -- which ends the sandbox process,
-# so the boot chain must never be reached.
-out=$("$SANDBOX" -c "setenv BOOT_ORDER 'A B'; setenv BOOT_A_LEFT 0; setenv BOOT_B_LEFT 0; $BOOTCMD" 2>&1) || true
+# Both exhausted, in U-Boot's own format for one of them: counters reset, then
+# `reset` -- which ends the sandbox process, so the boot chain must never be reached.
+out=$("$SANDBOX" -c "setenv BOOT_ORDER 'A B'; setenv BOOT_A_LEFT 0; setenv BOOT_B_LEFT 0x0; $BOOTCMD" 2>&1) || true
 if grep -qF "no slot has attempts left" <<< "$out" && ! grep -qF REACHED_BOOT_CHAIN <<< "$out"; then
 	pass=$((pass + 1)); echo "ok   both exhausted: resets and reboots, never boots"
 else fail=$((fail + 1)); echo "FAIL both exhausted: resets and reboots, never boots"; fi
