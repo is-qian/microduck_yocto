@@ -26,16 +26,39 @@ you didn't look. This repo already has a scar for each:
   **every SoC-specific config override is silently missing** and you get radxa's
   family-wide defconfig alone. Never trust the effective kernel config from the
   defconfig name — read `${B}/.config` after `do_configure`.
-- **Do not set `S = "${WORKDIR}/git"` or `S = "${UNPACKDIR}/git"`** in a git-based
-  recipe. wrynose fails `do_unpack` outright if you do: the fetcher now unpacks to
-  `${UNPACKDIR}/${BP}`, which bitbake.conf's default `S` already points at. Omit
-  the assignment. (This will bite the `microduck-daemon` recipe too.)
+- **Name a bbappend after the upstream *filename*, not the recipe's version.**
+  `_%.bbappend` matches `<name>_<version>.bb`. meta-rockchip's U-Boot recipe file
+  is `u-boot-rockchip.bb` with `PV` set *inside* it, and meta-rauc's config recipe
+  is `rauc-conf.bb` — for both, the correct append has no `_%`. An unmatched
+  bbappend is not ignored; it fails the entire parse with `ERROR: No recipes in
+  default available for: <path>`. This has now cost two builds. `ls` the upstream
+  directory before you name the file.
+- **Never put `${WORKDIR}` in `S` at all** — not `${WORKDIR}/git`, and not
+  `${WORKDIR}/sources` either. The pinned oe-core's `do_qa_unpack`
+  (`insane.bbclass:1448`) checks the *unexpanded* value and fails any `S` that
+  contains `${WORKDIR}`, whatever it expands to. It also fails
+  `S = "${UNPACKDIR}/git"` on a git recipe. For a git recipe, omit `S`: the
+  fetcher unpacks to `${UNPACKDIR}/${BP}`, which bitbake.conf's default already
+  points at. For loose `file://`/`https://` files, use `S = "${UNPACKDIR}"`, the
+  idiom oe-core's own `systemd-conf` and `base-files` use. The narrower wording
+  this rule used to have let `microduck-policies` through review with
+  `${WORKDIR}/sources`, and `main` failed every build from 2026-09-21 to
+  2026-09-25 on it.
 - `do_patch` is a **Python** task (patch.bbclass). `do_patch:append() { ... }`
   with a shell body makes bitbake parse shell as Python and fail with a
   `TabError`. Use `do_patch[postfuncs] += "your_shell_func"`.
 - meta-rockchip's `wrynose` branch does not always match oe-core's `wrynose` tip.
   It has been wrong twice: the `xserver-xorg` fork tag, and the above. Treat it as
   the least trustworthy layer here.
+- **Vendor U-Boot finds the kernel by GPT partition *name*, and the name is
+  `boot`.** Its environment carries `name=boot,size=32M,bootable` and a `bootcmd`
+  of `boot_android ...;boot_fit;bootrkp;run distro_bootcmd;`. Rename that
+  partition and the card flashes perfectly, verifies perfectly, and never loads a
+  kernel — no wifi, no BLE, looks dead. It cost a flash. `docs/agents/rauc.md`.
+- **A build target picks the image.** `HFJOB_TARGET=microduck-bundle` builds
+  whatever `RAUC_SLOT_rootfs` names and nothing else; when that was the prod
+  image, the result was a card with no password-less root that answered ping
+  and could not be logged into. Check the `.wic` filename before flashing.
 
 So before adding a recipe or a bbappend that leans on meta-rockchip or oe-core,
 go read the thing you are leaning on. `git ls-remote`, the GitHub contents API
@@ -44,6 +67,17 @@ and answer these in seconds.
 
 **When something cannot be verified, say so in the file.** Do not write a
 confident comment over a guess.
+
+## Deeper notes
+
+Topics too long for this file, each a list of things that bite:
+
+- `docs/agents/rauc.md` — A/B updates: the partition table, why `boot` cannot be
+  renamed, `bootloader=noop`, the signing key, what "user data survives" means.
+- `docs/agents/hf-jobs.md` — building on HF Jobs: why every job reported
+  `ERROR` for a week (`bash -lc` + `.bash_logout` + `set -e`) and the probe
+  technique that found it, verifying an artifact before flashing, what is
+  blocked for an agent.
 
 ## Layer pins
 
@@ -148,10 +182,33 @@ Three recipe constraints, all load-bearing:
   they ask for: they are POSIX shell and fetch with `curl`, which the daemon
   recipe therefore pulls in.
 
+And two **paths** that the image now depends on, so a daemon change that moves
+either breaks A/B without touching a single Yocto file:
+
+- `/var/lib/robot` is a **mount point** for the persistent `data` partition.
+  Everything a user adds — `POLICY_LIBRARY`, the sound bank,
+  `StateDirectory=robot/*` — lives under it and survives a slot switch *because*
+  it lives there. Anything that must persist goes under this root; nothing that
+  renames across it and the rootfs is atomic.
+- `/opt/robot/daemon` stays **on the rootfs**, on purpose. It is core: replaced
+  by the image, reseeded on flash, converged by `updaterd`. Do not move it to
+  `/var/lib/robot` to "make it persist" — that would let a slot switch and a
+  daemon update disagree about which release is installed.
+
+Also: `SRCREV_daemon` tracks a **release**, never `main` — the commit a
+`daemon-v<PV>` manifest names as `source_revision`. Same version string on
+different code is how `updaterd` decides there is nothing to do.
+
 ## Commits
 
 Per the workspace convention, no `Co-Authored-By:`. Use a single
 `Assisted-by: Claude:<model-id>` trailer.
 
-There is no linter here. The check that matters before pushing is that bitbake
-parses and the target still builds.
+There is no linter here. The checks that matter before pushing: bitbake parses,
+the target still builds, and — if the wks changed — `scripts/check-wks-layout.py`
+says `layout ok`. That last one runs in 0.1 s and has caught two mistakes a
+build would have taken 50 minutes to report.
+
+Anything that changes the partition layout or the bootloader goes on a branch in
+its own worktree, never straight to `main`: `main` is what a colleague flashes,
+and every push to it costs a ~50-minute CI build.

@@ -74,6 +74,19 @@ repos:
     branch: wrynose
     commit: 54f31b3987948afc07d2e83cb0ecd981d7476de3
 
+  # A/B OS updates. LAYERDEPENDS is "core" alone, already satisfied, and the
+  # layer root is the layer (no `layers:` key needed).
+  #
+  # Note this is rauc/meta-rauc, which is a different thing from the RAUC demo
+  # that lives in the *Yocto Project's* meta-rockchip under
+  # dynamic-layers/rk-rauc-demo/. That demo targets this exact board and is the
+  # design we copied, but we cannot use the layer itself -- it is JeffyCN's
+  # meta-rockchip we need, for the vendor kernel the camera and AIC8800 depend on.
+  meta-rauc:
+    url: https://github.com/rauc/meta-rauc.git
+    branch: wrynose
+    commit: 38da0e5866a953e664001ba90b5edad68d68cd5d
+
 local_conf_header:
   microduck: |
     # rockchip-libmali is a redistributable binary blob.
@@ -82,6 +95,12 @@ local_conf_header:
     # Vendor BSP kernel + rkaiq + full GStreamer is comfortably 100 GB+ of
     # TMPDIR without this.
     INHERIT += "rm_work"
+
+    # meta-rauc's sanity-meta-rauc.bbclass warns on every single parse without
+    # this. It is not only cosmetic: busybox and curl carry bbappends keyed off
+    # the feature (tar long options, and nghttp2 so adaptive updates can pipeline
+    # their range requests).
+    DISTRO_FEATURES:append = " rauc"
 
   kernel-shallow: |
     # radxa/kernel is a full Linux history: 13,224,308 objects and 10.7M deltas.

@@ -5,19 +5,23 @@ rk3566-radxa-zero3.dtsi includes rk3568-linux.dtsi and then does
 `/delete-node/ chosen;`, removing Rockchip's bootargs. That is right for
 radxa's U-Boot, which passes a cmdline from extlinux.conf, and wrong for
 meta-rockchip's rk3568_defconfig U-Boot, which boots the Android boot.img
-with an empty header cmdline and no bootargs in its environment. Result:
-the kernel had no root= from any source and panicked on an unmountable
-root, with nothing written to the card.
+with an empty header cmdline.
 
-Recreate the node with root= (full GUID, matching the wic partition),
-console=ttyFIQ0 for bring-up serial and console=tty0 for HDMI. earlycon is
-deliberately left out: it targets UART2, the motor bus.
+Recreate the node with rw rootwait, console=ttyFIQ0 for bring-up serial and
+console=tty0 for HDMI. earlycon is deliberately left out: it targets UART2,
+the motor bus.
+
+It deliberately carries no root=. U-Boot's RAUC boot script passes
+root=PARTLABEL= for the slot it picked, and U-Boot merges this node into its
+bootargs afterwards with a replace-same-key rule, so a root= here would pin
+every boot to one slot regardless of the script. An earlier revision carried
+root=PARTUUID=614e0000-..., from before the script existed.
 
 Upstream-Status: Inappropriate [configuration]
 
 --- a/arch/arm64/boot/dts/rockchip/rk3566-radxa-zero-3w-aic8800ds2.dts
 +++ b/arch/arm64/boot/dts/rockchip/rk3566-radxa-zero-3w-aic8800ds2.dts
-@@ -12,6 +12,31 @@
+@@ -12,6 +12,33 @@
  / {
  	model = "Radxa ZERO 3";
  	compatible = "radxa,zero3w-aic8800ds2", "radxa,zero3", "rockchip,rk3566";
@@ -25,27 +29,29 @@ Upstream-Status: Inappropriate [configuration]
 +	/*
 +	 * rk3566-radxa-zero3.dtsi does `/delete-node/ chosen;` right after including
 +	 * rk3568-linux.dtsi, dropping Rockchip's bootargs because radxa's own U-Boot
-+	 * passes them from extlinux.conf. meta-rockchip's U-Boot (rk3568_defconfig,
-+	 * boot_android/bootrkp) does not: its default env has no bootargs and the
-+	 * boot.img header cmdline is empty, so the kernel booted with no root= and
-+	 * panicked before touching the card. Recreate the node with only what the
-+	 * Rockchip line carries that we need:
++	 * passes them from extlinux.conf. meta-rockchip's U-Boot does not, so the
++	 * node is recreated with what we need:
 +	 *
-+	 *   root=PARTUUID    the GUID rockchip-image.bbclass (RK_ROOTDEV_UUID) stamps
-+	 *                    on the wic rootfs partition; full form so it does not
-+	 *                    depend on the vendor kernel's prefix-match patch
++	 *   rw rootwait      no initramfs; wait for the SD card to enumerate
 +	 *   console=ttyFIQ0  serial during bring-up; when MICRODUCK_MOTOR_UART=1
 +	 *                    disables the FIQ debugger the device never registers
 +	 *                    and nothing is printed on the Dynamixel wire
 +	 *   console=tty0     the HDMI console microduck-common.inc promises in
 +	 *                    motor-bus mode; naming ttyFIQ0 alone would drop it
 +	 *
++	 * Deliberately NO root=. U-Boot's boot script picks the RAUC slot and passes
++	 * root=PARTLABEL=rootfs_a|b in its bootargs env var; this node is merged into
++	 * that afterwards, and a same-key argument REPLACES rather than appends
++	 * (env_update_filter, cmd/nvedit.c). A root= here would silently pin every
++	 * boot to one slot whatever the script chose. It used to carry
++	 * root=PARTUUID=614e0000-..., from before any script existed.
++	 *
 +	 * No earlycon: uart8250,mmio32,0xfe660000 is UART2, the motor bus, and it
 +	 * bypasses the FIQ switch.
 +	 */
 +	chosen {
-+		bootargs = "root=PARTUUID=614e0000-0000-4b53-8000-1d28000054a9 rw rootwait console=ttyFIQ0 console=tty0";
++		bootargs = "rw rootwait console=ttyFIQ0 console=tty0";
 +	};
- 
+
  	wireless_wlan: wireless-wlan {
  		compatible = "wlan-platdata";

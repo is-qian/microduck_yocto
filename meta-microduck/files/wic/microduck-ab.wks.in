@@ -1,0 +1,55 @@
+# microduck A/B disk layout (RAUC). The why, with measurements and source
+# references, is in docs/agents/rauc.md; run scripts/check-wks-layout.py after any
+# change -- it asserts the fixed offsets and the env triple, in 0.1 s.
+#
+#   part          offset      size
+#   idblock        32 KiB    3552 KiB   no GPT entry; the bootrom reads sector 64
+#   v_storage    3584 KiB     256 KiB   Rockchip vendor storage (MAC, serial)
+#   uboot_env    4064 KiB      32 KiB   = 0x3F8000
+#   uboot           8 MiB       4 MiB
+#   boot           16 MiB      32 MiB   kernel + DTB, shared by both slots
+#   boot_b         48 MiB      32 MiB   reserved, empty
+#   rootfs_a       80 MiB       2 GiB
+#   rootfs_b     2128 MiB       2 GiB   written by RAUC
+#   data         4176 MiB       8 GiB   /var/lib/robot, survives updates
+#                            ~12.1 GiB -- needs a 16 GB card or larger.
+#
+# The first 16 MiB are Rockchip's documented table, not a choice: vendor code
+# writes vendor storage, the environment and U-Boot at fixed byte offsets without
+# reading the GPT. 4..8 and 12..16 MiB stay empty as Rockchip reserves them.
+#
+# Every partition has an explicit --offset and --fixed-size, so wic fails rather
+# than shifts: a bundle built against one layout must never write into another.
+# Partitions are addressed by label everywhere, never by number. One line per
+# part: wic's parser has no line continuation.
+
+bootloader --ptable gpt
+
+# --fixed-size here is a bound, not a size: with no GPT entry, nothing else would
+# stop idblock growing into vendor storage.
+part --source rawcopy --sourceparams="file=idblock.img" --align 32 --fixed-size 3552K --no-table
+
+# Reserved so nothing of ours can ever land on it. U-Boot fills it on first boot.
+part --offset 7168s --fixed-size 256K --fstype=none --part-name v_storage
+
+part --offset 8128s --fixed-size 32K --fstype=none --part-name uboot_env
+
+part --source rawcopy --sourceparams="file=uboot.img" --offset 8M --fixed-size 4M --part-name uboot
+
+# Named `boot`, not `boot_a`: vendor U-Boot looks the kernel up by that exact GPT
+# name, and a card without it flashes fine and never boots.
+part --source rawcopy --sourceparams="file=boot.img" --offset 16M --fixed-size 32M --part-name boot
+part --offset 48M --fixed-size 32M --fstype=none --part-name boot_b
+
+# The kernel's root= comes from U-Boot's boot script (root=PARTLABEL=rootfs_a|b).
+# The fixed GUIDs only keep two builds of one commit byte-identical.
+part / --source rootfs --offset 80M --fixed-size 2048M --fstype=ext4 --part-name rootfs_a --uuid ${RK_ROOTDEV_UUID} --mkfs-extraopts "${RK_ROOTFS_EXTRAOPTS}"
+part --offset 2128M --fixed-size 2048M --fstype=none --part-name rootfs_b --uuid 614e0001-0000-4b53-8000-1d28000054a9
+
+# User data: policies, sounds, configd state, wifi profiles. Seeded from the image's
+# own /var/lib/robot, because the mount hides whatever the rootfs has there; wic
+# keeps ownership across --change-directory. Only a full reflash re-seeds it, so a
+# later image's new files here never reach a board that already has one.
+# Mounted by recipes-core/microduck-data, not --mountpoint, so a missing partition
+# is skipped rather than failing the daemons that need it.
+part --source rootfs --change-directory=var/lib/robot --offset 4176M --fixed-size 8192M --fstype=ext4 --label data --part-name data --mkfs-extraopts "-F -i 8192 -b 4096"

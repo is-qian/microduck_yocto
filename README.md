@@ -133,10 +133,20 @@ tests the Miniloader path and radxa's defconfig is SPL+ATF.
 Two findings from reading those defconfigs, recorded in
 `conf/machine/microduck-zero3.conf`:
 
-- **No Rockchip defconfig sets `CONFIG_ENV_IS_IN_*` or
-  `CONFIG_BOOTCOUNT_LIMIT`.** RAUC's `uboot` backend needs both. This U-Boot
-  instead has Android/AVB A/B (`CONFIG_SPL_AB`, `CONFIG_AVB_LIBAVB_AB`) — a
-  different mechanism. Resolve before designing the partition layout.
+- **No Rockchip defconfig sets `CONFIG_ENV_IS_IN_*`**, so out of the box this
+  U-Boot has no persistent environment at all: the Kconfig choice falls to
+  `ENV_IS_NOWHERE`, and `saveenv` silently does nothing. RAUC's `uboot` backend
+  needs one, plus `fw_printenv`/`fw_setenv` and `/etc/fw_env.config`. On the
+  `rauc-ab` branch `recipes-bsp/` now provides all of it — see the RAUC section.
+  This U-Boot also has Android/AVB A/B (`CONFIG_SPL_AB`, `CONFIG_AVB_LIBAVB_AB`),
+  a different mechanism that must not be enabled alongside RAUC's.
+
+  This bullet used to say RAUC needs `CONFIG_BOOTCOUNT_LIMIT` too. **It does
+  not**, and that was never checked: `grep -ri bootcount` over RAUC's own
+  documentation returns nothing. The retry counter is `BOOT_<slot>_LEFT`, a
+  plain environment variable that the boot script we write decrements itself —
+  and RAUC parses it as **hex** (`g_ascii_strtoull(..., 16)` in
+  `src/bootloaders/uboot.c`), so that script has to say `0x${BOOT_A_LEFT}`.
 - **`CONFIG_DEBUG_UART_BASE=0xFE660000` is UART2**, the motor bus, at 1.5 Mbaud.
   U-Boot therefore prints onto the Dynamixel wires at power-on regardless of
   `MICRODUCK_MOTOR_UART`, which only silences Linux. Harmless now; on the custom
@@ -232,10 +242,13 @@ Artifacts in `tmp/deploy/images/microduck-zero3/`: `.wic` (SD/eMMC),
 `update.img` (Rockchip flashing), `boot.img`/`zboot.img`, `Image`, both device
 trees, `idblock.img`, `uboot.img`, plus a `.manifest` and an SPDX SBOM.
 
-Partition layout comes from meta-rockchip's `generic-gptdisk.wks`: raw
-`idblock.img` outside the table, `uboot` at 2 MiB, `boot`, then `rootfs`.
-(`trust.img` is absent and skipped — this U-Boot is SPL+FIT, so ATF is inside
-`uboot.img`.)
+On `main`, the partition layout comes from meta-rockchip's `generic-gptdisk.wks`:
+raw `idblock.img` outside the table, `uboot` at 2 MiB, `boot`, then `rootfs`.
+(`trust.img` is absent and skipped — ATF rides inside `uboot.img`'s FIT.) That
+layout has a latent bug: `uboot` at 2 MiB spans Rockchip's vendor storage at
+3.5 MiB, so U-Boot overwrites part of its own primary copy on first boot. The
+`rauc-ab` branch replaces it with Rockchip's documented layout; the table is in
+the RAUC section below.
 
 ### WiFi/BT: AIC8800 built in
 
@@ -412,5 +425,104 @@ daemon names is the case that breaks.
 3. **Nothing has booted.** A clean compile of a vendor driver against a vendor
    kernel is the first hurdle, not evidence the radio associates.
 
-A/B partitioning and RAUC are M7. The A/B `.wks` is still deliberately unwritten
-until slot sizes can be based on a real image size — which now exists.
+## A/B OS updates (RAUC)
+
+Signed RAUC bundles update the root filesystem into the inactive slot, U-Boot
+boots the new slot, and a slot marked bad rolls back to the other one. User data
+and wifi profiles live on their own partition and survive every update.
+`docs/agents/rauc.md` has the design, the traps and how each piece was verified.
+
+| stage | what | state |
+|---|---|---|
+| 1 | RAUC userspace, signed verity bundles, install to the inactive slot | verified on hardware 2026-09-18 |
+| — | `data` partition at `/var/lib/robot`, wifi profiles on it | verified on hardware 2026-09-21 / 2026-09-29 |
+| 2a | writable U-Boot environment, `fw_setenv` from Linux | verified on hardware 2026-09-25 |
+| — | first 16 MiB moved to Rockchip's layout | verified on hardware 2026-09-25 |
+| 2b | U-Boot picks the slot, `bootloader=uboot` | verified on hardware 2026-09-29: A→B, boot B, rollback to A |
+| 3 | move the daemon hooks' OS work into the image | not started |
+
+**Limits today.** A bundle carries the rootfs only: the kernel and device tree sit
+in the shared `boot` partition, so changing them still needs a reflash. U-Boot
+itself is not a slot either. The bundle wraps the dev image
+(`RAUC_SLOT_rootfs` in `recipes-core/bundles/microduck-bundle.bb`); switch it to
+`microduck-image` before shipping.
+
+### Partition layout
+
+`meta-microduck/files/wic/microduck-ab.wks.in`. Every partition has an explicit
+offset and size, and everything addresses partitions by GPT **label**, never by
+number. Run `scripts/check-wks-layout.py` after changing it.
+
+| # | label | offset | size | contents |
+|---|---|---|---|---|
+| — | *(idblock)* | 32 KiB | 3552 KiB | loader; no GPT entry, the boot ROM reads sector 64 |
+| 1 | `v_storage` | 3.5 MiB | 256 KiB | Rockchip vendor storage: MAC, serial. Written by U-Boot only |
+| 2 | `uboot_env` | 0x3F8000 | 32 KiB | U-Boot environment: `BOOT_ORDER`, `BOOT_x_LEFT` |
+| 3 | `uboot` | 8 MiB | 4 MiB | `uboot.img`, two 2 MiB FIT copies |
+| 4 | `boot` | 16 MiB | 32 MiB | kernel + DTB, shared by both slots; the name is load-bearing |
+| 5 | `boot_b` | 48 MiB | 32 MiB | reserved, empty |
+| 6 | `rootfs_a` | 80 MiB | 2 GiB | slot A |
+| 7 | `rootfs_b` | 2128 MiB | 2 GiB | slot B, written by RAUC |
+| 8 | `data` | 4176 MiB | 8 GiB | `/var/lib/robot`: policies, sounds, config, wifi |
+
+12.1 GiB in total, so it needs a 16 GB card or larger; the rest of a bigger card
+can be claimed later without a reflash. The first 16 MiB are Rockchip's documented
+table, because vendor code writes vendor storage, the environment and U-Boot at
+fixed offsets without reading the GPT. The data partition survives updates but
+not a reflash of the whole `.wic`.
+
+### Signing keys
+
+The private key is never in this repo or the image. Generate it once, into the
+build directory (bind-mounted by kas-container, and already in `.gitignore`):
+
+```sh
+. kas/lotus.env                        # or coach.env -- this sets KAS_BUILD_DIR
+mkdir -p "$KAS_BUILD_DIR/rauc-keys" && cd "$KAS_BUILD_DIR/rauc-keys"
+curl -sfLO https://raw.githubusercontent.com/rauc/meta-rauc/wrynose/scripts/openssl-ca.sh
+chmod +x openssl-ca.sh && ./openssl-ca.sh                # edit ORG=/CA= at the top first
+cp openssl-ca/dev/development-1.cert.pem .
+cp openssl-ca/dev/private/development-1.key.pem .
+chmod 600 development-1.key.pem
+```
+
+Then commit the **public** CA so the image trusts bundles signed by that key:
+
+```sh
+cp openssl-ca/dev/ca.cert.pem <repo>/meta-microduck/recipes-core/rauc/files/
+```
+
+CI builds the card image only; bundles are built where the key is.
+
+### Building, flashing and updating
+
+```sh
+# The bundle target builds the matching .wic as well.
+KAS_BUILD_DIR=/mnt/data/fabien/yocto/build HFJOB_TARGET=microduck-bundle scripts/build-hfjob.sh
+
+# A fresh card: flash the .wic, then give it wifi, over Bluetooth
+# (duckctl wifi connect) or by writing a keyfile onto the card:
+sudo utils/seed-wifi.sh /dev/mmcblk0          # lives beside the worktrees, not in it
+
+# A running board: copy the bundle over and install it.
+rauc install microduck-bundle-*.raucb          # writes the inactive slot, makes it primary
+reboot                                          # boots the new slot
+rauc status mark-bad booted && reboot           # rolls back to the other slot
+```
+
+`rauc status` names the booted slot. `fw_printenv BOOT_ORDER BOOT_A_LEFT
+BOOT_B_LEFT` shows what U-Boot will try next. **A slot that comes up with no
+network looks exactly like one that did not boot**; check over Bluetooth
+(`duckctl scan`, `duckctl health`) before concluding it failed.
+
+Changing U-Boot's boot script? Run `scripts/test-uboot-bootcmd.sh` first. The
+board has no serial console, so a mistake there leaves it at an invisible prompt.
+
+### Stage 3: reconcile with `updaterd`
+
+Not started. Both stay. RAUC owns the kernel, DTB, rootfs and everything the
+daemon's install hooks currently drop into `/usr/local/lib` and
+`/usr/lib/sysusers.d`; `updaterd` shrinks to the daemon binaries under
+`/opt/robot/daemon`. A daemon fix should not cost a reboot (~20 s symlink swap and
+a 13 MB payload today, versus a reboot and ~200 MB), and a developer should not
+wait on a 50-minute image build to try one.

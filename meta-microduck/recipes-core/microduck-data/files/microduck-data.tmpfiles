@@ -1,0 +1,4 @@
+# NetworkManager's profile directory (90-microduck-keyfile.conf). Created at boot as
+# well as shipped, because a data partition flashed before it existed never gets
+# re-seeded. Runs after the data mount; 0700 because the files hold PSKs.
+d /var/lib/robot/network 0700 root root -

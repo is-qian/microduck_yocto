@@ -119,13 +119,20 @@ SRC_URI[roller_crouch.sha256sum] = "a1a084be240469c76ac9d3fa44d4792f16d4b1da6039
 # serves every machine.
 inherit allarch
 
-# Loose files, no unpack directory: give the default S somewhere that exists. This is the
-# oe-core idiom for the case -- point S at a directory of its own and unpack into it --
-# rather than S = "${UNPACKDIR}", which works but shadows a variable the tasks still use.
-# (AGENTS.md's prohibition is specific to S = "${UNPACKDIR}/git" on a git recipe, which
-# wrynose rejects in do_unpack; this is the unrelated loose-files case.)
-S = "${WORKDIR}/sources"
-UNPACKDIR = "${S}"
+# Loose files, no unpack directory, so point S at UNPACKDIR itself -- where the
+# fetcher already puts downloadfilename= files. That is the idiom oe-core's own
+# file-only recipes use on wrynose (systemd-conf, base-files: S = "${UNPACKDIR}").
+#
+# It was S = "${WORKDIR}/sources" with UNPACKDIR = "${S}", which the pinned oe-core
+# rejects outright: do_qa_unpack (insane.bbclass:1448) fails any S whose
+# *unexpanded* value contains ${WORKDIR}, whatever it expands to --
+#
+#   ERROR: microduck-policies-v5-r0 do_unpack: S should be set relative to
+#   UNPACKDIR, e.g. replace WORKDIR with UNPACKDIR in "S = ${WORKDIR}/sources"
+#
+# AGENTS.md's rule is therefore broader than its wording: no ${WORKDIR} in S at
+# all, not only the ${WORKDIR}/git form.
+S = "${UNPACKDIR}"
 
 do_configure[noexec] = "1"
 do_compile[noexec] = "1"

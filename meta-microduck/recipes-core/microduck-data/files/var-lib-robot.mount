@@ -1,0 +1,20 @@
+[Unit]
+Description=Persistent robot data (policies, sounds, config, wifi profiles)
+
+# Skip, never fail, when the partition is missing or blank. The daemons'
+# StateDirectory= makes this unit a Requires= of configd and updaterd, so a failed
+# mount would stop the two units that can repair a board; a skipped one satisfies
+# Requires= and they run on the rootfs directories. by-label exists only once blkid
+# finds the filesystem, so one path checks "present" and "formatted".
+ConditionPathExists=/dev/disk/by-label/data
+
+[Mount]
+What=/dev/disk/by-partlabel/data
+Where=/var/lib/robot
+Type=ext4
+Options=defaults,noatime
+
+[Install]
+# WantedBy, not RequiredBy: a partition that exists but will not mount must not
+# take local-fs.target down with it.
+WantedBy=local-fs.target

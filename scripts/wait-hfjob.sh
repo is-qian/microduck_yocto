@@ -7,16 +7,20 @@
 # Exits 0 only if the build genuinely succeeded, 1 otherwise. Prints the
 # artifacts URL on success so a caller can pick it up.
 #
-# THE WHOLE POINT: you cannot use the job's exit status.
+# THE WHOLE POINT: judge the build on what it produced, not on its exit status.
 #
-# Every successful build of this image reports `stage: ERROR, exit code: 1` --
-# nine for nine as of 2026-09-14, with no counter-example. Builds that ran all
-# 7475 tasks, logged "all succeeded", wrote the .wic and copied every artifact
-# into the bucket still finish ERROR. There are zero ERROR: lines in ~11k log
-# lines when that happens, and bitbake with no errors exits 0, so it is not
-# coming from kas; it happens somewhere after save() during the cache sync, and
-# the cause has never been attributed. `hf jobs wait` would therefore fail every
-# green build, which is why this script exists instead.
+# Every successful build of this image used to report `stage: ERROR, exit code:
+# 1` -- nine for nine as of 2026-09-14 -- with zero ERROR: lines in ~11k lines of
+# log and every artifact in the bucket. The cause was found on 2026-09-18 and is
+# fixed in build-hfjob.sh: the job ran under `bash -lc`, a login shell sources
+# ~/.bash_logout on exit, the kas image's stock Debian one runs `clear_console -q`
+# when SHLVL=1, there is no tty so it fails, and `set -eu` made that the shell's
+# exit status. `bash -c` fixed it.
+#
+# This script is kept anyway, because its rule is the more robust one: an exit
+# status is one integer from the last thing that ran, while "bitbake said every
+# task succeeded AND save() said the artifacts were copied out" are two positives
+# a broken build cannot fake. `hf jobs wait` still cannot tell you the second.
 #
 # What a real failure looks like, for contrast -- the 2026-09-12 GStreamer one:
 #
