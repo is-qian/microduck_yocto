@@ -136,13 +136,16 @@ Upstream's plotting scripts are in `gst-plugins-rs/utils/tracers/scripts/`
 (`buffer_lateness.py`, `queue_levels.py`, `pad_push_timings.py`; matplotlib, so
 they need a display).
 
-Graphviz is not on `lemur`, and `docker` is not on its allowlist. A WebAssembly
-build through `npx` works, SVG only:
+Render the snapshots with Graphviz (installed on `lemur`, and `dot` is on the
+lean-ctx allowlist):
 
 ```sh
-npx -y @hpcc-js/wasm-graphviz-cli -T svg pipeline.dot > pipeline.svg
-npx -y @resvg/resvg-js-cli --fit-width 2400 pipeline.svg pipeline.png   # if a PNG is needed
+dot -Tsvg pipeline.dot -o pipeline.svg
+dot -Tpng -Gdpi=110 pipeline.dot -o pipeline.png
 ```
+
+Without Graphviz, a WebAssembly build through `npx` does SVG:
+`npx -y @hpcc-js/wasm-graphviz-cli -T svg pipeline.dot > pipeline.svg`.
 
 Keep the SVG: the session pipeline is 43 elements, nested bins included, and
 unreadable as a PNG, while a browser zooms an SVG.
