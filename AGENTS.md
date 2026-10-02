@@ -78,6 +78,10 @@ Topics too long for this file, each a list of things that bite:
   `ERROR` for a week (`bash -lc` + `.bash_logout` + `set -e`) and the probe
   technique that found it, verifying an artifact before flashing, what is
   blocked for an agent.
+- `docs/agents/gst-tracers.md` — measuring the media pipeline (dev image): why
+  `mediad` needs `RUST_LOG=gst=debug` and a WebRTC consumer before tracers say
+  anything, why the CSV tracers never write from inside it, and the measured
+  capture-to-WebRTC latency breakdown.
 
 ## Layer pins
 
