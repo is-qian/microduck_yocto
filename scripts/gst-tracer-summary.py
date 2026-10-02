@@ -51,8 +51,8 @@ def latency(path):
             line = ANSI.sub("", line)
             for kind in ("element-reported-latency, ", "element-latency, ", "latency, "):
                 i = line.find(kind)
-                if i < 0 or (kind == "latency, " and i > 0 and line[i - 1] == "-"):
-                    continue
+                if i < 0:
+                    continue  # longer names are tried first, so "latency, " is never a suffix match
                 if "%s" in line[i:]:
                     break  # the record's format string, announced once at startup
                 v = dict(FIELD.findall(line[i:]))

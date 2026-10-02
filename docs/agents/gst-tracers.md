@@ -172,9 +172,6 @@ dot -Tsvg pipeline.dot -o pipeline.svg
 dot -Tpng -Gdpi=110 pipeline.dot -o pipeline.png
 ```
 
-Without Graphviz, a WebAssembly build through `npx` does SVG:
-`npx -y @hpcc-js/wasm-graphviz-cli -T svg pipeline.dot > pipeline.svg`.
-
 Keep the SVG: the session pipeline is 43 elements, nested bins included, and
 unreadable as a PNG, while a browser zooms an SVG.
 
@@ -212,15 +209,10 @@ So **a frame leaves the robot ~74 ms after its capture timestamp**, before any
 network or receiver time.
 
 Ages are comparable across the two pipelines because `webrtcsink` gives each
-session pipeline its own clock and base time (`pipeline.set_base_time(element.base_time())`,
-`net/webrtc/src/webrtcsink/imp.rs` in gst-plugins-rs).
-
-An earlier estimate here, "~46 ms capture → webrtcbin", added up `latency`
-tracer stages. It was low: the `latency` tracer measures within one pipeline, so
-it never saw the 20.4 ms hand-off between them. Its per-element numbers still
-hold, e.g. `mpph264enc` ~9.4 ms standalone. The 20 fps `gst-launch` replica gave
-the same camera figure (21.8 ms), so the replica is a fair way to measure capture
-alone.
+session pipeline the parent's clock and base time (`pipeline.set_base_time(element.base_time())`,
+`net/webrtc/src/webrtcsink/imp.rs` in gst-plugins-rs). The `latency` tracer
+measures within one pipeline, so it misses the 20.4 ms hand-off: use
+`buffer-lateness` for end-to-end age.
 
 Reported latency: `v4l2src` answers min 33.3 ms (one frame); the pipeline as a
 whole reports 53.3 ms.
