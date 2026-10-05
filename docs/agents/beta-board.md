@@ -5,16 +5,30 @@ The first spin of the custom microduck PCB: a Seeed-designed RK3566 board
 Machine `microduck-beta`, device tree
 `meta-microduck/recipes-kernel/linux/files/rk3566-microduck-beta.dts`.
 
-**Nothing here has run on a board yet.** The DTS compiles against radxa's tree at
-the pinned `SRCREV`, with the same dtc warnings as the Zero 3W's and no new
-ones. That shows the labels and pin groups exist. It does not show they match
-the board.
+**Our image has not run on a board yet.** The DTS compiles against radxa's tree
+at the pinned `SRCREV`, with the same dtc warnings as the Zero 3W's and no new
+ones.
 
-**The schematic is older than the boards.** The DTS was transcribed from "MicroDuck
-Main Board V0.1", dated 2026-09-09, and the boards in hand are a later
-revision whose schematic we do not have. Every block in the DTS cites its sheet
-so a newer schematic can be diffed against it. Until then, treat each pin as a
-claim to check, in the order below.
+**The schematic is older than the boards; Seeed's own device tree is not.** The
+DTS was transcribed from "MicroDuck Main Board V0.1" (2026-09-09), then
+corrected against the DTB that Seeed's factory image boots on a real board,
+read from `/sys/firmware/fdt` on 2026-10-05. Where they disagreed, Seeed's won,
+because their image runs on the board: its radio associates and Bluetooth comes
+up. Corrections that came from it:
+
+| | V0.1 schematic | Seeed DTB (real board) |
+|---|---|---|
+| VCCIO4 (radio bank) | 3.3 V | **1.8 V** |
+| RK860 CPU regulator | — | I²C address **0x41** |
+| radio control lines | GPIO0_A0/A6/B7/C0/C1 | **GPIO2_B1/B2/B7/C0/C1** |
+| Qwiic (I2C4_M1) | enabled | **disabled**: its pins are the BT wake lines |
+| face board | not drawn | **PCA9535 at 0x20 on I2C3** (IRQ GPIO4_C7), 12 LEDs on it |
+| ToF SPI clock | — | 8 MHz |
+| NFC chip select | controller CS | GPIO3_A1 |
+| amp enable | — | GPIO1_B0 as `spk-ctl-gpios` |
+
+Each corrected block in the DTS says "Seeed DTB". The rest is still V0.1 and
+still a claim to check, in the order below.
 
 ## How it differs from the Zero 3W
 
@@ -25,10 +39,11 @@ claim to check, in the order below.
 | PMIC | RK817 | RK809 + RK860-1 (TCS4525 footprint-compatible) |
 | motor bus | UART2, fought over with the console | UART3; UART2 is only the console, on TP83/TP84 |
 | `/dev/ttyS2` | UART2 | UART3, by a `serial2`/`serial3` alias swap in the DTS |
-| radio | AIC8800DS2 | WL6201S module, chip unknown |
+| radio | AIC8800DS2 | WL6201S module = **WuQi WQ9201S**, no recipe yet |
 | audio | none on the board | RK809 codec → NS4150B amp → speaker; PDM mic on the face board |
-| camera | IMX219 | GC2613, **no driver in the kernel**, not described yet |
-| face board | — | IMU on I2C3, ToF on SPI3 (1.8 V), PDM mic |
+| camera | IMX219 | GC2613 or GC2093, **no GC2613 driver in our kernel**, not described yet |
+| face board | — | PCA9535 + 12 LEDs and maybe the IMU on I2C3, ToF on SPI3 (1.8 V), stereo PDM mic |
+| fan | — | its own thermal zone: off below 52 °C, steps up from 60 °C |
 | other | HDMI | NFC (ST25R100, SPI1), fan header, Qwiic (I2C4), board-ID EEPROM |
 
 `/dev/ttyS2` is the motor bus on both boards on purpose. `robotd.toml`, the
@@ -36,14 +51,44 @@ daemon's scripts and its docs all name it, and the alias costs one DTS line. The
 alternative was a per-machine `robotd.toml`, which would mean a per-machine build
 of the whole Rust daemon recipe just to change one string.
 
+## What the boards ship with
+
+Seeed flashes an Armbian build of their own onto the eMMC: `BOARD=microduck`,
+Armbian 26.11 trunk on bookworm, vendor kernel 6.1.172 built 2026-09-29, DT model
+"Microduck Main Board V0.1", compatible `seeed,microduck`. Plugging in USB-C
+with the board powered gives you a way in without opening anything. It is a USB
+gadget (`2207:0019`) with:
+
+- **a serial console**, `/dev/ttyACM0` on the host, auto-logged-in as root. On
+  first use this drops into Armbian's first-login wizard.
+- **an RNDIS network link**: the board is 192.168.42.1 and serves DHCP.
+  `nmcli device connect <enx…>` on the host brings it up.
+
+Things on that image worth having before it is overwritten, because they are
+what our image is missing:
+
+- `/usr/src/wq9201s-wifi-bt-dkms-2.2.3.94`: the radio driver source (Dual
+  BSD/GPL according to `modinfo`).
+- `/lib/firmware/wq9201_*.bin` and `wq_wlan_settings.ini`: its firmware.
+- `/usr/bin/wq9201s-bt-attach` and `wq9201s-bt.service`: the Bluetooth attach.
+- `/usr/bin/usbdevice` and `usbdevice.service`: the USB gadget above, which our
+  image should copy for bring-up, since it has no radio yet.
+- `/sys/firmware/fdt`: their device tree.
+
+The bootloader line in its cmdline (`ddr-v1.26`, `spl-v1.14`) is the same rkbin
+DRAM init our U-Boot uses, so DDR3 init is not a risk.
+
+Its `/etc/armbian-release` also carries an internal GitLab CI token in
+`BUILD_REPOSITORY_URL`, which Seeed should know about.
+
 ## Telling the boards apart
 
 The board is chosen when the image is built (`MACHINE`), so there is nothing to
 detect at install time. The two places it is visible afterwards:
 
 - **`/proc/device-tree/compatible`** starts with `pollen,microduck-beta` (the
-  Zero 3W says `radxa,zero3w-aic8800ds2`). This is what software on the robot
-  should switch on.
+  Zero 3W says `radxa,zero3w-aic8800ds2`, Seeed's factory image
+  `seeed,microduck`). This is what software on the robot should switch on.
 - **RAUC** `compatible=` is `${MACHINE}`, so a Zero 3W bundle refuses to install
   on a beta board and vice versa.
 
@@ -80,11 +125,14 @@ mode talks to. Flashing goes through it, with `rkdeveloptool`.
    24), so USB by itself does not start the SoC. That is a reading of V0.1;
    check it on the bench.
 2. **Get into maskrom.**
-   - A blank eMMC drops into maskrom by itself.
+   - A new board is NOT blank: it boots Seeed's image (above), so it will not
+     drop into maskrom by itself.
    - Otherwise, short **TP64 (eMMC_D0) to TP4 (GND)** while powering on
      (sheet 12).
-   - The **Recovery button** (SARADC VIN0) may get there without opening
-     anything. The DTS describes it as an `adc-keys` entry the way Rockchip's evb
+   - The **button next to the USB-C** is probably the Recovery button
+     (SARADC VIN0 in V0.1), which reaches *loader* mode, not maskrom; flashing
+     works from either. `rkdeveloptool ld` says which mode you got. It may get
+     there without opening anything. The DTS describes it as an `adc-keys` entry the way Rockchip's evb
      does, which is what Rockchip's U-Boot reads to enter loader mode. Not
      verified on this board.
 
@@ -128,27 +176,37 @@ Each step assumes the ones before it passed.
    at the node.
 5. **Identity.** `cat /proc/device-tree/compatible`, the VIN1 reading above,
    and `xxd /sys/bus/i2c/devices/1-0050/eeprom | head`.
-6. **Radio.** `dmesg | grep -i -e aic -e brcm -e mmc2`. The image carries the
-   AIC8800 driver as a guess (see `microduck-beta.conf`). An SDIO card that
-   enumerates with no driver binding gives the chip's vendor/device ID in
-   `/sys/bus/sdio/devices/*/`, which answers the question.
+6. **Radio.** Not expected to work yet: there is no WuQi recipe. The SDIO card
+   should still enumerate, as `mmc2:0001:*`, vendor 0x0297.
 7. **Motors.** `ls -l /dev/ttyS2` should resolve to `fe670000.serial` (UART3) in
    `dmesg`, then `robotctl health`.
-8. **Face board.** `i2cdetect -y 3`: the BMI088 answers at 0x19 and 0x68 if
-   it is the same IMU as the prototype's HAT. `ls /dev/spidev3.0` for the ToF.
-9. **Audio.** `aplay -l` shows `rockchip-rk809`. The amp sits on the codec's
-   headphone output, so select it once with
-   `amixer cset name='Playback Path' HP`. `arecord -D hw:<pdm card>` for the
-   mic.
+8. **Face board.** `ls /sys/class/leds | grep face` for the expander's LEDs.
+   `i2cdetect -y 3` shows the PCA9535 at 0x20 as `UU`, and the BMI088 at 0x19
+   and 0x68 if it is the same IMU as the prototype's HAT. `ls /dev/spidev3.0`
+   for the ToF.
+9. **Audio.** `aplay -l` shows `rockchip-rk809` and `face-mic`. The amp sits on
+   HPL and is switched by `spk-ctl-gpios`, so select the SPK path once with
+   `amixer cset name='Playback Path' SPK`.
+10. **Fan.** `cat /sys/class/thermal/thermal_zone*/type` lists `fan-thermal`,
+    whose `policy` must read `step_wise` (set by `microduck-fan`'s udev rule).
+    `cur_state` in its `cooling_device` should be 0 at idle.
 
 ## Open items, each blocking something specific
 
-- **The wifi chip.** Decides `RK_WIFIBT_RRECOMMENDS` and whether the AIC8800
+- **A WuQi WQ9201S recipe**: driver, firmware, BT attach unit. Without it the
+  image has no wifi and no Bluetooth. It also decides whether the AIC8800
   pairing workaround (`/var/lib/robot/weird-ble`, written by the daemon recipe on
-  every machine) applies here at all.
-- **A GC2613 driver.** radxa's `drivers/media/i2c` stops at gc2385. Until one
-  exists the camera is deliberately absent from the DTS. A sensor node nothing
-  binds would leave rkisp waiting and produce no `/dev/video*` at all.
+  every machine) applies here, and `aic8800-bt` has to become per-machine in
+  `microduck-image.bb`.
+- **A USB gadget** (serial console + network over the USB-C) for bring-up,
+  like Seeed's `usbdevice`. Until the radio works it is the only way in that
+  does not need the test pads.
+- **A GC2613 driver.** radxa's `drivers/media/i2c` stops at gc2385. Seeed's
+  kernel has one, and describes gc2613@0x31 and gc2093@0x37 on I2C2 (MCLK from
+  CIF_CLKOUT, 2 lanes into csi2_dphy0). Until our kernel has it the camera is
+  deliberately absent from the DTS: a sensor node nothing binds would leave
+  rkisp waiting and produce no `/dev/video*` at all.
+- **Fan trips** (60/68/75 °C) are starting points, not measured values.
 - **The ToF part.** It is on SPI, so it is not the prototype's VL53L5CX, which is
   I²C only. `tofd` needs an SPI transport, and `/dev/spidev*` needs a udev rule
   giving `tofd` access, the same way `60-robot-i2c.rules` does for I²C.
