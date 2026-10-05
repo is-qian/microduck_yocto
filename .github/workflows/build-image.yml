@@ -9,9 +9,16 @@ name: build-image
 # persist between builds cannot live there. On HF Jobs the same build takes ~6
 # minutes of bitbake at 99% sstate reuse and costs about $1.60.
 #
-# One secret does everything: HF_TOKEN launches the job AND reaches the bucket,
-# because the bucket is mounted into the job by the platform as the org. No
-# credential ever enters the build itself.
+# By default it builds microduck-bundle: the dev-signed RAUC bundle, plus, since
+# the bundle depends on the image's do_image_complete, the dev image's .wic. So
+# every merge yields both a card to flash and an update to `rauc install`.
+#
+# HF_TOKEN launches the job AND reaches the bucket, because the bucket is mounted
+# into the job by the platform as the org. RAUC_DEV_KEY / RAUC_DEV_CERT (the PEM
+# files from README.md "Signing keys are not in this repo") are the one credential
+# that does enter the build: the bundle is signed inside the job. That is fine for
+# the DEV key, which robots in the field must never trust. A production key must
+# not take this path: sign releases with `rauc resign` in a separate job instead.
 #
 # Artifacts stay in the bucket. A .wic is ~900 MB, which is awkward as a release
 # asset and pointless to move when the bucket is already private and already
@@ -26,7 +33,7 @@ on:
         options: [build, checkout]
         default: build
       target:
-        description: "single recipe to build, e.g. linux-rockchip (empty = whole image)"
+        description: "recipe to build, e.g. linux-rockchip (empty = microduck-bundle: dev image .wic + signed bundle)"
         type: string
         default: ""
       flavor:
@@ -81,10 +88,21 @@ jobs:
         id: launch
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HFJOB_TARGET: ${{ inputs.target }}
+          HFJOB_TARGET: ${{ inputs.target || 'microduck-bundle' }}
           HFJOB_FLAVOR: ${{ inputs.flavor || 'cpu-performance' }}
+          RAUC_DEV_KEY: ${{ secrets.RAUC_DEV_KEY }}
+          RAUC_DEV_CERT: ${{ secrets.RAUC_DEV_CERT }}
         run: |
           set -eu
+          # build-hfjob.sh reads the pair from files, and only sends it to a
+          # bundle job. If a secret is missing the file is empty and the script
+          # refuses before launching, instead of failing in do_bundle 45 min in.
+          umask 077
+          # sed '$a\' restores a final newline a pasted PEM may have lost, and
+          # leaves an empty secret empty.
+          printf '%s' "$RAUC_DEV_KEY" | sed '$a\' > "$RUNNER_TEMP/rauc.key.pem"
+          printf '%s' "$RAUC_DEV_CERT" | sed '$a\' > "$RUNNER_TEMP/rauc.cert.pem"
+          export HFJOB_RAUC_KEY="$RUNNER_TEMP/rauc.key.pem" HFJOB_RAUC_CERT="$RUNNER_TEMP/rauc.cert.pem"
           out=$(scripts/build-hfjob.sh "${{ inputs.kas_command || 'build' }}" 2>&1 | tee /dev/stderr)
           # Parse the id out of the job URL, not out of `id=...`. The CLI prints
           # two different shapes depending on where it runs -- `id=<hex> name=...`
@@ -124,7 +142,7 @@ jobs:
           test -n "$prefix" || { echo "no artifacts prefix from the wait step"; exit 1; }
           echo "### Image built" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          hf buckets ls "$prefix/" | grep -E "rootfs-[0-9]+\.wic|zboot\.img--|\.manifest$" \
+          hf buckets ls "$prefix/" | grep -E "rootfs-[0-9]+\.wic|bundle-.*-[0-9]+\.raucb|zboot\.img--|\.manifest$" \
             >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "Artifacts: \`$prefix\`" >> "$GITHUB_STEP_SUMMARY"
