@@ -138,15 +138,17 @@ cd "$HOME"/work
 . kas/hfjob.env
 mkdir -p "$DL_DIR" "$SSTATE_DIR"
 
-# The caches are NOT copied in. bitbake reads the bucket as a mirror instead
-# (SSTATE_MIRRORS and PREMIRRORS in kas/hfjob.yml) and pulls only the objects and
-# sources it needs. The bulk copy this replaced had grown to 48 minutes of a
-# 58-minute job on 2026-10-05: 128 GB of downloads/ plus 16 GB of sstate/,
-# nearly all of it unused by a build reusing 99% of its tasks.
+# sstate/ is bulk-copied in; downloads/ is not. The bulk copy of both had grown to
+# 48 minutes of a 58-minute job on 2026-10-05, and downloads/ was 128 GB of the
+# 144: nearly all of it is unused by a build reusing 99% of its tasks. So bitbake
+# reads downloads/ on demand instead (PREMIRRORS in kas/hfjob.yml).
 #
-# Only the hash-equivalence database is copied in (BB_HASHSERVE_DB_DIR, in
-# kas/hfjob.yml), because it lives in SSTATE_DIR and names the objects bitbake
-# looks up. Without it, an object stored under an equivalent unihash is missed.
+# sstate/ cannot go the same way. Tried 2026-10-05 as SSTATE_MIRRORS, job
+# 6ac3abad: the existence check found 98% of objects through the mount, but
+# setscene then managed 588 of 3971 tasks in 24 minutes, and the count had
+# stopped moving when it was cancelled. The bulk copy restores all of them in a
+# few minutes. The mount is good at sequential reads and bad at thousands of
+# parallel small ones.
 #
 # Everything worth keeping leaves through save(), and save() is wired to the fatal
 # signals as well as EXIT. An EXIT trap alone does NOT run when the container is
@@ -247,7 +249,7 @@ on_hup()  { save; exit 129; }
 
 # Only for `build`. `checkout` and `dump` fetch and compile nothing.
 if [ "$KAS_CMD" = build ]; then
-	cp /cache/sstate/hashserv.db* "$SSTATE_DIR"/ 2>/dev/null || true
+	cp -Ru /cache/sstate/. "$SSTATE_DIR"/ 2>/dev/null || true
 	trap on_term TERM
 	trap on_int INT
 	trap on_hup HUP
