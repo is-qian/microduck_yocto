@@ -31,3 +31,28 @@ local_conf_header:
     # coach needs none of this: its build directory persists between builds, so
     # the database survives. That is why it lives here and not in microduck.yml.
     BB_HASHSERVE_DB_DIR = "${SSTATE_DIR}"
+  bucket-mirrors: |
+    # Read the bucket (mounted at /cache) as a mirror rather than copying all of it
+    # in first. See the note in scripts/build-hfjob.sh where the copy used to be.
+    #
+    # - sstate: PATH is the object's path under SSTATE_DIR.
+    # - git: MIRRORNAME expands to host.path with / turned into dots, which is
+    #   exactly how DL_DIR/git2/ names its bare clones
+    #   (bitbake lib/bb/fetch2/__init__.py, at the pinned commit).
+    # - Everything else is checksummed, so the mirror path becomes the file's name
+    #   in DL_DIR. That covers the 1700 .crate files, which sit flat in downloads/.
+    #
+    # PREMIRRORS, not MIRRORS, so the bucket is tried before upstream. Upstream
+    # is still tried if the bucket lacks something. Neither variable should enter
+    # a task signature (the fetcher and pstaging_fetch read them as library
+    # code); if one did, every task would miss and the Sstate summary would drop
+    # from 99% to 0%.
+    SSTATE_MIRRORS = "file://.* file:///cache/sstate/PATH"
+    PREMIRRORS:prepend = "\
+        git://.*/.* git:///cache/downloads/git2/MIRRORNAME;protocol=file \
+        gitsm://.*/.* gitsm:///cache/downloads/git2/MIRRORNAME;protocol=file \
+        ftp://.*/.* file:///cache/downloads/ \
+        http://.*/.* file:///cache/downloads/ \
+        https://.*/.* file:///cache/downloads/ \
+        crate://.*/.* file:///cache/downloads/ \
+    "
