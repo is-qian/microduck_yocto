@@ -99,3 +99,18 @@ microduck_install_board_dts() {
 	grep -qF "$dtb" "$dir/Makefile" || bbfatal "$dtb did not make it into $dir/Makefile"
 }
 do_patch[postfuncs] += "microduck_install_board_dts"
+
+# The beta board's extra kernel options, and a check that they took. Same idea as
+# microduck_check_uboot_config: a fragment line whose dependency is missing is
+# silently dropped by merge_config, and the first symptom would be a face board
+# with no LEDs on a board that otherwise boots fine.
+SRC_URI:append:microduck-beta = " file://microduck-beta.cfg"
+
+microduck_check_kernel_fragments() {
+	for frag in ${@' '.join(u.split('://')[1].split(';')[0] for u in d.getVar('SRC_URI').split() if u.startswith('file://microduck-') and u.endswith('.cfg'))}; do
+		for line in $(grep -vE '^[[:space:]]*(#|$)' ${UNPACKDIR}/$frag); do
+			grep -qxF "$line" ${B}/.config || bbfatal "$frag: '$line' is not in the merged ${B}/.config"
+		done
+	done
+}
+do_configure[postfuncs] += "microduck_check_kernel_fragments"

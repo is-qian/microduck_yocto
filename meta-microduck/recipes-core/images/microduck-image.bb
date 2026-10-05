@@ -18,7 +18,7 @@ IMAGE_INSTALL:append = " \
     ca-certificates \
     networkmanager \
     bluez5 \
-    aic8800-bt \
+    ${MICRODUCK_RADIO_PACKAGES} \
     wireless-regdb-static \
     i2c-tools \
     usbutils \
@@ -33,6 +33,10 @@ IMAGE_INSTALL:append = " \
 # RAUC's uboot backend needs; the fw_printenv/fw_setenv it runs arrive through
 # meta-rauc's own RDEPENDS on u-boot-fw-utils. See recipes-bsp/u-boot/.
 
+# MICRODUCK_RADIO_PACKAGES is per machine (microduck-common.inc has the
+# default): the Zero 3W's is aic8800-bt, the beta board's is empty until its
+# WuQi radio has a recipe.
+#
 # aic8800-bt is the HCI attach unit, in the shipping image rather than the dev
 # one: BLE is how a robot with no network gets provisioned (configd over btd), so
 # a controller that never attaches is a product fault, not a debug inconvenience.

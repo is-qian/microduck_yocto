@@ -1,0 +1,87 @@
+#!/bin/sh
+# Bring up (or tear down) the USB-C gadget: a serial console and a network link.
+#
+#   microduck-usb-gadget start | stop
+#
+# Two functions on one configuration, through configfs:
+#   acm.GS0   -> /dev/ttyGS0 on the robot, a getty on it (ttyACM* on the host)
+#   ncm.usb0  -> usb0 on the robot, 192.168.42.1 (microduck-usb-dhcp.service
+#                hands the host an address)
+#
+# NCM rather than RNDIS: NCM is native on Linux, macOS and Windows 11, and RNDIS is
+# being removed from Windows and from Linux hosts. Seeed's factory image uses RNDIS
+# on the same address; the address is kept so the two feel the same.
+set -eu
+
+G=/sys/kernel/config/usb_gadget/microduck
+
+stop() {
+	[ -d "$G" ] || return 0
+	[ -s "$G/UDC" ] && echo "" > "$G/UDC" || true
+	rm -f "$G"/configs/c.1/ncm.usb0 "$G"/configs/c.1/acm.GS0
+	rmdir "$G"/configs/c.1/strings/0x409 "$G"/configs/c.1 \
+		"$G"/functions/ncm.usb0 "$G"/functions/acm.GS0 \
+		"$G"/strings/0x409 "$G" 2>/dev/null || true
+}
+
+start() {
+	mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
+
+	# dwc3 can probe after this unit starts; give its UDC a moment to appear.
+	udc=""
+	for _ in 1 2 3 4 5 6 7 8 9 10; do
+		udc=$(ls /sys/class/udc 2>/dev/null | head -n1)
+		[ -n "$udc" ] && break
+		sleep 1
+	done
+	[ -n "$udc" ] || { echo "no USB device controller (is dwc3 in OTG/peripheral mode?)" >&2; exit 1; }
+
+	# Already bound: nothing to do. A restart goes through stop first.
+	if [ -s "$G/UDC" ]; then
+		return 0
+	fi
+	stop
+
+	serial=$(tr -d '\0' < /proc/device-tree/serial-number 2>/dev/null || echo 0)
+	# Stable, locally administered MACs derived from the SoC serial, so the host
+	# keeps one interface name and one lease per robot across reboots.
+	h=$(printf '%s' "$serial" | md5sum | cut -c1-12)
+	mac() { printf '%s:%s:%s:%s:%s:%s' "$1" "$(echo "$h" | cut -c3-4)" "$(echo "$h" | cut -c5-6)" \
+		"$(echo "$h" | cut -c7-8)" "$(echo "$h" | cut -c9-10)" "$(echo "$h" | cut -c11-12)"; }
+
+	mkdir -p "$G"
+	cd "$G"
+	echo 0x1d6b > idVendor		# Linux Foundation
+	echo 0x0104 > idProduct		# Multifunction Composite Gadget
+	echo 0x0200 > bcdUSB
+	# Interface Association Descriptor class, which composite NCM + ACM needs
+	# for Windows to bind both.
+	echo 0xEF > bDeviceClass
+	echo 0x02 > bDeviceSubClass
+	echo 0x01 > bDeviceProtocol
+
+	mkdir -p strings/0x409
+	echo "$serial" > strings/0x409/serialnumber
+	echo "Pollen Robotics" > strings/0x409/manufacturer
+	echo "microduck" > strings/0x409/product
+
+	mkdir -p configs/c.1/strings/0x409
+	echo "console + network" > configs/c.1/strings/0x409/configuration
+	echo 250 > configs/c.1/MaxPower
+
+	mkdir -p functions/ncm.usb0
+	mac 02 > functions/ncm.usb0/dev_addr
+	mac 06 > functions/ncm.usb0/host_addr
+	mkdir -p functions/acm.GS0
+
+	ln -s functions/ncm.usb0 configs/c.1/
+	ln -s functions/acm.GS0 configs/c.1/
+
+	echo "$udc" > UDC
+}
+
+case "${1:-}" in
+start) start ;;
+stop) stop ;;
+*) echo "usage: $0 start|stop" >&2; exit 2 ;;
+esac

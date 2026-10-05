@@ -1,0 +1,26 @@
+[Unit]
+Description=DHCP for the USB-C network link (192.168.42.0/24)
+Documentation=file:///usr/sbin/microduck-usb-gadget
+Requires=microduck-usb-gadget.service
+After=microduck-usb-gadget.service NetworkManager.service
+BindsTo=sys-subsystem-net-devices-usb0.device
+After=sys-subsystem-net-devices-usb0.device
+
+[Service]
+# The address is set here rather than through NetworkManager's "shared" mode,
+# which also installs NAT rules and so wants a firewall backend this image may
+# not carry. NetworkManager is told to leave usb0 alone (unmanaged.conf), so
+# nothing else touches it.
+ExecStartPre=/sbin/ip link set usb0 up
+ExecStartPre=-/sbin/ip addr add 192.168.42.1/24 dev usb0
+# Leases only: no DNS (--port=0), and the empty dhcp-options withhold a gateway
+# and a resolver, so a laptop plugged into the robot keeps its own internet route.
+ExecStart=/usr/bin/dnsmasq --keep-in-foreground --conf-file=/dev/null \
+	--interface=usb0 --bind-interfaces --except-interface=lo --port=0 \
+	--dhcp-range=192.168.42.10,192.168.42.50,255.255.255.0,1h \
+	--dhcp-option=3 --dhcp-option=6 --dhcp-leasefile=/run/microduck-usb-dhcp.leases
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

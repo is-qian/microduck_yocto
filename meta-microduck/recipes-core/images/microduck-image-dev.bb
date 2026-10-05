@@ -22,7 +22,7 @@ IMAGE_INSTALL:append = " \
     microduck-daemon-padd \
     microduck-daemon-devkey \
     microduck-daemon-bash-completion \
-    aic8800-bt-test \
+    ${MICRODUCK_RADIO_DEV_PACKAGES} \
     coreutils \
     util-linux \
     less \

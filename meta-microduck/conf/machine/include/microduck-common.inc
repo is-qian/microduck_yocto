@@ -30,4 +30,11 @@
 # printk back on the servo wires, the exact failure this flag exists to prevent.
 MICRODUCK_MOTOR_UART ?= "1"
 
+# The radio's userspace, per machine: what microduck-image installs for the
+# Bluetooth attach, and what microduck-image-dev adds for diagnosing it. The
+# driver and firmware themselves come through RK_WIFIBT_RRECOMMENDS. Defaults
+# are the Zero 3W's AIC8800; a machine with another radio overrides both.
+MICRODUCK_RADIO_PACKAGES ?= "aic8800-bt"
+MICRODUCK_RADIO_DEV_PACKAGES ?= "aic8800-bt-test"
+
 SERIAL_CONSOLES = "${@'' if d.getVar('MICRODUCK_MOTOR_UART') == '1' else '1500000;ttyFIQ0'}"
