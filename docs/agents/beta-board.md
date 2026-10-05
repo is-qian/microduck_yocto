@@ -39,8 +39,10 @@ still a claim to check, in the order below.
 | PMIC | RK817 | RK809 + RK860-1 (TCS4525 footprint-compatible) |
 | motor bus | UART2, fought over with the console | UART3; UART2 is only the console, on TP83/TP84 |
 | `/dev/ttyS2` | UART2 | UART3, by a `serial2`/`serial3` alias swap in the DTS |
-| radio | AIC8800DS2 | WL6201S module = **WuQi WQ9201S**, no recipe yet |
+| radio | AIC8800DS2 | WL6201S module = **WuQi WQ9201S**, no recipe yet: no wifi, no BT |
+| way in without radio | none | USB-C gadget: serial console + network, robot at 192.168.42.1 |
 | audio | none on the board | RK809 codec → NS4150B amp → speaker; PDM mic on the face board |
+| audio routing | `plughw:aic3104` | ALSA `default` → RK809 + face mic, SPK path set at boot |
 | camera | IMX219 | GC2613 or GC2093, **no GC2613 driver in our kernel**, not described yet |
 | face board | — | PCA9535 + 12 LEDs and maybe the IMU on I2C3, ToF on SPI3 (1.8 V), stereo PDM mic |
 | fan | — | its own thermal zone: off below 52 °C, steps up from 60 °C |
@@ -124,9 +126,13 @@ mode talks to. Flashing goes through it, with `rkdeveloptool`.
    rail. VCC3V3_SYS, which feeds the PMIC, comes from VBAT alone (sheets 5 and
    24), so USB by itself does not start the SoC. That is a reading of V0.1;
    check it on the bench.
-2. **Get into maskrom.**
+2. **Get into maskrom or loader mode.**
    - A new board is NOT blank: it boots Seeed's image (above), so it will not
      drop into maskrom by itself.
+   - From Seeed's image, the easiest way is `reboot loader` on its console
+     (`/dev/ttyACM0`). Rockchip's vendor U-Boot reads that reboot reason and
+     comes up in rockusb **loader** mode. Not tried yet on this board; if it
+     just reboots normally, use one of the next two.
    - Otherwise, short **TP64 (eMMC_D0) to TP4 (GND)** while powering on
      (sheet 12).
    - The **button next to the USB-C** is probably the Recovery button
@@ -144,14 +150,21 @@ mode talks to. Flashing goes through it, with `rkdeveloptool`.
    sudo rkdeveloptool wl 0 microduck-image-dev-microduck-beta.rootfs.wic
    sudo rkdeveloptool rd
    ```
+   In loader mode, skip `db`: the loader is already running.
+
    `db` succeeding is the first hardware result worth recording. It runs the
    same rkbin DRAM init as the image's idblock, on DDR3, which nothing has
    tried yet. The `.wic` is sparse at 12.1 GiB, and `wl` writes every byte of
    it, zeros included, so expect minutes rather than seconds over USB 2.
 
 There is no `seed-wifi.sh` for eMMC: the board is not a card you can mount.
-Wifi comes over Bluetooth (`duckctl wifi connect`) once the radio works, and
-the serial console works before it does.
+Until the radio has a recipe, the way in is the USB-C gadget
+(`microduck-usb-gadget`), the same cable you flash with:
+
+- **console:** `/dev/ttyACM*` on the host (getty on the robot's `ttyGS0`);
+- **network:** an NCM link, robot at 192.168.42.1, your machine gets a
+  192.168.42.x lease with no gateway, so it keeps its own internet route.
+  `ssh root@192.168.42.1` on the dev image.
 
 ## First boot, in order
 
@@ -177,30 +190,50 @@ Each step assumes the ones before it passed.
 5. **Identity.** `cat /proc/device-tree/compatible`, the VIN1 reading above,
    and `xxd /sys/bus/i2c/devices/1-0050/eeprom | head`.
 6. **Radio.** Not expected to work yet: there is no WuQi recipe. The SDIO card
-   should still enumerate, as `mmc2:0001:*`, vendor 0x0297.
+   should still enumerate, as `mmc2:0001:*`, vendor 0x0297. The USB-C gadget
+   is the way in meanwhile: `systemctl status microduck-usb-gadget
+   microduck-usb-dhcp` if it does not show up on the host.
 7. **Motors.** `ls -l /dev/ttyS2` should resolve to `fe670000.serial` (UART3) in
    `dmesg`, then `robotctl health`.
 8. **Face board.** `ls /sys/class/leds | grep face` for the expander's LEDs.
    `i2cdetect -y 3` shows the PCA9535 at 0x20 as `UU`, and the BMI088 at 0x19
    and 0x68 if it is the same IMU as the prototype's HAT. `ls /dev/spidev3.0`
    for the ToF.
-9. **Audio.** `aplay -l` shows `rockchip-rk809` and `face-mic`. The amp sits on
-   HPL and is switched by `spk-ctl-gpios`, so select the SPK path once with
-   `amixer cset name='Playback Path' SPK`.
+9. **Audio.** `aplay -l` shows `rockchip-rk809` and `face-mic` (ALSA ids
+   `rockchiprk809`, `facemic`, which `/etc/alsa/conf.d/60-microduck-beta.conf`
+   routes `default` to). `microduck-audio-path.service` selects the codec's SPK
+   path at boot. `speaker-test -c1 -t sine -l1` should be audible. robotd plays on
+   `default` here only from the release that carries the daemon's
+   `audio-default-fallback` change; before that it is silent on this board.
 10. **Fan.** `cat /sys/class/thermal/thermal_zone*/type` lists `fan-thermal`,
     whose `policy` must read `step_wise` (set by `microduck-fan`'s udev rule).
     `cur_state` in its `cooling_device` should be 0 at idle.
 
+## Which daemon the image carries
+
+`microduck-daemon_0.15.0.bb`: the image seeds release 0.15.0, the newest that
+builds with wrynose's Rust (1.94.1). 0.15.1 needs 1.99. A robot with network
+converges to the newest release on its own, because `updaterd` installs CI's
+prebuilt binaries rather than this recipe's build. The daemon branch
+`msrv-yocto-ceiling` brings the floor back to 1.89 and documents the ceiling,
+so the first release after it can be pinned here directly.
+
 ## Open items, each blocking something specific
 
 - **A WuQi WQ9201S recipe**: driver, firmware, BT attach unit. Without it the
-  image has no wifi and no Bluetooth. It also decides whether the AIC8800
-  pairing workaround (`/var/lib/robot/weird-ble`, written by the daemon recipe on
-  every machine) applies here, and `aic8800-bt` has to become per-machine in
-  `microduck-image.bb`.
-- **A USB gadget** (serial console + network over the USB-C) for bring-up,
-  like Seeed's `usbdevice`. Until the radio works it is the only way in that
-  does not need the test pads.
+  image has no wifi and no Bluetooth, so no updates and no phone provisioning.
+  Seeed's image carries everything it needs (above), and the driver builds with
+  plain kbuild (`make -C <kernel> M=src/wifi/rwnx_drv modules`; strip its
+  `-Werror`, it was built with GCC 12 and wrynose has 15). BT is
+  `btattach -B /dev/ttyS1 -N -P h4 -S 1500000` once `wlan0` exists (the driver
+  downloads the BT firmware), and never `hciattach 3wire` in the same boot.
+  Ship Seeed's `wq_wlan_settings.ini` (single antenna, BT on the wifi
+  antenna), not the source tree's default. Redistributing the firmware needs
+  Seeed's or WuQi's terms. `MICRODUCK_RADIO_PACKAGES` is where its BT package
+  goes; the AIC8800 pairing workaround (`/var/lib/robot/weird-ble`, written by
+  the daemon recipe on every machine) is to be re-measured on this radio.
+- **Daemon releases** carrying `msrv-yocto-ceiling` (so the image can pin the
+  newest) and `audio-default-fallback` (so robotd speaks on this board).
 - **A GC2613 driver.** radxa's `drivers/media/i2c` stops at gc2385. Seeed's
   kernel has one, and describes gc2613@0x31 and gc2093@0x37 on I2C2 (MCLK from
   CIF_CLKOUT, 2 lanes into csi2_dphy0). Until our kernel has it the camera is
