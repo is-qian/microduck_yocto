@@ -1,0 +1,16 @@
+[Unit]
+Description=Gate RAUC's good-boot marking on the robot's daemons being healthy
+# boot-complete.target is what rauc-mark-good.service requires. Failing here keeps
+# the slot unmarked; see /usr/libexec/microduck-slot-health.
+After=multi-user.target
+Before=boot-complete.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/microduck-slot-health
+# It waits for the 180 s deadline itself; leave room above that.
+TimeoutStartSec=300
+
+[Install]
+RequiredBy=boot-complete.target

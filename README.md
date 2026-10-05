@@ -442,11 +442,29 @@ and wifi profiles live on their own partition and survive every update.
 | 3 | move the daemon hooks' OS work into the image | not started |
 
 **Limits today.** A bundle carries the rootfs only: the kernel and device tree sit
-in the shared `boot` partition, so changing them still needs a reflash. U-Boot
-itself is not a slot either. The bundle wraps the dev image
-(`RAUC_SLOT_rootfs` in `recipes-core/bundles/microduck-bundle.bb`); switch it to
-`microduck-image` before shipping.
+in the shared `boot` partition, so changing them still needs a reflash. The
+bundle's `install-check` hook enforces that. It refuses any bundle built with a
+different `boot.img` from the one on the card, compared by hash, because the
+slot's `/lib/modules` (the AIC8800 wifi driver among them) must match the running
+kernel. `uname -r` would not catch it: config, DTS and patch changes leave it
+unchanged. The reverse direction has no guard. After writing a new `boot.img`
+alone onto an A/B card, the other slot's modules no longer match, and a
+rollback to it comes up without wifi. So on an A/B card, reflash the whole
+`.wic` for a kernel change. The fix is the kernel in the slot, for which
+`boot_b` is already reserved. U-Boot itself is not a slot either. The bundle
+wraps the dev image (`RAUC_SLOT_rootfs` in
+`recipes-core/bundles/microduck-bundle.bb`); switch it to `microduck-image`
+before shipping.
 
+**"Good" means healthy, not just booted.** RAUC marks a slot good only once
+`microduck-slot-health.service` passes, which `boot-complete.target` requires: at
+the 180 s deadline, the four core daemons must be up and not crash-looping —
+the same verdict as the daemon's own `robot-boot-check`, which the image now
+ships along with `robot-rescue`. An unhealthy slot is left unmarked, not
+rebooted: the daemon's rescue reboots when a non-golden daemon release is at
+fault, and every later reboot counts against the slot until U-Boot falls back.
+No reboot is automatic when the slot itself is the cause, so a bench board with a
+genuinely missing peripheral cannot loop between two unhealthy slots.
 ### Partition layout
 
 `meta-microduck/files/wic/microduck-ab.wks.in`. Every partition has an explicit

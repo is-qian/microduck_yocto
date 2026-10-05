@@ -174,6 +174,16 @@ library root, so nothing crosses a filesystem boundary.
 the image, reseeded on flash. A slot switch reverts the daemon to the image's
 seed and `updaterd` converges it again — test that deliberately once stage 2 exists.
 
+**A RAUC-written slot's filesystem is the image's size, not the slot's.** `rauc
+install` writes the bundle's ext4 raw into the 2 GiB slot. The image is ~740 MB with
+~90 MB free, so after one daemon release (~51 MB, and updaterd keeps `golden` and
+`current`), the next update failed preflight (`DiskSpace`, 2026-10-02). Only a
+flashed slot A got 2 GiB, from wic's `--fixed-size`. The root line of fstab
+carries `x-systemd.growfs` (`recipes-core/base-files`). systemd-fstab-generator
+turns that into `systemd-growfs-root.service`, which grows `/` online at boot; on
+the board it took 69 ms. Do not "fix" this with `IMAGE_ROOTFS_SIZE`: every bundle
+would then carry 2 GiB.
+
 ## What is not done
 
 - Kernel is not A/B. `boot_b` is reserved and empty.
