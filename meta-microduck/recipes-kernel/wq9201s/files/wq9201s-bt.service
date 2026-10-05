@@ -9,8 +9,11 @@ ConditionPathExists=/dev/ttyS1
 Type=simple
 ExecStartPre=-/usr/sbin/rfkill unblock all
 ExecStart=/usr/libexec/wq9201s-bt-attach
-Restart=on-failure
-RestartSec=5
+# No Restart=: the script already makes three attempts, and every start of
+# this unit runs rfkill, which power-cycles the controller through BT_REG_ON
+# (rfkill-bt's "bt turn on power" in dmesg) and wipes the firmware wq_wlan
+# loaded. Restarting on failure did that every ~23 s, forever, on the first
+# beta board (2026-10-05). One try per boot; `systemctl restart` for another.
 
 [Install]
 WantedBy=multi-user.target

@@ -15,6 +15,7 @@ IMAGE_INSTALL:append = " \
     u-boot-rockchip-env \
     microduck-data \
     packagegroup-microduck-media \
+    alsa-utils-aplay \
     kernel-modules \
     ca-certificates \
     networkmanager \
@@ -35,14 +36,18 @@ IMAGE_INSTALL:append = " \
 # meta-rauc's own RDEPENDS on u-boot-fw-utils. See recipes-bsp/u-boot/.
 
 # MICRODUCK_RADIO_PACKAGES is per machine (microduck-common.inc has the
-# default): the Zero 3W's is aic8800-bt, the beta board's is empty until its
-# WuQi radio has a recipe.
+# default): the Zero 3W's is aic8800-bt, the beta board's wq9201s-bt.
 #
 # aic8800-bt is the HCI attach unit, in the shipping image rather than the dev
 # one: BLE is how a robot with no network gets provisioned (configd over btd), so
 # a controller that never attaches is a product fault, not a debug inconvenience.
 # The chip answers only through hciattach with the port speed set before the line
 # discipline attaches -- see the unit for the measurements that established that.
+
+# alsa-utils-aplay is aplay and arecord, and the robot's voice depends on it:
+# robotd and sounds play every wav by running `aplay -D <device>` (robotd's
+# sound.rs), so without it a robot accepts `robotctl quack` and stays silent.
+# Found missing on the first beta board, 2026-10-05.
 
 # microduck-daemon-padd is built but deliberately not installed: it is a gamepad
 # client, and its gilrs/libudev-sys chain is only wanted when someone is

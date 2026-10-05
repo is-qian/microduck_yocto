@@ -14,8 +14,8 @@ ones.
 DTS was transcribed from "MicroDuck Main Board V0.1" (2026-09-09), then
 corrected against the DTB that Seeed's factory image boots on a real board,
 read from `/sys/firmware/fdt` on 2026-10-05. Where they disagreed, Seeed's won,
-because their image runs on the board: its radio associates and Bluetooth comes
-up. Corrections that came from it:
+because their image runs on the board and its radio associates. (Whether its
+Bluetooth comes up was never checked: the image has no login.) Corrections that came from it:
 
 | | V0.1 schematic | Seeed DTB (real board) |
 |---|---|---|
@@ -218,15 +218,18 @@ Each step assumes the ones before it passed.
 7. **Motors.** `ls -l /dev/ttyS2` should resolve to `fe670000.serial` (UART3) in
    `dmesg`, then `robotctl health`.
 8. **Face board.** `ls /sys/class/leds | grep face` for the expander's LEDs.
-   `i2cdetect -y 3` shows the PCA9535 at 0x20 as `UU`, and the BMI088 at 0x19
-   and 0x68 if it is the same IMU as the prototype's HAT. `ls /dev/spidev3.0`
+   `i2cdetect -y 3` shows the PCA9535 at 0x20 as `UU` and the face IMU at 0x6a.
+   That is not the prototype HAT's BMI088 (0x19/0x68) but the part
+   `imu_to_dxl` uses, so `tofd` cannot read it yet. `ls /dev/spidev3.0`
    for the ToF.
 9. **Audio.** `aplay -l` shows `rockchip-rk809` and `face-mic` (ALSA ids
    `rockchiprk809`, `facemic`, which `/etc/alsa/conf.d/60-microduck-beta.conf`
    routes `default` to). `microduck-audio-path.service` selects the codec's SPK
-   path at boot. `speaker-test -c1 -t sine -l1` should be audible. robotd plays on
-   `default` here only from the release that carries the daemon's
-   `audio-default-fallback` change; before that it is silent on this board.
+   path at boot. `aplay` of any wav should be audible (verified 2026-10-05).
+   robotd plays on `default` here only from the release that carries the
+   daemon's audio fallback (microduck#358); before that it is silent on this
+   board. It also plays sounds from its control loop, so `robotctl quack` is
+   silent while no servos answer on the bus.
 10. **Fan.** The `soc-thermal` zone carries the fan's trips (`trip_point_*`
     shows three `active` ones besides the dtsi's) and its `policy` must read
     `step_wise` (set by `microduck-fan`'s udev rule). The `pwm-fan`
@@ -244,8 +247,19 @@ so the first release after it can be pinned here directly.
 
 ## Open items, each blocking something specific
 
-- **The WuQi radio is unverified.** `recipes-kernel/wq9201s` has never been
-  built or booted. It packages WuQi's driver 2.2.3.94 and the firmware, both
+- **The WuQi radio: wifi works, Bluetooth does not.** Wifi associates and
+  holds once an antenna is on the U.FL connector; without one every network
+  reads 20-25 % and the link drops, after which the driver refused to
+  associate until `modprobe -r wq_wlan; modprobe wq_wlan`. Bluetooth, as of
+  2026-10-05: the driver downloads the BT firmware ("BT download success",
+  visible with `wq_dbg_lv=3` in the settings ini), the UART1 pins and
+  `BT_REG_ON` match both Seeed's DTB and the schematic, and the controller
+  still never sends a byte. That held with the unit stopped, `BT_REG_ON`
+  raised before a fresh firmware load, and HCI Reset sent at 115200 to 3 M
+  with and without flow control. Questions are with Seeed (does it work on
+  their image, which UART and speed the firmware uses). `force_reset=1` on the
+  module reloads the firmware without a power cycle but wedged SDIO after a few
+  tries; reboot to recover. The recipe packages WuQi's driver 2.2.3.94 and the firmware, both
   taken from Seeed's factory image (`/usr/src/wq9201s-wifi-bt-dkms-2.2.3.94`,
   `/lib/firmware/wq9201_*`). Its `-Werror` is stripped because wrynose's GCC 15
   is newer than the GCC 12 it was built with. Bluetooth attaches as
@@ -255,8 +269,11 @@ so the first release after it can be pinned here directly.
   image leaves the team. The AIC8800 pairing workaround
   (`/var/lib/robot/weird-ble`, written by the daemon recipe on every machine)
   is to be re-measured on this radio.
-- **Daemon releases** carrying `msrv-yocto-ceiling` (so the image can pin the
-  newest) and `audio-default-fallback` (so robotd speaks on this board).
+- **A daemon release carrying microduck#358**: the Rust ceiling (so the image
+  can pin the newest), the audio fallback (so robotd speaks on this board) and
+  `robotctl led`. microduck#357 (`[board] version`) is what lets
+  `microduck-board` declare the board; until then `robotctl health` shows
+  `zero3 (not declared)`.
 - **A GC2613 driver.** radxa's `drivers/media/i2c` stops at gc2385. Seeed's
   kernel has one, and describes gc2613@0x31 and gc2093@0x37 on I2C2 (MCLK from
   CIF_CLKOUT, 2 lanes into csi2_dphy0). Until our kernel has it the camera is
@@ -266,7 +283,10 @@ so the first release after it can be pinned here directly.
 - **The ToF part.** It is on SPI, so it is not the prototype's VL53L5CX, which is
   I²C only. `tofd` needs an SPI transport, and `/dev/spidev*` needs a udev rule
   giving `tofd` access, the same way `60-robot-i2c.rules` does for I²C.
-- **The PDM mic's channel and the codec path** are configured from the
-  drivers' source, not from a board. `rockchip,path-map` and `hp-ctl-gpios` are
-  the two lines to suspect.
+- **The face mic is quiet.** The routing is verified: with the speaker
+  playing a tone, only SDI1 (the line `rockchip,path-map` picks) carries
+  signal, through `default` as well as `hw:facemic`. But that tone reads about
+  -59 dBFS, and talking and clapping 30 cm away barely clears the noise. The
+  PDM block has no gain register. Either the mic is not the part or
+  orientation Seeed intended, or `default` needs a softvol boost.
 - **A newer schematic**, to diff against every block above.
