@@ -106,6 +106,15 @@ adapter was ever attached to read the console UART2 was being held for, and
 `robotd` cannot open its bus without `/dev/ttyS2`. A kernel that dies still
 prints to HDMI, via the `console=tty0` the dts patch puts in bootargs.
 
+### The beta board
+
+The custom PCB's first spin is machine `microduck-beta`: a Seeed RK3566 board
+with eMMC and no SD slot, motors on UART3 (still `/dev/ttyS2`), the console on
+UART2's test pads, and a device tree of its own in this layer. Build it with
+`kas build kas/microduck.yml:kas/beta.yml` (or `HFJOB_MACHINE=microduck-beta`),
+flash it over USB-C with `rkdeveloptool`. `docs/agents/beta-board.md` covers
+flashing, bring-up order and what is not verified, which today is all of it.
+
 ### Which Zero 3W do you have
 
 The board shipped with two incompatible wifi modules. Check on the existing

@@ -1,8 +1,12 @@
-# Shared by every microduck machine (the Radxa Zero 3W now, the custom PCB later).
+# Shared by every microduck machine: the Radxa Zero 3W stand-in
+# (microduck-zero3) and the beta board, the custom PCB's first spin
+# (microduck-beta).
 
-# UART2 is both the RK3566 debug console -- exposed as ttyFIQ0 by the vendor
-# BSP's FIQ debugger -- and the wire robotd drives 15 Dynamixel XL330 servos
-# plus the imu_to_dxl board (ID 200) on at 1 Mbaud.
+# On the Zero 3W, UART2 is both the RK3566 debug console -- exposed as ttyFIQ0
+# by the vendor BSP's FIQ debugger -- and the wire robotd drives 15 Dynamixel
+# XL330 servos plus the imu_to_dxl board (ID 200) on at 1 Mbaud. The beta board
+# moved the motors to UART3 and sets this to "0": there UART2 is only the
+# console, and the motor UART is still /dev/ttyS2 by a DT alias swap.
 #
 # They cannot share it. A getty does not merely hold the port open, it *reads*
 # it, consuming the servo replies before robotd sees them, and kernel printk

@@ -1,0 +1,11 @@
+# The beta board (microduck-beta) instead of the Zero 3W stand-in.
+#
+#   kas build kas/microduck.yml:kas/beta.yml
+#
+# Composed last, so it changes the machine and nothing else -- every layer pin,
+# the target and local.conf stay exactly what microduck.yml says. For a job
+# build, `HFJOB_MACHINE=microduck-beta scripts/build-hfjob.sh` does the same.
+header:
+  version: 14
+
+machine: microduck-beta

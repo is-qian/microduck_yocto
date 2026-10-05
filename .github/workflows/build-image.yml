@@ -29,6 +29,11 @@ on:
         description: "single recipe to build, e.g. linux-rockchip (empty = whole image)"
         type: string
         default: ""
+      machine:
+        description: "board: the Zero 3W stand-in, or the beta board"
+        type: choice
+        options: [microduck-zero3, microduck-beta]
+        default: microduck-zero3
       flavor:
         description: "HF Jobs hardware flavor"
         type: choice
@@ -82,6 +87,9 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HFJOB_TARGET: ${{ inputs.target }}
+          # A push builds the Zero 3W only; the beta board is built on demand
+          # until it is the board people flash, so a push does not cost two builds.
+          HFJOB_MACHINE: ${{ inputs.machine || 'microduck-zero3' }}
           HFJOB_FLAVOR: ${{ inputs.flavor || 'cpu-performance' }}
         run: |
           set -eu
