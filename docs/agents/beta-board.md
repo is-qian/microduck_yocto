@@ -39,7 +39,7 @@ still a claim to check, in the order below.
 | PMIC | RK817 | RK809 + RK860-1 (TCS4525 footprint-compatible) |
 | motor bus | UART2, fought over with the console | UART3; UART2 is only the console, on TP83/TP84 |
 | `/dev/ttyS2` | UART2 | UART3, by a `serial2`/`serial3` alias swap in the DTS |
-| radio | AIC8800DS2 | WL6201S module = **WuQi WQ9201S**, no recipe yet: no wifi, no BT |
+| radio | AIC8800DS2 | WL6201S module = **WuQi WQ9201S** (`recipes-kernel/wq9201s`) |
 | way in without radio | none | USB-C gadget: serial console + network, robot at 192.168.42.1 |
 | audio | none on the board | RK809 codec → NS4150B amp → speaker; PDM mic on the face board |
 | audio routing | `plughw:aic3104` | ALSA `default` → RK809 + face mic, SPK path set at boot |
@@ -189,9 +189,11 @@ Each step assumes the ones before it passed.
    at the node.
 5. **Identity.** `cat /proc/device-tree/compatible`, the VIN1 reading above,
    and `xxd /sys/bus/i2c/devices/1-0050/eeprom | head`.
-6. **Radio.** Not expected to work yet: there is no WuQi recipe. The SDIO card
-   should still enumerate, as `mmc2:0001:*`, vendor 0x0297. The USB-C gadget
-   is the way in meanwhile: `systemctl status microduck-usb-gadget
+6. **Radio.** `lsmod | grep wq_wlan`, then `ip link show wlan0` (the driver has
+   loaded its firmware when wlan0 exists), then `systemctl status wq9201s-bt`
+   and `hciconfig hci0`, which should show a non-zero address. The SDIO card is
+   `mmc2:0001:*`, vendor 0x0297, whatever the driver does. If the radio is down,
+   the USB-C gadget is the way in: `systemctl status microduck-usb-gadget
    microduck-usb-dhcp` if it does not show up on the host.
 7. **Motors.** `ls -l /dev/ttyS2` should resolve to `fe670000.serial` (UART3) in
    `dmesg`, then `robotctl health`.
@@ -220,18 +222,17 @@ so the first release after it can be pinned here directly.
 
 ## Open items, each blocking something specific
 
-- **A WuQi WQ9201S recipe**: driver, firmware, BT attach unit. Without it the
-  image has no wifi and no Bluetooth, so no updates and no phone provisioning.
-  Seeed's image carries everything it needs (above), and the driver builds with
-  plain kbuild (`make -C <kernel> M=src/wifi/rwnx_drv modules`; strip its
-  `-Werror`, it was built with GCC 12 and wrynose has 15). BT is
-  `btattach -B /dev/ttyS1 -N -P h4 -S 1500000` once `wlan0` exists (the driver
-  downloads the BT firmware), and never `hciattach 3wire` in the same boot.
-  Ship Seeed's `wq_wlan_settings.ini` (single antenna, BT on the wifi
-  antenna), not the source tree's default. Redistributing the firmware needs
-  Seeed's or WuQi's terms. `MICRODUCK_RADIO_PACKAGES` is where its BT package
-  goes; the AIC8800 pairing workaround (`/var/lib/robot/weird-ble`, written by
-  the daemon recipe on every machine) is to be re-measured on this radio.
+- **The WuQi radio is unverified.** `recipes-kernel/wq9201s` has never been
+  built or booted. It packages WuQi's driver 2.2.3.94 and the firmware, both
+  taken from Seeed's factory image (`/usr/src/wq9201s-wifi-bt-dkms-2.2.3.94`,
+  `/lib/firmware/wq9201_*`). Its `-Werror` is stripped because wrynose's GCC 15
+  is newer than the GCC 12 it was built with. Bluetooth attaches as
+  `btattach -B /dev/ttyS1 -N -P h4 -S 1500000` once wlan0 exists; never run
+  `hciattach 3wire` in the same boot. **The firmware's redistribution terms are
+  unknown** (`LICENSE = "CLOSED"`): settle them with Seeed or WuQi before an
+  image leaves the team. The AIC8800 pairing workaround
+  (`/var/lib/robot/weird-ble`, written by the daemon recipe on every machine)
+  is to be re-measured on this radio.
 - **Daemon releases** carrying `msrv-yocto-ceiling` (so the image can pin the
   newest) and `audio-default-fallback` (so robotd speaks on this board).
 - **A GC2613 driver.** radxa's `drivers/media/i2c` stops at gc2385. Seeed's

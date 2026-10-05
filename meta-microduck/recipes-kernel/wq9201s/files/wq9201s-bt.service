@@ -1,0 +1,16 @@
+[Unit]
+Description=Attach the WQ9201S Bluetooth HCI on UART1
+Documentation=file:///usr/libexec/wq9201s-bt-attach
+Before=bluetooth.service
+After=systemd-modules-load.service
+ConditionPathExists=/dev/ttyS1
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/sbin/rfkill unblock all
+ExecStart=/usr/libexec/wq9201s-bt-attach
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
