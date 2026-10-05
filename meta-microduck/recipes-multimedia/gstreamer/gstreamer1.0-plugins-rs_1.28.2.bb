@@ -78,10 +78,13 @@ inherit cargo_c cargo-update-recipe-crates
 # the webrtcbin element comes from -- see the bbappend enabling PACKAGECONFIG webrtc.
 DEPENDS += "gstreamer1.0 gstreamer1.0-plugins-base gstreamer1.0-plugins-bad"
 
-# Two of 65 workspace members. Building the whole repo would be hundreds of crates of
-# plugins nothing here needs. gst-plugin-rtp comes along because the webrtc plugin's
-# payloading path uses it.
-CARGO_BUILD_FLAGS += "--package gst-plugin-webrtc --package gst-plugin-rtp"
+# Three of 65 workspace members. Building the whole repo would be hundreds of crates
+# of plugins nothing here needs. gst-plugin-rtp comes along because the webrtc
+# plugin's payloading path uses it. gst-plugin-tracers (buffer-lateness,
+# queue-levels, pipeline-snapshot, pad-push-timings, memory-tracer, pcap-writer)
+# is pure Rust -- every crate it pulls is already in crates.inc, since Cargo.lock
+# covers the whole workspace -- and lands in its own package for the dev image.
+CARGO_BUILD_FLAGS += "--package gst-plugin-webrtc --package gst-plugin-rtp --package gst-plugin-tracers"
 
 # Point cargo at the fetched checkouts, one [patch] entry per crate.
 #
@@ -211,9 +214,12 @@ do_configure[postfuncs] += "microduck_cargo_git_patch_paths"
 
 # GStreamer plugins are unversioned .so files inside a plugin directory, so they
 # belong in the runtime package and dev-so has to be skipped.
+PACKAGE_BEFORE_PN += "${PN}-tracers"
+FILES:${PN}-tracers = "${libdir}/gstreamer-1.0/libgstrstracers.so"
 FILES:${PN} += "${libdir}/gstreamer-1.0/*.so"
 FILES:${PN}-dev += "${libdir}/gstreamer-1.0/*.a ${libdir}/pkgconfig"
 INSANE_SKIP:${PN} += "dev-so"
+INSANE_SKIP:${PN}-tracers += "dev-so"
 
 # webrtcsink builds a pipeline around webrtcbin at runtime; without this the plugin
 # loads and then fails at pipeline construction.

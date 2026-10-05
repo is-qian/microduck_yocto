@@ -56,7 +56,9 @@ or, on the HF Jobs path, `HFJOB_TARGET=microduck-image scripts/build-hfjob.sh`.
 dev board is a strict superset of the shipping one and anything verified on it
 holds for both. What it adds: password-less root login, `microduck-daemon-padd`,
 and enough userspace to debug over ssh (`coreutils`, `util-linux`, `strace`,
-`iw`, `tcpdump`, `evtest`, `less`, `e2fsprogs`).
+`iw`, `tcpdump`, `evtest`, `less`, `e2fsprogs`), plus the GStreamer tracer
+plugins (`gstreamer1.0-tracers`, `gstreamer1.0-plugins-rs-tracers`) for
+`GST_TRACERS=latency` / `pipeline-snapshot` on mediad's pipeline.
 
 The password-less root login is the only difference that *has* to be an image
 rather than configuration — you need a login before you can configure anything,

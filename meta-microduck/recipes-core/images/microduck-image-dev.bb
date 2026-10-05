@@ -31,7 +31,17 @@ IMAGE_INSTALL:append = " \
     iw \
     tcpdump \
     evtest \
+    gstreamer1.0-tracers \
+    gstreamer1.0-plugins-rs-tracers \
 "
+
+# The two GStreamer tracer plugins, each split out of its recipe so the shipping
+# image does not carry them. `GST_TRACERS=latency(flags=pipeline+element)` and
+# the Rust `buffer-lateness`, `queue-levels` and `pipeline-snapshot` (SIGUSR1
+# writes .dot files to GST_DEBUG_DUMP_DOT_DIR) are how you find where the WebRTC
+# path spends its milliseconds without instrumenting mediad. The tracer *hooks*
+# are compiled into libgstreamer for both images -- oe-core builds it without
+# them, see gstreamer1.0_%.bbappend -- only the plugins are dev-only.
 
 # microduck-daemon-devkey is what makes this a *dev board* in updaterd's sense:
 # it installs team.dev.pub and flips allow_dev_keys, so `robotctl update apply
