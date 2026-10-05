@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
- * microduck beta: Seeed "MicroDuck Main Board", RK3566, 1 GB DDR3, 64 GB eMMC.
+ * microduck beta: Seeed "MicroDuck Main Board", RK3566, 1 GB DDR4, 64 GB eMMC.
  *
  * Transcribed from the V0.1 schematic dated 2026-09-09 (24 sheets), then
  * corrected against the device tree Seeed's own image boots on a real board
@@ -473,7 +473,11 @@
 				};
 			};
 
-			/* DDR3, 1.53 V set by the feedback divider (R78/R79), not software. */
+			/*
+			 * DRAM supply, set by the feedback divider (R78/R79), not software.
+			 * V0.1 fits it for DDR3 (1.53 V); the boards carry DDR4, so the
+			 * fitted divider is presumably the DDR4 one (1.2 V).
+			 */
 			vcc_ddr: DCDC_REG3 {
 				regulator-always-on;
 				regulator-boot-on;

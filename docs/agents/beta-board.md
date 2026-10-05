@@ -1,7 +1,8 @@
 # The beta board (`microduck-beta`) — what an agent needs to know
 
 The first spin of the custom microduck PCB: a Seeed-designed RK3566 board
-(derived from their Home Assistant Green), 1 GB DDR3, 64 GB eMMC, no SD slot.
+(derived from their Home Assistant Green), 1 GB DDR4 (V0.1's schematic says
+DDR3), 64 GB eMMC, no SD slot.
 Machine `microduck-beta`, device tree
 `meta-microduck/recipes-kernel/linux/files/rk3566-microduck-beta.dts`.
 
@@ -78,7 +79,11 @@ what our image is missing:
 - `/sys/firmware/fdt`: their device tree.
 
 The bootloader line in its cmdline (`ddr-v1.26`, `spl-v1.14`) is the same rkbin
-DRAM init our U-Boot uses, so DDR3 init is not a risk.
+DRAM init our U-Boot uses since the first boot attempt. Before that it used
+meta-rockchip's default, `rk3568_ddr_1560MHz_v1.19`, and the board never got past
+power-on: no USB, no LEDs. The beta's U-Boot now packs Seeed's blobs
+(`rk3566_ddr_1056MHz_v1.26`, `rk356x_spl_v1.14`), and the build fails if the
+idblock does not carry them.
 
 Its `/etc/armbian-release` also carries an internal GitLab CI token in
 `BUILD_REPOSITORY_URL`, which Seeed should know about.
@@ -157,7 +162,7 @@ mode talks to. Flashing goes through it, with `rkdeveloptool`.
 3. **Write it.** `loader.bin` is deployed next to the `.wic`:
    ```sh
    sudo rkdeveloptool db loader.bin       # runs DRAM init in SRAM
-   sudo rkdeveloptool rfi                 # flash info: proves DDR3 + eMMC before writing
+   sudo rkdeveloptool rfi                 # flash info: proves DRAM + eMMC before writing
    sudo rkdeveloptool wl 0 microduck-image-dev-microduck-beta.rootfs.wic
    sudo rkdeveloptool rd
    ```
@@ -168,7 +173,7 @@ mode talks to. Flashing goes through it, with `rkdeveloptool`.
    That is the cheap backup of a board's bootloader area before reflashing.
 
    `db` succeeding is the first hardware result worth recording. It runs the
-   same rkbin DRAM init as the image's idblock, on DDR3, which nothing has
+   same rkbin DRAM init as the image's idblock, on DDR4, which nothing had
    tried yet. The `.wic` is sparse at 12.1 GiB, and `wl` writes every byte of
    it, zeros included, so expect minutes rather than seconds over USB 2.
 
