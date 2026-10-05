@@ -51,7 +51,7 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/Apache-2.0;md5=89aea4e17d99a7ca
 # The pin is `PV`, so it is in the filename: microduck-policies_v5.bb. And it belongs to
 # the daemon rather than to us -- `POLICY_VERSION` in the release's own
 # scripts/seed-policies.sh, which an xtask test holds against
-# [workspace.metadata.policies] in Cargo.toml. It is v5 at daemon 0.13.0 and still v5 at
+# [workspace.metadata.policies] in Cargo.toml. It is v5 at daemon 0.13.0 and 0.15.0, and still v5 at
 # 0.14.1, so rename this file in step with a daemon bump.
 #
 # Seeding *below* what the daemon names is the one thing that actively breaks: its
