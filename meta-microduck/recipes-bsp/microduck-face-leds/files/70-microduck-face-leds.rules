@@ -1,0 +1,8 @@
+# The face board's LEDs (face:<place>:<colour>, gpio-leds on the PCA9535 expander in
+# rk3566-microduck-beta.dts) are root-only by default. Let the robot group switch
+# them and choose their trigger, which is what `robotctl led` and any daemon that
+# owns an LED need. delay_on/delay_off only exist once the timer trigger is set,
+# so they stay root's: a custom blink rate needs sudo, the default 500/500 does not.
+ACTION=="add", SUBSYSTEM=="leds", KERNEL=="face:*", \
+	RUN+="/bin/chgrp robot /sys%p/brightness /sys%p/trigger", \
+	RUN+="/bin/chmod g+w /sys%p/brightness /sys%p/trigger"
