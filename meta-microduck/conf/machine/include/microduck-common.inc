@@ -30,6 +30,12 @@
 # printk back on the servo wires, the exact failure this flag exists to prevent.
 MICRODUCK_MOTOR_UART ?= "1"
 
+# Which electronic board this is, in microduck_daemon's terms ([board] version in
+# robotd.toml: "zero3" or "beta"). microduck-board writes it into the image; the
+# updater derives the hardware revision a release is checked against from it. Each
+# machine conf sets its own.
+MICRODUCK_BOARD ?= ""
+
 # The radio's userspace, per machine: what microduck-image installs for the
 # Bluetooth attach, and what microduck-image-dev adds for diagnosing it. The
 # driver and firmware themselves come through RK_WIFIBT_RRECOMMENDS. Defaults

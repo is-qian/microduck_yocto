@@ -94,6 +94,16 @@ detect at install time. The two places it is visible afterwards:
 - **RAUC** `compatible=` is `${MACHINE}`, so a Zero 3W bundle refuses to install
   on a beta board and vice versa.
 
+The daemon has its own word for the board: `[board] version` in
+`/etc/robot/robotd.toml` (`"zero3"` or `"beta"`, microduck_daemon#357), which the
+updater turns into the hardware revision a release is checked against (zero3 1,
+beta 2). It is declared, not detected: `microduck-board` writes the machine's
+`MICRODUCK_BOARD` into the file when the image is assembled. Only once the image's
+daemon knows the key, though. 0.15.0's robotd refuses unknown tables, so with it
+the package logs that it declared nothing, and the board answers as `zero3` until
+the daemon pin moves past #357. `robotctl health` on a #357 daemon warns when the
+declaration and `/proc/device-tree/compatible` disagree.
+
 The board **revision** within the beta family comes from hardware. The SARADC
 VIN1 divider (sheet 14) reads raw 1023 on V0.1 ("Version_1"), and Seeed's table
 defines seven levels:
