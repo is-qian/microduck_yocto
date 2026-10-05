@@ -57,8 +57,10 @@ RAUC_CERT=${HFJOB_RAUC_CERT:-$RAUC_KEYDIR/development-1.cert.pem}
 case "$TARGET" in
 *bundle*)
 	for f in "$RAUC_KEY" "$RAUC_CERT"; do
-		[ -r "$f" ] && continue
-		echo "$0: target '$TARGET' needs a signing pair and $f is not readable." >&2
+		# -s, not -r: CI writes the pair from secrets, so a missing secret is an
+		# empty file that -r would wave through.
+		[ -s "$f" ] && [ -r "$f" ] && continue
+		echo "$0: target '$TARGET' needs a signing pair and $f is empty or not readable." >&2
 		echo "  Generate it once (README.md 'Signing keys are not in this repo')," >&2
 		echo "  or point HFJOB_RAUC_KEYDIR at an existing one." >&2
 		exit 1
