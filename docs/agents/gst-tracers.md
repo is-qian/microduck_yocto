@@ -229,8 +229,13 @@ Open, not chased:
 - **The +20.4 ms hand-off.** That is `appsink2` in the main pipeline to the
   session's `appsrc` pushing, via gst-plugins-rs `StreamProducer`. It is nearly
   constant (p95 only 0.8 ms above p50), which looks like a fixed wait rather
-  than queueing. The pipeline's reported latency (53.3) is exactly the source's
-  33.3 plus 20, which fits that. The cause was not found.
+  than queueing. The `buffer_lateness.py` plot settles that part: the frames' age
+  at `video_0:src` rides exactly on the session's reported latency line, 53.3 ms,
+  while at `clocksync0` it rides on 33.3 ms. So frames are held until the
+  session's configured latency, which is 20 ms more than the source's one frame.
+  What adds those 20 ms to the session's latency was not found.
+  The script reports such pads as "100% late" because each frame leaves a few
+  hundred µs after its deadline, which is a sign of the hold, not of lost frames.
 - **What the 20.8 ms is from.** `v4l2src` stamps buffers from the driver's
   V4L2 timestamp. Whether rkisp takes that at start or end of frame was not
   checked, and the two differ by most of a frame's readout.
