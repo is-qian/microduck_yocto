@@ -135,10 +135,11 @@ mode talks to. Flashing goes through it, with `rkdeveloptool`.
      just reboots normally, use one of the next two.
    - Otherwise, short **TP64 (eMMC_D0) to TP4 (GND)** while powering on
      (sheet 12).
-   - The **button next to the USB-C** is probably the Recovery button
-     (SARADC VIN0 in V0.1), which reaches *loader* mode, not maskrom; flashing
-     works from either. `rkdeveloptool ld` says which mode you got. It may get
-     there without opening anything. The DTS describes it as an `adc-keys` entry the way Rockchip's evb
+   - The **button next to the USB-C** is the Recovery button: hold it while
+     powering on and the board comes up in **loader** mode (`2207:350a`,
+     `rkdeveloptool ld` says `Loader`). Verified 2026-10-05 through Seeed's
+     U-Boot. Ours is the same Rockchip vendor U-Boot and the DTS describes the
+     key as Seeed's does, but that half is not yet verified. The DTS describes it as an `adc-keys` entry the way Rockchip's evb
      does, which is what Rockchip's U-Boot reads to enter loader mode. Not
      verified on this board.
 
@@ -151,6 +152,10 @@ mode talks to. Flashing goes through it, with `rkdeveloptool`.
    sudo rkdeveloptool rd
    ```
    In loader mode, skip `db`: the loader is already running.
+
+   Debian/Ubuntu's `rkdeveloptool` (1.32, pine64 fork) takes `rl`'s length in
+   **bytes**, not sectors: `rl 0 33554432 first32M.img` reads the first 32 MiB.
+   That is the cheap backup of a board's bootloader area before reflashing.
 
    `db` succeeding is the first hardware result worth recording. It runs the
    same rkbin DRAM init as the image's idblock, on DDR3, which nothing has
