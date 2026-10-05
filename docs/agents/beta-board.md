@@ -46,7 +46,7 @@ still a claim to check, in the order below.
 | audio routing | `plughw:aic3104` | ALSA `default` → RK809 + face mic, SPK path set at boot |
 | camera | IMX219 | GC2613 or GC2093, **no GC2613 driver in our kernel**, not described yet |
 | face board | — | PCA9535 + 12 LEDs and maybe the IMU on I2C3, ToF on SPI3 (1.8 V), stereo PDM mic |
-| fan | — | its own thermal zone: off below 52 °C, steps up from 60 °C |
+| fan | — | trips in soc-thermal: off below 52 °C, steps up from 60 °C |
 | other | HDMI | NFC (ST25R100, SPI1), fan header, Qwiic (I2C4), board-ID EEPROM |
 
 `/dev/ttyS2` is the motor bus on both boards on purpose. `robotd.toml`, the
@@ -227,9 +227,11 @@ Each step assumes the ones before it passed.
    path at boot. `speaker-test -c1 -t sine -l1` should be audible. robotd plays on
    `default` here only from the release that carries the daemon's
    `audio-default-fallback` change; before that it is silent on this board.
-10. **Fan.** `cat /sys/class/thermal/thermal_zone*/type` lists `fan-thermal`,
-    whose `policy` must read `step_wise` (set by `microduck-fan`'s udev rule).
-    `cur_state` in its `cooling_device` should be 0 at idle.
+10. **Fan.** The `soc-thermal` zone carries the fan's trips (`trip_point_*`
+    shows three `active` ones besides the dtsi's) and its `policy` must read
+    `step_wise` (set by `microduck-fan`'s udev rule). The `pwm-fan`
+    `cooling_device` should be at state 0 at idle. Checked by hand on the first
+    board: states 0/1/2/3 give 0/7.9k/12.9k/18k rpm on `hwmon`'s `fan1_input`.
 
 ## Which daemon the image carries
 

@@ -1,11 +1,18 @@
-# The fan's thermal zone runs step_wise, not the kernel default.
+# soc-thermal, the zone the fan's trips live in, runs step_wise, not the
+# kernel default.
 #
 # The kernel's default governor here is power_allocator, which steers only a
 # zone's last passive trip through cooling devices that have a power model. The
 # fan has none, so under it the fan would sit wherever pwm-fan left it -- full
-# duty, set at probe. step_wise walks the fan through the zone's active trips.
+# duty, set at probe. step_wise walks the fan through the zone's active trips,
+# and throttles the CPU at its passive one.
 #
-# Keyed on the zone's type, which is its device-tree node name ("fan-thermal",
-# rk3566-microduck-beta.dts), never on thermal_zoneN: the number follows
-# registration order. On a board with no such zone this matches nothing.
-ACTION=="add", SUBSYSTEM=="thermal", KERNEL=="thermal_zone*", ATTR{type}=="fan-thermal", ATTR{policy}="step_wise"
+# The fan's trips are in soc-thermal because Rockchip's thermal driver registers
+# one zone per sensor and a fan zone of its own never appears
+# (rk3566-microduck-beta.dts says more). So this changes the CPU's governor
+# too, and is only for a machine whose DTS puts a fan there: the package is in
+# that machine's MACHINE_EXTRA_RRECOMMENDS, never in an image.
+#
+# Keyed on the zone's type, which is its device-tree node name, never on
+# thermal_zoneN: the number follows registration order.
+ACTION=="add", SUBSYSTEM=="thermal", KERNEL=="thermal_zone*", ATTR{type}=="soc-thermal", ATTR{policy}="step_wise"
