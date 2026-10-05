@@ -29,6 +29,13 @@ Which one answers which question:
   `latency` cannot see because it starts counting at that push.
 - **`pipeline-snapshot`** — a `.dot` of every pipeline in the process on
   `SIGUSR1`. Includes `webrtcsink`'s per-consumer session pipelines.
+- **No tracer at all**, for `mediad`'s main pipeline only: with
+  microduck_daemon's `mediad-gst-deinit` branch (not merged as of 2026-10-05),
+  `GST_DEBUG_DUMP_DOT_DIR=/run/mediad` in a drop-in makes `mediad` write
+  `mediad.NULL_READY.dot`, `READY_PAUSED`, `PAUSED_PLAYING` (and `mediad.error`
+  on an error), the same dumps `gst-launch-1.0` makes. `webrtcsink` adds its
+  discovery pipelines' dumps by itself. Session pipelines are separate
+  pipelines, so for those it is still `pipeline-snapshot`.
 - **`queue-levels`** — fill level of every queue over time; for a stall.
 
 ## The catch with the CSV tracers
