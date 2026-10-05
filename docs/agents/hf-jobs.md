@@ -29,31 +29,29 @@ gives empty; use `(.[0]? // .) | .status.stage`.
 
 ## The input sync left a deleted file behind, and it killed the parse
 
+**Fixed 2026-10-05: `build-hfjob.sh` now copies `kas/` and `meta-microduck/`
+into a fresh temp directory, so every job syncs into a folder of its own.** The
+history below is why.
+
 `hf jobs -v ./meta-microduck:/src/meta-microduck` syncs into a **stable**
-per-directory bucket prefix (`jobs-artifacts/meta-microduck-<hash>`). The prefix
-does not change when the content does.
+bucket prefix (`jobs-artifacts/meta-microduck-<hash>`). The hash is
+`sha256(hostname:absolute path)[:8]`, and the sync runs with `delete=False`:
+read in huggingface_hub's `_jobs_api.py` (`_derive_job_volume_name`) and
+`hf_api.py` (`sync_job_volume`). So a file removed from the repo stays in the
+prefix, and every job mounts it.
 
-**Observed on hf 1.30.0, 2026-09-21:** renaming a file locally uploaded the new
-name and left the old one in the bucket, so both were mounted. Do not read that
-as "the sync never deletes" — a later run printed a plan with an explicit
-`Deletes: 0` line, so the machinery exists and the exact rule is not established.
-What is established is that a removed file survived a sync and broke two builds.
-Treat divergence as possible and check it, rather than trusting either direction.
+It broke builds twice:
+- **2026-09-21:** renaming a file locally uploaded the new name and left the old
+  one in the bucket, so both were mounted.
+- **2026-10-05:** on GitHub the checkout path is the same for every run, so all
+  branches shared one prefix. A main-based branch's run built the
+  `microduck-daemon_0.15.0.bb` a `beta-board` run had uploaded, with main's
+  crate list, and failed in `do_compile`.
 
-For a `.bbappend` this fails the **entire parse**, 25 seconds into bitbake and
-~39 minutes into the job:
-
-    ERROR: No recipes in default available for:
-      .../recipes-bsp/u-boot/u-boot-rockchip_%.bbappend
-
-Re-running changed nothing. `git mv` locally was not enough — the bucket copy had
-to go too:
-
-    hf buckets rm -y 'hf://buckets/pollen-robotics/jobs-artifacts/<prefix>/<path>'
-
-Check before a build that follows a rename or a deletion: list the prefix the
-last job mounted and compare it with the repo. Only a stale `.bbappend` breaks the
-parse; a stale `.bb` is benign, since bitbake takes the highest `PV`.
+A stale `.bbappend` fails the **entire parse** (`ERROR: No recipes in default
+available for: .../u-boot-rockchip_%.bbappend`). A stale `.bb` is not benign
+either: bitbake takes the highest `PV`, which is how the October run built a
+recipe that didn't belong to its branch.
 
 To see what a job actually mounted:
 
