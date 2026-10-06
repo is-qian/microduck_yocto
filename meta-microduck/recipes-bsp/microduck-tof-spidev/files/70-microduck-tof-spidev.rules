@@ -1,0 +1,7 @@
+# The face board's ToF, a VL53L8CX on SPI3 (rk3566-microduck-beta.dts, &spi3), is a
+# spidev, and spidev nodes are root-only by default. tofd drives it from userspace
+# and runs as tofd with the robot group, so the robot group gets it.
+#
+# Matched on the controller, fe640000.spi, rather than on spidev3.0: the NFC reader
+# on SPI1 is a spidev too, and an alias renumbering must not hand it out instead.
+SUBSYSTEM=="spidev", KERNELS=="fe640000.spi", GROUP="robot", MODE="0660"

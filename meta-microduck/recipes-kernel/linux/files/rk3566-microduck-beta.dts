@@ -728,9 +728,10 @@
 
 /*
  * Sheet 15/24: the face board's ToF sensor is on SPI3_M0 at 1.8 V, with
- * TOF_INT on GPIO4_B6 and TOF_SYNC on GPIO4_B7. That rules out the VL53L5CX
- * the prototype uses (I2C only); which part it is, and so its maximum clock, is
- * not known. Exposed as spidev for tofd, at Seeed DTB's 8 MHz.
+ * TOF_INT on GPIO4_B6 and TOF_SYNC on GPIO4_B7. The part is a VL53L8CX
+ * (VL53L8CXV9GC/1); the prototype's VL53L5CX is I2C only. Exposed as spidev
+ * for tofd at Seeed DTB's 8 MHz ceiling; tofd itself clocks it at ST's 2 MHz.
+ * microduck-tof-spidev gives the node to the robot group.
  */
 &spi3 {
 	status = "okay";

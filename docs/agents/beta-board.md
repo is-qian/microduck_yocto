@@ -281,9 +281,10 @@ release's `Cargo.lock` files on every bump.
   deliberately absent from the DTS: a sensor node nothing binds would leave
   rkisp waiting and produce no `/dev/video*` at all.
 - **Fan trips** (60/68/75 °C) are starting points, not measured values.
-- **The ToF part.** It is on SPI, so it is not the prototype's VL53L5CX, which is
-  I²C only. `tofd` needs an SPI transport, and `/dev/spidev*` needs a udev rule
-  giving `tofd` access, the same way `60-robot-i2c.rules` does for I²C.
+- **The ToF over SPI is untested on hardware.** The part is a VL53L8CX
+  (VL53L8CXV9GC/1). `tofd` drives it over SPI from pollen-robotics/microduck#364,
+  and `microduck-tof-spidev` gives `/dev/spidev3.0` to the robot group. Neither
+  has run against the sensor yet.
 - **The face mic is quiet.** The routing is verified: with the speaker
   playing a tone, only SDI1 (the line `rockchip,path-map` picks) carries
   signal, through `default` as well as `hw:facemic`. But that tone reads about
