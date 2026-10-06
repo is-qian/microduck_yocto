@@ -248,17 +248,16 @@ release's `Cargo.lock` files on every bump.
 
 ## Open items, each blocking something specific
 
-- **The WuQi radio: wifi works, Bluetooth does not.** Wifi associates and
+- **The WuQi radio.** Wifi associates and
   holds once an antenna is on the U.FL connector; without one every network
   reads 20-25 % and the link drops, after which the driver refused to
-  associate until `modprobe -r wq_wlan; modprobe wq_wlan`. Bluetooth, as of
-  2026-10-05: the driver downloads the BT firmware ("BT download success",
-  visible with `wq_dbg_lv=3` in the settings ini), the UART1 pins and
-  `BT_REG_ON` match both Seeed's DTB and the schematic, and the controller
-  still never sends a byte. That held with the unit stopped, `BT_REG_ON`
-  raised before a fresh firmware load, and HCI Reset sent at 115200 to 3 M
-  with and without flow control. Questions are with Seeed (does it work on
-  their image, which UART and speed the firmware uses). `force_reset=1` on the
+  associate until `modprobe -r wq_wlan; modprobe wq_wlan`. Bluetooth works
+  once btattach can set a baud rate: under wrynose's glibc it could not
+  (`recipes-connectivity/bluez5` has the measurement and the backported fix),
+  so the controller was never answering at a rate we were listening on. The
+  driver loads the BT firmware over SDIO ("BT download success" with
+  `wq_dbg_lv=3` in the settings ini) and the controller answers at 1500000 on
+  UART1. `force_reset=1` on the
   module reloads the firmware without a power cycle but wedged SDIO after a few
   tries; reboot to recover. The recipe packages WuQi's driver 2.2.3.94 and the firmware, both
   taken from Seeed's factory image (`/usr/src/wq9201s-wifi-bt-dkms-2.2.3.94`,

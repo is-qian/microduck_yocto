@@ -16,12 +16,14 @@ Type=simple
 # than the rfkill(8) tool so this unit needs no package beyond bluez.
 ExecStartPre=/bin/sh -c 'for r in /sys/class/rfkill/*; do [ "$(cat $r/type)" = bluetooth ] && echo 0 > $r/soft; done; exit 0'
 
-# -s 1500000 is the load-bearing flag: it sets the port speed *before* the HCI
-# line discipline attaches. btattach attaches the ldisc first, so the controller's
-# replies land on an unconfigured port -- measured 2026-09-11 as TX 4 bytes,
-# RX 0, HCI_Reset timing out, at every baud and flow-control combination. With
-# hciattach the same hardware answers immediately: "Device setup complete",
-# BD address 50:37:CD:16:5A:3D, HCI 5.4.
+# hciattach rather than btattach. btattach failed here as TX 4 bytes, RX 0,
+# HCI_Reset timing out at every baud and flow-control combination (2026-09-11).
+# That was first read as btattach attaching the ldisc before setting the speed,
+# but it does not: it could not set a speed at all under glibc >= 2.42, which
+# made speed_t the plain rate. recipes-connectivity/bluez5 now carries the
+# upstream fix, so btattach would work too; hciattach, which uses
+# cfsetospeed(), answered immediately ("Device setup complete",
+# BD address 50:37:CD:16:5A:3D, HCI 5.4) and stays.
 #
 # -n keeps it in the foreground so systemd owns the process. It must stay alive:
 # it holds the line discipline, and the adapter disappears when it exits.
