@@ -34,8 +34,8 @@ local_conf_header:
   bucket-mirrors: |
     # Read downloads/ in the bucket (mounted at /cache) as a mirror, not copied in
     # first: it is 128 GB, and a build reusing 99% of its tasks fetches almost
-    # nothing. sstate/ is still bulk-copied; see scripts/build-hfjob.sh for why
-    # SSTATE_MIRRORS through the mount was tried and dropped.
+    # nothing. sstate travels as one archive instead; scripts/build-hfjob.sh has
+    # the numbers, and why SSTATE_MIRRORS through the mount was tried and dropped.
     #
     # - git: MIRRORNAME expands to host.path with / turned into dots, which is
     #   exactly how DL_DIR/git2/ names its bare clones

@@ -152,17 +152,21 @@ cd "$HOME"/work
 . kas/hfjob.env
 mkdir -p "$DL_DIR" "$SSTATE_DIR"
 
-# sstate/ is bulk-copied in; downloads/ is not. The bulk copy of both had grown to
-# 48 minutes of a 58-minute job on 2026-10-05, and downloads/ was 128 GB of the
-# 144: nearly all of it is unused by a build reusing 99% of its tasks. So bitbake
-# reads downloads/ on demand instead (PREMIRRORS in kas/hfjob.yml).
+# The caches, measured 2026-10-05: copying the bucket's downloads/ and sstate/ in
+# file by file took 53 minutes of a 64-minute job. The cost is per file, not per
+# byte: sstate/ alone (16 GB, 17.4k files) still took 35 minutes. The mount reads
+# one big file fast and many small ones slowly. So:
 #
-# sstate/ cannot go the same way. Tried 2026-10-05 as SSTATE_MIRRORS, job
-# 6ac3abad: the existence check found 98% of objects through the mount, but
-# setscene then managed 588 of 3971 tasks in 24 minutes, and the count had
-# stopped moving when it was cancelled. The bulk copy restores all of them in a
-# few minutes. The mount is good at sequential reads and bad at thousands of
-# parallel small ones.
+# - downloads/ (128 GB) is not copied. bitbake reads it on demand through
+#   PREMIRRORS (kas/hfjob.yml), and a build reusing 99% of its tasks fetches
+#   almost nothing.
+# - sstate/ travels as ONE file, /cache/sstate.tar, unpacked at start and
+#   rewritten by save(). The objects are already zstd-compressed, so the tar is
+#   not compressed again.
+#
+# Reading sstate on demand too (SSTATE_MIRRORS) was tried, in job 6ac3abad: the
+# existence check found 98% of objects through the mount, but setscene managed
+# 588 of 3971 tasks in 24 minutes and then stopped moving.
 #
 # Everything worth keeping leaves through save(), and save() is wired to the fatal
 # signals as well as EXIT. An EXIT trap alone does NOT run when the container is
@@ -252,7 +256,30 @@ save() {
 	# No 2>/dev/null on these: suppressing the errors here is what made one run
 	# of sstate evidence unreadable and cost an experiment.
 	publish "$DL_DIR" /cache/downloads
-	publish "$SSTATE_DIR" /cache/sstate
+
+	# The whole of SSTATE_DIR (seed plus what this build added), as one file,
+	# written beside the target under this job's own name and then renamed.
+	# Two jobs finishing together: the last rename wins and the other's new
+	# objects are lost. They get rebuilt later; nothing is corrupted.
+	#
+	# Only once the seed completed. A job killed or failed mid-seed has a partial
+	# SSTATE_DIR, and publishing it would replace the cache with a fragment.
+	#
+	# ponytail: the archive only grows (16 GB on 2026-10-05). Prune it when that
+	# hurts, e.g. oe-core's scripts/sstate-cache-management.py
+	# --remove-duplicated on an unpacked copy.
+	if [ "$seeded" = 1 ]; then
+		part=/cache/sstate.tar.part-"${JOB_ID:-nojobid}"
+		echo "sstate: publishing $(du -sh "$SSTATE_DIR" | cut -f1) at $(date -u +%T)"
+		if tar -cf "$part" -C "$SSTATE_DIR" . && mv -f "$part" /cache/sstate.tar; then
+			echo "sstate: published at $(date -u +%T)"
+		else
+			rm -f "$part"
+			echo "WARNING: could not publish sstate.tar"
+		fi
+	else
+		echo "sstate: seed did not complete, not publishing"
+	fi
 }
 
 # Named handlers rather than trap 'save; exit 143' TERM -- see the heredoc note
@@ -262,12 +289,32 @@ on_int()  { save; exit 130; }
 on_hup()  { save; exit 129; }
 
 # Only for `build`. `checkout` and `dump` fetch and compile nothing.
+seeded=0
 if [ "$KAS_CMD" = build ]; then
-	cp -Ru /cache/sstate/. "$SSTATE_DIR"/ 2>/dev/null || true
 	trap on_term TERM
 	trap on_int INT
 	trap on_hup HUP
 	trap save EXIT
+
+	# After the traps, so a job killed mid-seed reaches save() with seeded=0 and
+	# leaves the cache alone. Timestamps because these lines carry none of their
+	# own, and the seed time is the number this whole arrangement is about.
+	echo "sstate: seeding at $(date -u +%T)"
+	if [ -f /cache/sstate.tar ]; then
+		# A failed unpack keeps seeded=0: replacing a good archive with what a
+		# half-read one left behind would cost a cold build later.
+		if tar -xf /cache/sstate.tar -C "$SSTATE_DIR"; then
+			seeded=1
+		else
+			echo "WARNING: could not unpack sstate.tar; building without it, and not publishing"
+		fi
+	else
+		# No archive yet: the first job after the switch reads the old per-file
+		# cache once more (~35 min), and its save() writes the first archive.
+		cp -Ru /cache/sstate/. "$SSTATE_DIR"/ || echo "WARNING: some of /cache/sstate did not copy"
+		seeded=1
+	fi
+	echo "sstate: seeded=$seeded, $(du -sh "$SSTATE_DIR" | cut -f1) at $(date -u +%T)"
 fi
 
 # kas locates the url-less microduck_os repo by asking git for the work-tree root.
