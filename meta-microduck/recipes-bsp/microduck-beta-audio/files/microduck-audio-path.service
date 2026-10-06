@@ -9,10 +9,17 @@ Wants=sound.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# The NS4150B amp sits on HPL and is enabled by spk-ctl-gpios, so the codec must
-# be on its SPK path (rk3566-microduck-beta.dts, &rk809_codec). The rk817 codec
+# The NS4150B amp sits on HPL, so the codec must be on its SPK path with an
+# external amplifier (rk3566-microduck-beta.dts, &rk809_codec). The rk817 codec
 # driver starts on OFF and only a mixer write moves it.
 ExecStart=/usr/bin/amixer -q -c rockchiprk809 cset name='Playback Path' SPK
+# Then the headphone stage to +9 dB (0..3 in 3 dB steps), after the path: setting
+# the path writes AHP_CFG0 back to 0 dB. The board's amp gain is low (110k input
+# resistors, about x2.7), and at 0 dB the speaker was quieter than the zero3's and
+# sounded thin and nasal. At +9 dB it is louder and fuller, and not distorted
+# (checked by ear on a beta, 2026-10-06; a 9 dB lower DAC level did not change
+# the character, so it was level, not clipping).
+ExecStart=/usr/bin/amixer -q -c rockchiprk809 cset name='HP Output Gain' 3
 
 [Install]
 WantedBy=multi-user.target
