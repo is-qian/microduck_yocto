@@ -1,0 +1,20 @@
+#!/bin/sh
+# Raise the CPU rail before the board resets, so the next boot starts from a
+# voltage its bootloader can run at.
+#
+# The RK860 that feeds vdd_cpu is not reset by a warm reset: it keeps whatever
+# voltage cpufreq last asked for. Idle, that is 850 mV at 408 MHz, and the next
+# boot then hangs before Linux -- face LED off, fan at full -- until someone
+# pulls the power. Measured on the first beta board (2026-10-06): a reboot at
+# 408 MHz / 850 mV never came back, with or without the fan53555 driver's own
+# shutdown reset; at 1.8 GHz / 1050 mV it was up in 16 s. With this script, the
+# same 850 mV reboot was up in 17 s.
+#
+# systemd-shutdown runs everything in this directory as the very last step of a
+# reboot, halt or kexec, after every service has stopped, so nothing can lower
+# the clock again in between. A reset that skips systemd-shutdown (a kernel
+# panic, the watchdog, sysrq-b) is not covered; docs/agents/beta-board.md has
+# what is left.
+for policy in /sys/devices/system/cpu/cpufreq/policy*; do
+	echo performance > "$policy/scaling_governor" 2>/dev/null
+done
