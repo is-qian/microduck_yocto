@@ -7,8 +7,10 @@
 # boot then hangs before Linux -- face LED off, fan at full -- until someone
 # pulls the power. Measured on the first beta board (2026-10-06): a reboot at
 # 408 MHz / 850 mV never came back, with or without the fan53555 driver's own
-# shutdown reset; at 1.8 GHz / 1050 mV it was up in 16 s. With this script, the
-# same 850 mV reboot was up in 17 s.
+# shutdown reset; at 1.8 GHz / 1050 mV it was up in 16 s. With this script
+# hand-installed, the same 850 mV reboot was up in 17 s -- but with it built into
+# the image the next one hung. So this is a hypothesis under test, not a fix:
+# docs/agents/beta-board.md has the record.
 #
 # systemd-shutdown runs everything in this directory as the very last step of a
 # reboot, halt or kexec, after every service has stopped, so nothing can lower

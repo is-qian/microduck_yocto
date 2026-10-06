@@ -289,20 +289,19 @@ so the first release after it can be pinned here directly.
   -59 dBFS, and talking and clapping 30 cm away barely clears the noise. The
   PDM block has no gain register. Either the mic is not the part or
   orientation Seeed intended, or `default` needs a softvol boost.
-- **A warm reset from idle hangs the next boot** (found 2026-10-06). The RK860
-  feeding vdd_cpu keeps its voltage across a warm reset, so a reboot while
-  cpufreq has the CPU at 408 MHz / 850 mV leaves the next boot hung before
-  Linux (face LED off, fan full) until the power is pulled. Measured: a
-  `systemctl reboot` at 850 mV never came back, with or without the fan53555
-  driver's shutdown reset; at 1.8 GHz / 1050 mV it was up in 16 s.
-  `microduck-reboot-voltage` (a systemd-shutdown hook selecting the
-  performance governor) fixed the same 850 mV reboot: up in 17 s. This was
-  every "unexplained" failed boot: rkdeveloptool's reset after a flash, and a
-  board found hung in the morning. **Still exposed:** resets that skip
-  systemd-shutdown (kernel panic, watchdog, sysrq-b). The real fix is earlier:
-  U-Boot/SPL setting vdd_cpu before raising the clock (the kernel DTS's
-  `regulator-init-microvolt` is there for that, and evidently not applied), or
-  a PMIC-level reset. A question for Seeed: how does their image handle it?
+- **Warm resets often hang the next boot; cold power-ons never have**
+  (2026-10-06). U-Boot runs and spends a boot attempt, then nothing: face LED
+  off, fan full, until the power is pulled. Seen after rkdeveloptool's `rd` at
+  the end of nearly every flash, after `systemctl reboot` and sysrq-b with the
+  CPU idle at 408 MHz / 850 mV, and once on a board left alone. One reboot at
+  1.8 GHz / 1050 mV came back, and so did one idle reboot with
+  `microduck-reboot-voltage` (a systemd-shutdown hook selecting the performance
+  governor) hand-installed -- but the next idle reboot with the hook built into
+  the image hung. So "the RK860 keeps a low vdd_cpu across a warm reset" fits
+  some samples and is **not shown**; the hook stays because it is harmless.
+  Until this is found: power-cycle, never reboot, including after a flash. The
+  next step is a console on UART2 (TP83/TP84) during one failed boot, and
+  asking Seeed whether their image survives `reboot`.
 - **Reading the board without a console.** The face LED `green1` runs the
   heartbeat trigger and the fan probes at full duty, so: LED off + fan full = no
   kernel; LED solid + fan full = a kernel that panicked (the heartbeat freezes);
