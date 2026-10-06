@@ -102,6 +102,10 @@ message.
 ```
 kas/microduck.yml         layer pins + build config. NO absolute paths.
 kas/<host>.env            per-host paths, as env vars (see below).
+meta-microduck/conf/distro/microduck.conf
+                          what the robot runs: DISTRO_FEATURES, init, network
+                          stack, default services, BBMASK. Not local_conf_header,
+                          which is for build-host behaviour only (rm_work, fetch).
 meta-microduck/conf/machine/microduck-zero3.conf
                           the Radxa Zero 3W stand-in board.
 meta-microduck/conf/machine/microduck-beta.conf
@@ -127,7 +131,7 @@ machine conf and shared things in the include, not the other way round.
 
 Add a new `kas/<host>.env` rather than editing an existing one. Paths are the
 only thing that may differ between hosts; anything else belongs in
-`microduck.yml`.
+`microduck.yml` (build behaviour) or the distro conf (the rootfs).
 
 ## Hardware constraints that shape recipes
 
