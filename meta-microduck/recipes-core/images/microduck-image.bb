@@ -3,8 +3,29 @@ LICENSE = "MIT"
 
 require recipes-core/images/core-image-base.bb
 
-# meta-rockchip: produces the .wic plus a Rockchip update.img in deploy/.
+# meta-rockchip: produces the .wic in deploy/.
 inherit rockchip-image
+
+# The card image to download and flash is the compressed .wic.zst plus its .bmap:
+# `bmaptool copy` writes only the blocks in use, instead of dd copying all 13 GB.
+# Plain `wic` stays in the list. oe-core deletes a type that is not listed as soon
+# as it has been converted (image.bbclass, rm_tmp_images), and rockchip's
+# gen_rkparameter reads the .wic after that. build-hfjob.sh leaves it out of the
+# bucket instead.
+IMAGE_FSTYPES += "wic.zst wic.bmap"
+
+# Two rockchip outputs nothing here uses, 14.5 GB per build between them:
+# - .ufs.wic, a second 13 GB copy with 4K sectors for UFS storage (we boot from SD)
+# - update.img, for Rockchip's own flashing tool (we use dd/bmaptool)
+# These are no-ops rather than an IMAGE_POSTPROCESS_COMMAND:remove, because
+# rockchip-image.bbclass appends them inside ";"-joined words such as
+# "do_image_wic_ufs;gen_rkparameter;", which :remove cannot match.
+do_image_wic_ufs() {
+	:
+}
+gen_rkupdateimg() {
+	:
+}
 
 IMAGE_FEATURES += "ssh-server-openssh"
 

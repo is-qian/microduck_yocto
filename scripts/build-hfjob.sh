@@ -189,7 +189,16 @@ save() {
 		# function exists to prevent, so it must never scroll by as nothing.
 		# Both in the condition, so set -e cannot abort save() before the
 		# warning is printed and before the caches below are synced.
-		if mkdir -p "$out" && cp -R "$img"/. "$out"/; then
+		# Everything except the plain .wic: 13 GB per build, mostly zeros, and
+		# the .wic.zst + .wic.bmap beside it are what gets flashed
+		# (microduck-image.bb says why the plain one is still built).
+		copy_artifacts() {
+			for f in "$img"/*; do
+				case "$f" in *.wic) continue ;; esac
+				cp -R "$f" "$out"/ || return 1
+			done
+		}
+		if mkdir -p "$out" && copy_artifacts; then
 			echo "artifacts: hf://buckets/$HFJOB_BUCKET/deploy/${JOB_ID:-nojobid}"
 			ls -l "$out"
 		else
