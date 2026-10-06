@@ -57,6 +57,7 @@ SRC_URI = "git://git@github.com/pollen-robotics/microduck_daemon.git;protocol=ss
            file://robotctl.bash_completion \
            file://microduck-slot-health \
            file://microduck-slot-health.service \
+           file://microduck-voice-bank.service \
 "
 # 0.15.3, the first release that builds on oe-core wrynose's Rust 1.94.1
 # (RUSTVERSION in tcmode-default.inc): 0.15.1 and 0.15.2 needed 1.99 for two
@@ -232,7 +233,7 @@ USERADD_PARAM:${PN} = "-r -g btd -d / -s /sbin/nologin -c 'Robot BLE transport a
 # -- so the timer is what gets enabled. microduck-slot-health.service is enabled
 # into boot-complete.target, which gates rauc-mark-good.
 SYSTEMD_PACKAGES = "${PN} ${PN}-padd"
-SYSTEMD_SERVICE:${PN} = "robotd.service updaterd.service configd.service btd.service mediad.service tofd.service robot-boot-check.timer microduck-slot-health.service"
+SYSTEMD_SERVICE:${PN} = "robotd.service updaterd.service configd.service btd.service mediad.service tofd.service robot-boot-check.timer microduck-slot-health.service microduck-voice-bank.service"
 SYSTEMD_SERVICE:${PN}-padd = "padd.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
@@ -323,6 +324,7 @@ do_install:append() {
 
 	# RAUC marks a slot good only if the same check passes; see the script.
 	install -m 0644 ${UNPACKDIR}/microduck-slot-health.service ${D}${systemd_system_unitdir}/
+	install -m 0644 ${UNPACKDIR}/microduck-voice-bank.service ${D}${systemd_system_unitdir}/
 	install -d ${D}${libexecdir}
 	install -m 0755 ${UNPACKDIR}/microduck-slot-health ${D}${libexecdir}/
 

@@ -290,8 +290,10 @@ release's `Cargo.lock` files on every bump.
   -59 dBFS, and talking and clapping 30 cm away barely clears the noise. The
   PDM block has no gain register. Either the mic is not the part or
   orientation Seeed intended, or `default` needs a softvol boost.
-- **Warm resets often hang the next boot; cold power-ons never have**
-  (2026-10-06). U-Boot runs and spends a boot attempt, then nothing: face LED
+- **Boots sometimes hang after U-Boot hands over; warm resets far more often
+  than cold power-ons** (2026-10-06). The first power-on after flashing
+  0.15.3 hung too, so cold boots are not immune -- they had been 8/8 before
+  that. U-Boot runs and spends a boot attempt, then nothing: face LED
   off, fan full, until the power is pulled. Seen after rkdeveloptool's `rd` at
   the end of nearly every flash, after `systemctl reboot` and sysrq-b with the
   CPU idle at 408 MHz / 850 mV, and once on a board left alone. One reboot at
