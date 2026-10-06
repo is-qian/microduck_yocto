@@ -59,6 +59,8 @@ IMAGE_INSTALL:append = " \
     microduck-data \
     packagegroup-microduck-media \
     alsa-utils-aplay \
+    ldd \
+    rustypot-wizard \
     sudo \
     kernel-modules \
     ca-certificates \
@@ -87,6 +89,12 @@ IMAGE_INSTALL:append = " \
 # a controller that never attaches is a product fault, not a debug inconvenience.
 # The chip answers only through hciattach with the port speed set before the line
 # discipline attaches -- see the unit for the measurements that established that.
+
+# rustypot-wizard is the servo setup tool people reach for on a robot, and ldd
+# is what its cargo-dist installer (and every other cargo-dist installer) runs
+# to read the glibc version: without it the installer reports glibc "too old"
+# and finds no download for aarch64-unknown-linux-gnu. Seen on the beta board,
+# 2026-10-06.
 
 # alsa-utils-aplay is aplay and arecord, and the robot's voice depends on it:
 # robotd and sounds play every wav by running `aplay -D <device>` (robotd's
