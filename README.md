@@ -249,9 +249,11 @@ of RAM.
 Roughly an order of magnitude smaller, mostly because dev headers and toolchain
 live in the SDK rather than on the robot.
 
-Artifacts in `tmp/deploy/images/microduck-zero3/`: `.wic` (SD/eMMC),
-`update.img` (Rockchip flashing), `boot.img`/`zboot.img`, `Image`, both device
-trees, `idblock.img`, `uboot.img`, plus a `.manifest` and an SPDX SBOM.
+Artifacts in `tmp/deploy/images/microduck-zero3/`: `.wic.zst` + `.wic.bmap`
+(SD/eMMC; the bucket carries these, not the 13 GB plain `.wic`),
+`boot.img`/`zboot.img`, `Image`, both device trees, `idblock.img`, `uboot.img`,
+plus a `.manifest` and an SPDX SBOM. Rockchip's `update.img` and `.ufs.wic` are
+switched off in `microduck-image.bb`.
 
 On `main`, the partition layout comes from meta-rockchip's `generic-gptdisk.wks`:
 raw `idblock.img` outside the table, `uboot` at 2 MiB, `boot`, then `rootfs`.
@@ -529,7 +531,10 @@ CI builds the card image only; bundles are built where the key is.
 # The bundle target builds the matching .wic as well.
 KAS_BUILD_DIR=/mnt/data/fabien/yocto/build HFJOB_TARGET=microduck-bundle scripts/build-hfjob.sh
 
-# A fresh card: flash the .wic, then give it wifi, over Bluetooth
+# A fresh card: flash it, writing only the blocks in use (needs bmap-tools).
+# The .bmap covers the uncompressed image; bmaptool decompresses .zst itself.
+sudo bmaptool copy --bmap microduck-image-dev-*.wic.bmap microduck-image-dev-*.wic.zst /dev/mmcblk0
+# Then give it wifi, over Bluetooth
 # (duckctl wifi connect) or by writing a keyfile onto the card:
 sudo utils/seed-wifi.sh /dev/mmcblk0          # lives beside the worktrees, not in it
 

@@ -20,9 +20,10 @@ name: build-image
 # the DEV key, which robots in the field must never trust. A production key must
 # not take this path: sign releases with `rauc resign` in a separate job instead.
 #
-# Artifacts stay in the bucket. A .wic is ~900 MB, which is awkward as a release
-# asset and pointless to move when the bucket is already private and already
-# where the build wrote it. This publishes the hf:// URL instead.
+# Artifacts stay in the bucket, which is already private and already where the
+# build wrote them. This publishes the hf:// URL instead. They are kept for
+# KEEP_DAYS (see the prune step), and the card image is the compressed
+# .wic.zst + .wic.bmap; the 13 GB plain .wic is not uploaded.
 
 on:
   workflow_dispatch:
@@ -160,6 +161,35 @@ jobs:
             >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "Artifacts: \`$prefix\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # Retention. Nothing reads deploy/<job>/ except a person fetching a card
+      # image or a bundle. A folder goes only if it is BOTH older than KEEP_DAYS
+      # and not among the KEEP_LAST newest. The second rule is for quiet spells:
+      # after weeks without builds, the first one back must not leave its own
+      # folder as the only artifact in the bucket. Before this step, nothing ever
+      # deleted these folders: 665 GB in 26 of them on 2026-10-06. A folder's date
+      # is the one `hf buckets ls` prints for it (date and time, so they sort).
+      #
+      # Non-fatal. A prune that fails must not turn a good build red, but it
+      # warns.
+      - name: Prune old artifacts
+        if: success()
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          KEEP_DAYS: 14
+          KEEP_LAST: 5
+        run: |
+          set -u
+          cutoff=$(date -u -d "$KEEP_DAYS days ago" +%F)
+          hf buckets ls hf://buckets/pollen-robotics/microduck-yocto-cache/deploy/ \
+            | awk '$NF ~ /^deploy\/.+\/$/ {print $1, $2, $NF}' \
+            | sort -r | tail -n +"$((KEEP_LAST + 1))" \
+            | awk -v c="$cutoff" '$1 < c {print $3}' \
+            | while read -r dir; do
+                echo "pruning $dir (older than $cutoff)"
+                hf buckets rm -R -y "hf://buckets/pollen-robotics/microduck-yocto-cache/$dir" \
+                  || echo "::warning::could not prune $dir"
+              done
 
       # A run that ends without reaching a terminal job state leaves the job
       # running and billing by the minute. Failure counts, not just cancellation:
