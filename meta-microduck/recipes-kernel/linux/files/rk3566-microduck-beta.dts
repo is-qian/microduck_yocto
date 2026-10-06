@@ -941,17 +941,151 @@
 };
 
 /*
- * The camera (sheet 15): a GC2613 on a 4-lane BTB connector, of which two data
- * lanes are wired, I2C2_M1 at 1.8 V, MCLK from CIF_CLKOUT (GPIO4_C0), PWDN on
- * GPIO3_C6 and RST on GPIO4_C1.
+ * The camera (sheet 15): a GalaxyCore GC2093 at 0x37 on I2C2_M1, two data lanes
+ * into csi2_dphy0, MCLK from CIF_CLKOUT (GPIO4_C0), PWDN on GPIO3_C6 (active
+ * high) and RST on GPIO4_C1 (active low). Seeed DTB: every value here matches
+ * the node their factory image boots, and on that image the GC2093 is the one
+ * that probes ("Detected GC2093 sensor", 2026-10-06).
  *
- * Deliberately NOT described yet. radxa's kernel has no gc2613 driver
- * (drivers/media/i2c has gc2035/2053/2093/2145/2155/2355/2375h/2385 only), and a
- * sensor node nothing binds leaves rkisp waiting on an async subdev that never
- * arrives -- no /dev/video* at all, which is worse than an honest absence. When
- * a driver exists, the chain to copy is 0003-*-imx219.patch: sensor ->
- * csi2_dphy0 -> rkisp_vir0, plus rkisp/rkcif and their MMUs.
+ * Seeed's DTB also describes a GC2613 at 0x31 on the same connector, the part
+ * the V0.1 schematic names. It is left out: nothing answers at 0x31 on the
+ * board, radxa's kernel has no gc2613 driver, and a sensor node nothing binds
+ * leaves rkisp waiting on an async subdev that never arrives -- no /dev/video*
+ * at all, even for the GC2093.
+ *
+ * The chain is 0003-*-imx219.patch's: sensor -> csi2_dphy0 -> rkisp_vir0, plus
+ * rkisp/rkcif and their MMUs, all enabled together. CONFIG_VIDEO_GC2093 is
+ * already =y in radxa's defconfig. microduck_daemon's mediad expects exactly
+ * this sensor on a board declared "beta" (mediad/src/sensor.rs).
+ *
+ * The rails are Seeed's: two fixed, always-on regulators off vcc3v3_sys, and
+ * vcc_1v8 for the I/O. The driver asks for 27 MHz on xvclk; CLK_CIF_OUT gives it,
+ * and the pin is muxed to it by rkcif's pinctrl, where Seeed puts it.
  */
+
+/ {
+	cam_2v8: cam-2v8 {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_2v8";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <2800000>;
+		regulator-max-microvolt = <2800000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	cam_1v2: cam-1v2 {
+		compatible = "regulator-fixed";
+		regulator-name = "cam_1v2";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1200000>;
+		regulator-max-microvolt = <1200000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+};
+
+&i2c2 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c2m1_xfer>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	camera_gc2093: camera-gc2093@37 {
+		compatible = "galaxycore,gc2093";
+		reg = <0x37>;
+		clocks = <&cru CLK_CIF_OUT>;
+		clock-names = "xvclk";
+		power-domains = <&power RK3568_PD_VI>;
+		avdd-supply = <&cam_2v8>;
+		dvdd-supply = <&cam_1v2>;
+		dovdd-supply = <&vcc_1v8>;
+		pwdn-gpios = <&gpio3 RK_PC6 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio4 RK_PC1 GPIO_ACTIVE_LOW>;
+		rockchip,camera-module-index = <0>;
+		rockchip,camera-module-facing = "back";
+		/* Seeed's values: a lookup key into rockchip's tuning data, kept so it matches. */
+		rockchip,camera-module-name = "SIDB205300385-VA";
+		rockchip,camera-module-lens-name = "default";
+		status = "okay";
+
+		port {
+			gc2093_out: endpoint {
+				remote-endpoint = <&mipi_in_gc2093>;
+				data-lanes = <1 2>;
+			};
+		};
+	};
+};
+
+&csi2_dphy_hw {
+	status = "okay";
+};
+
+&csi2_dphy0 {
+	status = "okay";
+
+	ports {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		port@0 {
+			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mipi_in_gc2093: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&gc2093_out>;
+				data-lanes = <1 2>;
+			};
+		};
+
+		port@1 {
+			reg = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			dphy0_out: endpoint@1 {
+				reg = <1>;
+				remote-endpoint = <&isp0_in>;
+			};
+		};
+	};
+};
+
+&rkisp_vir0 {
+	status = "okay";
+
+	port {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		isp0_in: endpoint@0 {
+			reg = <0>;
+			remote-endpoint = <&dphy0_out>;
+		};
+	};
+};
+
+&rkisp {
+	status = "okay";
+};
+
+&rkisp_mmu {
+	status = "okay";
+};
+
+&rkcif {
+	pinctrl-names = "default";
+	pinctrl-0 = <&cif_clk>;
+	status = "okay";
+};
+
+&rkcif_mmu {
+	status = "okay";
+};
 
 /*
  * The fan, as active trips and cooling maps in soc-thermal.
