@@ -23,8 +23,8 @@ RDEPENDS:${PN} = "microduck-daemon"
 # robotd that will not start. The release's own template says which kind it is --
 # the daemon that knows the key ships a [board] table in deploy/robotd.toml -- so
 # this declares only into a file that already has the table, and is a logged no-op
-# otherwise. When the image's daemon pin moves past the change, it starts declaring
-# with nothing to edit here.
+# otherwise. The image's daemon has carried the change since the pin moved to 0.15.3,
+# so it declares; the guard stays for any image built against an older daemon.
 #
 # Scoped to the [board] table: the commented `# version = "zero3"` line under it
 # becomes `version = "<board>"`, or the line is added under the header. Same result

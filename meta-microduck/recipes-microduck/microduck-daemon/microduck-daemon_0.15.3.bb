@@ -58,13 +58,12 @@ SRC_URI = "git://git@github.com/pollen-robotics/microduck_daemon.git;protocol=ss
            file://microduck-slot-health \
            file://microduck-slot-health.service \
 "
-# 0.15.0, not the newest release (0.15.1): 0.15.1 raised rust-version to 1.99
-# for two atomics' try_update in mediad, and oe-core wrynose ships Rust 1.94.1
-# (RUSTVERSION in tcmode-default.inc), so cargo would refuse to build it. 0.15.0
-# needs 1.89. A robot seeded with 0.15.0 converges to 0.15.1 by itself on its
-# first update check -- updaterd installs CI's prebuilt release, not this
-# recipe's build. The pin moves past 0.15.1 once a release builds on 1.94.
-SRCREV_daemon = "a9ec4b2079ef8ee7904014089c885bb07d57d63c"
+# 0.15.3, the first release that builds on oe-core wrynose's Rust 1.94.1
+# (RUSTVERSION in tcmode-default.inc): 0.15.1 and 0.15.2 needed 1.99 for two
+# atomics' try_update in mediad, and microduck#358 brought the floor back to 1.89
+# and recorded 1.94 as the ceiling in CONTRIBUTING.md. A release that needs a
+# newer Rust than that is a CI failure here, not a reason to pin an older one.
+SRCREV_daemon = "c6725c96be13238461149c105c3748b9bc9d6cf5"
 SRCREV_bmi088 = "bd113f317b14923f50f9a12a06678fe162b7fe06"
 SRCREV_FORMAT = "daemon_bmi088"
 
@@ -562,5 +561,5 @@ RRECOMMENDS:${PN} += "onnxruntime"
 # rolls a release back on -- so every *attempted* update reverts. Seeded here because an
 # image installs through neither hooks/postinstall nor scripts/install.sh; the recipe
 # carries the rest of the story. Bump it with POLICY_VERSION in the daemon's own
-# scripts/seed-policies.sh (v5 at 0.13.0, at 0.14.1 and at 0.15.0).
+# scripts/seed-policies.sh (v5 at 0.13.0 to 0.15.1, v7 at 0.15.2 and 0.15.3).
 RDEPENDS:${PN} += "microduck-policies"

@@ -103,11 +103,11 @@ The daemon has its own word for the board: `[board] version` in
 `/etc/robot/robotd.toml` (`"zero3"` or `"beta"`, microduck_daemon#357), which the
 updater turns into the hardware revision a release is checked against (zero3 1,
 beta 2). It is declared, not detected: `microduck-board` writes the machine's
-`MICRODUCK_BOARD` into the file when the image is assembled. Only once the image's
-daemon knows the key, though. 0.15.0's robotd refuses unknown tables, so with it
-the package logs that it declared nothing, and the board answers as `zero3` until
-the daemon pin moves past #357. `robotctl health` on a #357 daemon warns when the
-declaration and `/proc/device-tree/compatible` disagree.
+`MICRODUCK_BOARD` into the file when the image is assembled, which the image's
+daemon (0.15.3, carrying #357) knows. An older robotd refuses unknown tables, so
+the package declares only into a template that already has `[board]` and logs a
+no-op otherwise. `robotctl health` warns when the declaration and
+`/proc/device-tree/compatible` disagree.
 
 The board **revision** within the beta family comes from hardware. The SARADC
 VIN1 divider (sheet 14) reads raw 1023 on V0.1 ("Version_1"), and Seeed's table
@@ -238,12 +238,13 @@ Each step assumes the ones before it passed.
 
 ## Which daemon the image carries
 
-`microduck-daemon_0.15.0.bb`: the image seeds release 0.15.0, the newest that
-builds with wrynose's Rust (1.94.1). 0.15.1 needs 1.99. A robot with network
-converges to the newest release on its own, because `updaterd` installs CI's
-prebuilt binaries rather than this recipe's build. The daemon branch
-`msrv-yocto-ceiling` brings the floor back to 1.89 and documents the ceiling,
-so the first release after it can be pinned here directly.
+`microduck-daemon_0.15.3.bb` with `microduck-policies_v7.bb`: the image seeds
+release 0.15.3, the first since microduck#358 brought the Rust floor back to 1.89
+(wrynose has 1.94.1; 0.15.1 and 0.15.2 needed 1.99), and the policy set that
+release names as its floor. A robot with network still converges to newer
+releases on its own, because `updaterd` installs CI's prebuilt binaries rather
+than this recipe's build. `microduck-daemon-crates.inc` is regenerated from the
+release's `Cargo.lock` files on every bump.
 
 ## Open items, each blocking something specific
 
