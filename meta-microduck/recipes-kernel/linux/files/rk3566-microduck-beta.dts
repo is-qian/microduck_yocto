@@ -648,7 +648,14 @@
 		 * use-ext-amplifier (otherwise it powers them DOWN and uses the
 		 * internal class-D on SPK_OUT, which is not connected). Seeed's tree
 		 * omits it; this one sets it. Userspace still selects the path once:
-		 * `amixer cset name='Playback Path' SPK`. Not verified on hardware.
+		 * `amixer cset name='Playback Path' SPK`.
+		 *
+		 * The amp's enable is NOT given to the codec as spk-ctl-gpios: the
+		 * driver switched it on only once a stream had started and off as it
+		 * ended, and the NS4150B's start-up ate the beginning of every sound
+		 * (a quack padded with 300 ms of silence played whole; unpadded, its
+		 * start was cut). The hog in &gpio1 keeps the amp on from boot, as the
+		 * zero3's codec board always was.
 		 */
 		rk809_codec: codec {
 			#sound-dai-cells = <0>;
@@ -660,7 +667,6 @@
 			assigned-clock-parents = <&cru I2S1_MCLKOUT_TX>, <&cru I2S1_MCLKOUT_TX>;
 			pinctrl-names = "default";
 			pinctrl-0 = <&i2s1m0_mclk &amp_ctl>;
-			spk-ctl-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
 			use-ext-amplifier;
 			hp-volume = <20>;
 			spk-volume = <3>;
@@ -1242,6 +1248,14 @@
 		/* GPIO1_D0-D7 */
 		"", "", "", "",
 		"", "", "", "";
+
+	/* The speaker amp (NS4150B) on for good; see &rk809_codec. */
+	amp-enable-hog {
+		gpio-hog;
+		gpios = <RK_PB0 GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "AUDIO_AMP_CTL";
+	};
 };
 
 &gpio2 {
