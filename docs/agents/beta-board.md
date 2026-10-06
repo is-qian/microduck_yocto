@@ -44,7 +44,7 @@ still a claim to check, in the order below.
 | way in without radio | none | USB-C gadget: serial console + network, robot at 192.168.42.1 |
 | audio | none on the board | RK809 codec → NS4150B amp → speaker; PDM mic on the face board |
 | audio routing | `plughw:aic3104` | ALSA `default` → RK809 + face mic, SPK path set at boot |
-| camera | IMX219 | GC2613 or GC2093, **no GC2613 driver in our kernel**, not described yet |
+| camera | IMX219 | GC2093 at 0x37 on I2C2 (Seeed also describes a GC2613 that is not fitted) |
 | face board | — | PCA9535 + 12 LEDs and maybe the IMU on I2C3, ToF on SPI3 (1.8 V), stereo PDM mic |
 | fan | — | trips in soc-thermal: off below 52 °C, steps up from 60 °C |
 | other | HDMI | NFC (ST25R100, SPI1), fan header, Qwiic (I2C4), board-ID EEPROM |
@@ -270,16 +270,11 @@ release's `Cargo.lock` files on every bump.
   image leaves the team. The AIC8800 pairing workaround
   (`/var/lib/robot/weird-ble`, written by the daemon recipe on every machine)
   is to be re-measured on this radio.
-- **A daemon release carrying microduck#358**: the Rust ceiling (so the image
-  can pin the newest), the audio fallback (so robotd speaks on this board) and
-  `robotctl led`. microduck#357 (`[board] version`) is what lets
-  `microduck-board` declare the board; until then `robotctl health` shows
-  `zero3 (not declared)`.
-- **A GC2613 driver.** radxa's `drivers/media/i2c` stops at gc2385. Seeed's
-  kernel has one, and describes gc2613@0x31 and gc2093@0x37 on I2C2 (MCLK from
-  CIF_CLKOUT, 2 lanes into csi2_dphy0). Until our kernel has it the camera is
-  deliberately absent from the DTS: a sensor node nothing binds would leave
-  rkisp waiting and produce no `/dev/video*` at all.
+- **The camera on our image.** The DTS describes the GC2093 from Seeed's node,
+  and daemon 0.15.3's mediad drives it on a board declared `beta`. On Seeed's
+  image it captured at 30 fps with auto-exposure running; on ours it has not run
+  yet. Check `media-ctl -p` shows `m00_b_gc2093 2-0037`, then
+  `journalctl -u mediad`.
 - **Fan trips** (60/68/75 °C) are starting points, not measured values.
 - **The ToF over SPI is untested on hardware.** The part is a VL53L8CX
   (VL53L8CXV9GC/1). `tofd` drives it over SPI from pollen-robotics/microduck#364,
