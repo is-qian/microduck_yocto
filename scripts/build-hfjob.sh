@@ -62,8 +62,10 @@ RAUC_CERT=${HFJOB_RAUC_CERT:-$RAUC_KEYDIR/development-1.cert.pem}
 case "$TARGET" in
 *bundle*)
 	for f in "$RAUC_KEY" "$RAUC_CERT"; do
-		[ -r "$f" ] && continue
-		echo "$0: target '$TARGET' needs a signing pair and $f is not readable." >&2
+		# -s, not -r: CI writes the pair from secrets, so a missing secret is an
+		# empty file that -r would wave through.
+		[ -s "$f" ] && [ -r "$f" ] && continue
+		echo "$0: target '$TARGET' needs a signing pair and $f is empty or not readable." >&2
 		echo "  Generate it once (README.md 'Signing keys are not in this repo')," >&2
 		echo "  or point HFJOB_RAUC_KEYDIR at an existing one." >&2
 		exit 1
@@ -79,14 +81,28 @@ esac
 # The two directories are named explicitly rather than mounting the whole tree:
 # kas checks the upstream layers out in-tree (see .gitignore), so a stray local
 # checkout would otherwise upload gigabytes. Together they are ~400K.
+#
+# They are copied into a fresh directory first, so every job gets a bucket folder
+# of its own. hf names the folder from the hostname and the directory's absolute
+# path (huggingface_hub _jobs_api.py, _derive_job_volume_name), and syncs into it
+# with delete=False. On GitHub the checkout path never changes, so every branch
+# used to sync into the same folder and inherit whatever the others had left
+# there. On 2026-10-05 a run of a branch based on main built the
+# microduck-daemon_0.15.0.bb that a beta-board run had uploaded hours earlier,
+# with main's crate list, and failed in do_compile (job 6ac3b2b3). A rename locally did the same
+# thing in September (docs/agents/hf-jobs.md). The cost is one ~400K folder per
+# job left in jobs-artifacts.
+stage=$(mktemp -d "${TMPDIR:-/tmp}/hfjob-src.XXXXXX")
+trap 'rm -rf "$stage"' EXIT
+cp -R kas meta-microduck "$stage"/
 set -- \
 	--namespace pollen-robotics \
 	--flavor "$FLAVOR" \
 	--timeout "$TIMEOUT" \
 	--name "microduck-${MACHINE#microduck-}-${TARGET:-image}-$KAS_CMD" \
 	--detach \
-	-v ./kas:/src/kas \
-	-v ./meta-microduck:/src/meta-microduck \
+	-v "$stage/kas:/src/kas" \
+	-v "$stage/meta-microduck:/src/meta-microduck" \
 	-v "hf://buckets/$BUCKET:/cache" \
 	-e "HFJOB_BUCKET=$BUCKET" \
 	-e "KAS_CMD=$KAS_CMD" \
@@ -142,9 +158,21 @@ cd "$HOME"/work
 . kas/hfjob.env
 mkdir -p "$DL_DIR" "$SSTATE_DIR"
 
-# Seed both caches from the bucket in bulk -- sequential reads run at ~480 MB/s,
-# whereas letting bitbake read or write *through* the mount either stalls
-# (DL_DIR) or silently finds nothing (SSTATE_DIR). See kas/hfjob.env.
+# The caches, measured 2026-10-05: copying the bucket's downloads/ and sstate/ in
+# file by file took 53 minutes of a 64-minute job. The cost is per file, not per
+# byte: sstate/ alone (16 GB, 17.4k files) still took 35 minutes. The mount reads
+# one big file fast and many small ones slowly. So:
+#
+# - downloads/ (128 GB) is not copied. bitbake reads it on demand through
+#   PREMIRRORS (kas/hfjob.yml), and a build reusing 99% of its tasks fetches
+#   almost nothing.
+# - sstate/ travels as ONE file, /cache/sstate.tar, unpacked at start and
+#   rewritten by save(). The objects are already zstd-compressed, so the tar is
+#   not compressed again.
+#
+# Reading sstate on demand too (SSTATE_MIRRORS) was tried, in job 6ac3abad: the
+# existence check found 98% of objects through the mount, but setscene managed
+# 588 of 3971 tasks in 24 minutes and then stopped moving.
 #
 # Everything worth keeping leaves through save(), and save() is wired to the fatal
 # signals as well as EXIT. An EXIT trap alone does NOT run when the container is
@@ -199,6 +227,13 @@ save() {
 	# sstate and downloads are content-addressed, so a name that is present
 	# already holds the same bytes. That is also why concurrent writers do not
 	# corrupt each other -- only *interrupted* ones do.
+	#
+	# What came from the mirror is a symlink into /cache, so -type f skips it. A
+	# git repo cloned from the mirror is not: the clone has a freshly named pack
+	# holding the whole history, and publishing it would add another full copy of
+	# the repo to the bucket (10 GB for the kernel's). So a git2 repo already in the
+	# bucket is left alone. Commits fetched beyond it are refetched from upstream
+	# next time, which is a small delta.
 	publish() {
 		from=$1
 		to=$2
@@ -208,6 +243,11 @@ save() {
 			rel=${f#"$from"/}
 			dest=$to/$rel
 			[ -e "$dest" ] && continue
+			case "$rel" in git2/*/*)
+				repo=${rel#git2/}
+				[ -d "$to/git2/${repo%%/*}" ] && continue
+				;;
+			esac
 			mkdir -p "$(dirname "$dest")"
 			if cp "$f" "$dest.part" && mv -f "$dest.part" "$dest"; then
 				continue
@@ -222,7 +262,30 @@ save() {
 	# No 2>/dev/null on these: suppressing the errors here is what made one run
 	# of sstate evidence unreadable and cost an experiment.
 	publish "$DL_DIR" /cache/downloads
-	publish "$SSTATE_DIR" /cache/sstate
+
+	# The whole of SSTATE_DIR (seed plus what this build added), as one file,
+	# written beside the target under this job's own name and then renamed.
+	# Two jobs finishing together: the last rename wins and the other's new
+	# objects are lost. They get rebuilt later; nothing is corrupted.
+	#
+	# Only once the seed completed. A job killed or failed mid-seed has a partial
+	# SSTATE_DIR, and publishing it would replace the cache with a fragment.
+	#
+	# ponytail: the archive only grows (16 GB on 2026-10-05). Prune it when that
+	# hurts, e.g. oe-core's scripts/sstate-cache-management.py
+	# --remove-duplicated on an unpacked copy.
+	if [ "$seeded" = 1 ]; then
+		part=/cache/sstate.tar.part-"${JOB_ID:-nojobid}"
+		echo "sstate: publishing $(du -sh "$SSTATE_DIR" | cut -f1) at $(date -u +%T)"
+		if tar -cf "$part" -C "$SSTATE_DIR" . && mv -f "$part" /cache/sstate.tar; then
+			echo "sstate: published at $(date -u +%T)"
+		else
+			rm -f "$part"
+			echo "WARNING: could not publish sstate.tar"
+		fi
+	else
+		echo "sstate: seed did not complete, not publishing"
+	fi
 }
 
 # Named handlers rather than trap 'save; exit 143' TERM -- see the heredoc note
@@ -231,15 +294,33 @@ on_term() { save; exit 143; }
 on_int()  { save; exit 130; }
 on_hup()  { save; exit 129; }
 
-# Only for `build`. `checkout` and `dump` fetch and compile nothing, and copying
-# gigabytes to print a config file wastes more time than the command itself.
+# Only for `build`. `checkout` and `dump` fetch and compile nothing.
+seeded=0
 if [ "$KAS_CMD" = build ]; then
-	cp -Ru /cache/downloads/. "$DL_DIR"/ 2>/dev/null || true
-	cp -Ru /cache/sstate/. "$SSTATE_DIR"/ 2>/dev/null || true
 	trap on_term TERM
 	trap on_int INT
 	trap on_hup HUP
 	trap save EXIT
+
+	# After the traps, so a job killed mid-seed reaches save() with seeded=0 and
+	# leaves the cache alone. Timestamps because these lines carry none of their
+	# own, and the seed time is the number this whole arrangement is about.
+	echo "sstate: seeding at $(date -u +%T)"
+	if [ -f /cache/sstate.tar ]; then
+		# A failed unpack keeps seeded=0: replacing a good archive with what a
+		# half-read one left behind would cost a cold build later.
+		if tar -xf /cache/sstate.tar -C "$SSTATE_DIR"; then
+			seeded=1
+		else
+			echo "WARNING: could not unpack sstate.tar; building without it, and not publishing"
+		fi
+	else
+		# No archive yet: the first job after the switch reads the old per-file
+		# cache once more (~35 min), and its save() writes the first archive.
+		cp -Ru /cache/sstate/. "$SSTATE_DIR"/ || echo "WARNING: some of /cache/sstate did not copy"
+		seeded=1
+	fi
+	echo "sstate: seeded=$seeded, $(du -sh "$SSTATE_DIR" | cut -f1) at $(date -u +%T)"
 fi
 
 # kas locates the url-less microduck_os repo by asking git for the work-tree root.
@@ -357,4 +438,7 @@ IN_CONTAINER
 # fires): `bash -lc 'set -eu; exit 0'` -> ERROR; `bash -c 'set -eu; exit 0'` ->
 # COMPLETED, with kas resolving at /usr/local/bin on the image's default PATH. So
 # nothing here needs the login environment, and dropping -l is the whole fix.
-exec hf jobs run "$@" ghcr.io/siemens/kas/kas:5.4 -- /bin/bash -c "$IN_CONTAINER"
+#
+# Not exec'd: the EXIT trap above has to run to remove the staged copy. --detach
+# returns once the job is created, after the inputs are uploaded.
+hf jobs run "$@" ghcr.io/siemens/kas/kas:5.4 -- /bin/bash -c "$IN_CONTAINER"

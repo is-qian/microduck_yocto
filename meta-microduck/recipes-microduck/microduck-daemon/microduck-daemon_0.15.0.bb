@@ -175,8 +175,18 @@ CARGO_BUILD_FLAGS += "--workspace --exclude xtask --exclude test-support --exclu
 # it grants nothing on this image: oe-core's bluez5 D-Bus policy has no
 # group="bluetooth" rule, only `user="root"` and a permissive `context="default"`.
 # The group exists to satisfy systemd, not to carry a permission.
+#
+# robot-account is the opposite case: its whole purpose is the permission. It owns
+# /etc/robot/hf-token, the owner's Hugging Face bearer token, so that only mediad
+# reads it rather than everything in `robot` (btd, padd, tofd, every operator
+# shell) -- microduck#230. mediad reaches it through its unit's
+# SupplementaryGroups=, like `robot`, so no membership is needed; updaterd writes
+# the file as root and only needs the name to resolve. Upstream creates it in
+# updater/systemd/sysusers.d/robot.conf, which is not installed here, so without
+# this mediad.service refuses to start and the camera is dead. It is created
+# ahead of the SRCREV_daemon bump that needs it: an unreferenced group is inert.
 USERADD_PACKAGES = "${PN}"
-GROUPADD_PARAM:${PN} = "-r robot; -r bluetooth; -r btd; -r mediad; -r tofd; -r padd; -r i2c"
+GROUPADD_PARAM:${PN} = "-r robot; -r robot-account; -r bluetooth; -r btd; -r mediad; -r tofd; -r padd; -r i2c"
 USERADD_PARAM:${PN} = "-r -g btd -d / -s /sbin/nologin -c 'Robot BLE transport adapter' btd; \
                        -r -g mediad -d / -s /sbin/nologin -c 'Robot media and WebRTC gateway' mediad; \
                        -r -g tofd -d / -s /sbin/nologin -c 'Robot ToF sensor daemon' tofd; \

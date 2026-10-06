@@ -31,3 +31,31 @@ local_conf_header:
     # coach needs none of this: its build directory persists between builds, so
     # the database survives. That is why it lives here and not in microduck.yml.
     BB_HASHSERVE_DB_DIR = "${SSTATE_DIR}"
+  bucket-mirrors: |
+    # Read downloads/ in the bucket (mounted at /cache) as a mirror, not copied in
+    # first: it is 128 GB, and a build reusing 99% of its tasks fetches almost
+    # nothing. sstate travels as one archive instead; scripts/build-hfjob.sh has
+    # the numbers, and why SSTATE_MIRRORS through the mount was tried and dropped.
+    #
+    # - git: MIRRORNAME expands to host.path with / turned into dots, which is
+    #   exactly how DL_DIR/git2/ names its bare clones
+    #   (bitbake lib/bb/fetch2/__init__.py, at the pinned commit).
+    # - Everything else is checksummed, so the mirror path becomes the file's name
+    #   in DL_DIR. That covers the 1700 .crate files, which sit flat in downloads/.
+    #
+    # PREMIRRORS, not MIRRORS, so the bucket is tried before upstream. Upstream
+    # is still tried if the bucket lacks something. Mirror settings do not enter
+    # task signatures: with them set, job 6ac3abad still matched 98% of sstate.
+    #
+    # Not yet exercised: a git clone of a large repo (the kernel's is 10 GB)
+    # through this mirror. A fetch writing *into* the mount once stalled for an
+    # hour (kas/hfjob.env). This only reads, which is what the old bulk copy did
+    # too, but if a kernel rebuild ever hangs in do_fetch, look here first.
+    PREMIRRORS:prepend = "\
+        git://.*/.* git:///cache/downloads/git2/MIRRORNAME;protocol=file \
+        gitsm://.*/.* gitsm:///cache/downloads/git2/MIRRORNAME;protocol=file \
+        ftp://.*/.* file:///cache/downloads/ \
+        http://.*/.* file:///cache/downloads/ \
+        https://.*/.* file:///cache/downloads/ \
+        crate://.*/.* file:///cache/downloads/ \
+    "
