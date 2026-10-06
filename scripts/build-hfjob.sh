@@ -349,13 +349,13 @@ if [ "$KAS_CMD" = build ]; then
 		wait "$hasher" || rc=1
 		rm -f "$fifo"
 		[ "$rc" = 0 ] || return 1
-		[ "$(cut -d' ' -f1 "$HOME/sstate.sum")" = "$(cat /cache/sstate.tar.sha256)" ] && return 0
+		[ "$(cut -d' ' -f1 "$HOME/sstate.sum")" = "$(cat /cache/sstate.tar.sha256)" ] && echo "sstate: sha256 verified" && return 0
 		echo "WARNING: sstate.tar sha256 $(cut -d' ' -f1 "$HOME/sstate.sum") != $(cat /cache/sstate.tar.sha256)"
 		return 1
 	}
 
 	if seed_from_archive; then
-		echo "sstate: archive verified and unpacked"
+		echo "sstate: archive unpacked"
 	else
 		# No archive yet, or one that is corrupt or would not unpack. Never build
 		# on a half-trusted cache: start clean and reseed from the old per-file
