@@ -65,17 +65,31 @@ IMAGE_INSTALL:append = " \
     kernel-modules \
     ca-certificates \
     networkmanager \
-    bluez5 \
     ${MICRODUCK_RADIO_PACKAGES} \
-    wireless-regdb-static \
     i2c-tools \
-    usbutils \
     htop \
 "
 
-# rauc is listed here rather than arriving on its own: meta-rauc pulls it in by
-# bbappending packagegroup-base, and this image is built from core-image-base,
-# which does not use that packagegroup.
+# Not listed, because the machine declares them: bluez5, iw, wpa-supplicant,
+# wireless-regdb-static and usbutils arrive through packagegroup-base's
+# bluetooth/wifi/usbhost groups, driven by MACHINE_FEATURES in
+# conf/machine/include/microduck-common.inc. Listing them here again would be
+# the local.conf habit one level up.
+#
+# packagegroup-base-wifi picks wireless-regdb-static, not wireless-regdb, and
+# that matters: the -static package ships /lib/firmware/regulatory.db, which
+# kernels >= 4.15 load themselves; the plain one installs CRDA files for the
+# obsolete crda userspace. Without the db the QEMU boot logs
+#   platform regulatory.0: Direct firmware load for regulatory.db failed, error -2
+# and cfg80211 falls back to restrictive built-in rules -- which on a wifi
+# product shows up much later as missing channels or reduced TX power.
+
+# rauc is listed even though it would arrive on its own: meta-rauc's
+# packagegroup-base.bbappend adds packagegroup-base-rauc when DISTRO_FEATURES
+# has rauc, and core-image-base does install packagegroup-base (through
+# packagegroup-base-extended -- an earlier version of this comment said it did
+# not). Naming it here keeps the update mechanism visible in the one recipe that
+# ships.
 
 # u-boot-rockchip-env is /etc/fw_env.config and /etc/u-boot-initial-env, which
 # RAUC's uboot backend needs; the fw_printenv/fw_setenv it runs arrive through
@@ -108,16 +122,6 @@ IMAGE_INSTALL:append = " \
 # This recipe is the one that ships. Everything a robot must not carry -- a
 # password-less root login above all -- belongs in microduck-image-dev.bb, which
 # requires this file and only ever adds to it.
-#
-# wireless-regdb-static, not wireless-regdb: the -static package ships
-# /lib/firmware/regulatory.db, which kernels >= 4.15 load themselves. The plain
-# package installs the CRDA files instead, which need the obsolete crda userspace.
-#
-# Without it the QEMU boot logs:
-#   platform regulatory.0: Direct firmware load for regulatory.db failed, error -2
-# and cfg80211 falls back to restrictive built-in rules -- which on a wifi product
-# shows up much later as missing channels or reduced TX power, a long way from its
-# cause.
 
 # Notes on what is deliberately absent:
 #

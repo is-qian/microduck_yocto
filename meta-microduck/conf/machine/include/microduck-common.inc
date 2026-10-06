@@ -44,3 +44,22 @@ MICRODUCK_RADIO_PACKAGES ?= "aic8800-bt"
 MICRODUCK_RADIO_DEV_PACKAGES ?= "aic8800-bt-test"
 
 SERIAL_CONSOLES = "${@'' if d.getVar('MICRODUCK_MOTOR_UART') == '1' else '1500000;ttyFIQ0'}"
+
+# What the hardware has. meta-rockchip sets nothing here, so until this line the
+# machine advertised only oe-core's backfilled defaults, `rtc qemu-usermode` --
+# an RTC this board does not have (hence updaterd's clock preflight), and none of
+# the radios it does.
+#
+# These are read through COMBINED_FEATURES (machine AND distro) by
+# packagegroup-base, which core-image-base installs: wifi brings iw,
+# wireless-regdb-static and wpa-supplicant; bluetooth brings bluez5; usbhost
+# brings usbutils. The image recipes used to list those by hand.
+#
+# Not `alsa`, although the beta board has a codec: packagegroup-base-alsa is
+# alsactl, amixer and alsa-state, and alsa-state restores /var/lib/alsa/asound.state
+# at boot -- right next to microduck-beta-audio's own boot-time codec path
+# selection, which it would race or undo. What the robot's voice needs,
+# alsa-utils-aplay, is not in that group anyway; microduck-image names it.
+# Declare `alsa` here when someone owns the ALSA state story on the beta.
+MACHINE_FEATURES = "wifi bluetooth usbhost"
+MACHINE_FEATURES_OPTED_OUT = "rtc"
