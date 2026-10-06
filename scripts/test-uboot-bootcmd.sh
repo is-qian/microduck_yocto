@@ -70,7 +70,7 @@ check() {  # name, env setup, then expected substrings
 }
 
 check "virgin env: seeds, picks A, decrements" "" \
-	"booting slot A (rootfs_a)" "BOOT_ORDER=A B" "BOOT_A_LEFT=0x2" "BOOT_B_LEFT=3" \
+	"booting slot A (rootfs_a)" "BOOT_ORDER=A" "BOOT_A_LEFT=0x2" "BOOT_B_LEFT=3" \
 	"bootargs=root=PARTLABEL=rootfs_a rauc.slot=A" "SAVEENV_CALLED" "REACHED_BOOT_CHAIN"
 check "after rauc install: B first" \
 	"setenv BOOT_ORDER 'B A'; setenv BOOT_A_LEFT 3; setenv BOOT_B_LEFT 3;" \
@@ -96,6 +96,9 @@ check "counter 1 still boots, reaches 0" \
 check "empty BOOT_A_LEFT: seeded, no abort" \
 	"setenv BOOT_ORDER 'A B'; setenv BOOT_B_LEFT 3;" \
 	"booting slot A" "BOOT_A_LEFT=0x2"
+check "A pinned (BOOT_ORDER=A): boots A while it has attempts" \
+	"setenv BOOT_A_LEFT 1; setenv BOOT_B_LEFT 3;" \
+	"booting slot A (rootfs_a)" "BOOT_ORDER=A" "BOOT_A_LEFT=0x0" "BOOT_B_LEFT=3"
 check "unknown bootname skipped" \
 	"setenv BOOT_ORDER 'X B'; setenv BOOT_A_LEFT 3; setenv BOOT_B_LEFT 3;" \
 	"booting slot B"
@@ -106,6 +109,13 @@ out=$("$SANDBOX" -c "setenv BOOT_ORDER 'A B'; setenv BOOT_A_LEFT 0; setenv BOOT_
 if grep -qF "no slot has attempts left" <<< "$out" && ! grep -qF REACHED_BOOT_CHAIN <<< "$out"; then
 	pass=$((pass + 1)); echo "ok   both exhausted: resets and reboots, never boots"
 else fail=$((fail + 1)); echo "FAIL both exhausted: resets and reboots, never boots"; fi
+
+# A pinned and spent: B still has attempts but is not in BOOT_ORDER, so it must
+# not be booted -- counters reset and the board resets onto A again.
+out=$("$SANDBOX" -c "setenv BOOT_A_LEFT 0x0; setenv BOOT_B_LEFT 3; $BOOTCMD" 2>&1) || true
+if grep -qF "no slot has attempts left" <<< "$out" && ! grep -qF "booting slot B" <<< "$out" && ! grep -qF REACHED_BOOT_CHAIN <<< "$out"; then
+	pass=$((pass + 1)); echo "ok   A pinned and spent: resets, never boots B"
+else fail=$((fail + 1)); echo "FAIL A pinned and spent: resets, never boots B"; fi
 
 echo "---- $pass passed, $fail failed  (bootcmd ${#BOOTCMD} chars; CONFIG_SYS_CBSIZE does not bound it)"
 [ "$fail" = 0 ]

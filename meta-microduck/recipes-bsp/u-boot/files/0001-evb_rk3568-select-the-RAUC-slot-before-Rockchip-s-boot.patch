@@ -16,6 +16,12 @@ The attempt counter is compared as a string, not with `test 0x${x} -gt 0` as
 RAUC's example does: this tree's simple_strtol honours the base 10 that test
 passes, so "0x3" parses as 0 and no slot would ever qualify.
 
+A virgin environment seeds BOOT_ORDER="A", not "A B", for now: slot B is never
+booted unless a RAUC install puts it first. During bring-up, a few reboots
+inside rauc-mark-good's window (or a boot that hangs) spent slot A's attempts
+and silently moved the board to B. Put "A B" back when that is fixed --
+pollen-robotics/microduck_yocto#24.
+
 Upstream-Status: Inappropriate [microduck RAUC integration]
 ---
  include/configs/evb_rk3568.h | 50 +++++++++++++++++++++++++++++++++++-
@@ -49,7 +55,7 @@ index f7318c3..d20cdca 100644
 + */
 +#define MICRODUCK_RAUC_SELECT \
 +	"setenv bootargs root=PARTLABEL=rootfs_a rauc.slot=A; " \
-+	"test -n \"${BOOT_ORDER}\" || setenv BOOT_ORDER \"A B\"; " \
++	"test -n \"${BOOT_ORDER}\" || setenv BOOT_ORDER \"A\"; " \
 +	"test -n \"${BOOT_A_LEFT}\" || setenv BOOT_A_LEFT 3; " \
 +	"test -n \"${BOOT_B_LEFT}\" || setenv BOOT_B_LEFT 3; " \
 +	"setenv rauc_part; setexpr rauc_zero 0 + 0; " \

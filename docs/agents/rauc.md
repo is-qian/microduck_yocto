@@ -187,6 +187,13 @@ would then carry 2 GiB.
 ## What is not done
 
 - Kernel is not A/B. `boot_b` is reserved and empty.
+- **A fresh card is pinned to slot A** (since 2026-10-06, temporarily): U-Boot
+  seeds `BOOT_ORDER="A"`, not `"A B"`, so B is only booted when a RAUC install
+  puts it first. When A's attempts run out, both counters reset and the board
+  resets onto A. Bring-up kept landing on B after a few quick reboots. Only a
+  freshly flashed card gets it, since a saved environment keeps its order. To
+  pin a running board: `fw_setenv BOOT_ORDER A`. Undoing it is
+  pollen-robotics/microduck_yocto#24.
 - **A fresh card fills `rootfs_b` with the same rootfs as A** (since
   2026-10-06). Before that it was empty, and U-Boot's script still falls back
   to B once `BOOT_A_LEFT` reaches 0, booting the shared kernel onto nothing: a
