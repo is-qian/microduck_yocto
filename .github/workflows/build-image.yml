@@ -155,9 +155,12 @@ jobs:
           echo "Artifacts: \`$prefix\`" >> "$GITHUB_STEP_SUMMARY"
 
       # Retention. Nothing reads deploy/<job>/ except a person fetching a card
-      # image or a bundle, so folders older than KEEP_DAYS go. Before this,
-      # nothing ever deleted them: 665 GB in 26 folders on 2026-10-06. A folder's
-      # date is the one `hf buckets ls` prints for it.
+      # image or a bundle. A folder goes only if it is BOTH older than KEEP_DAYS
+      # and not among the KEEP_LAST newest. The second rule is for quiet spells:
+      # after weeks without builds, the first one back must not leave its own
+      # folder as the only artifact in the bucket. Before this step, nothing ever
+      # deleted these folders: 665 GB in 26 of them on 2026-10-06. A folder's date
+      # is the one `hf buckets ls` prints for it (date and time, so they sort).
       #
       # Non-fatal. A prune that fails must not turn a good build red, but it
       # warns.
@@ -166,11 +169,14 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           KEEP_DAYS: 14
+          KEEP_LAST: 5
         run: |
           set -u
           cutoff=$(date -u -d "$KEEP_DAYS days ago" +%F)
           hf buckets ls hf://buckets/pollen-robotics/microduck-yocto-cache/deploy/ \
-            | awk -v c="$cutoff" '$NF ~ /^deploy\/.+\/$/ && $1 < c {print $NF}' \
+            | awk '$NF ~ /^deploy\/.+\/$/ {print $1, $2, $NF}' \
+            | sort -r | tail -n +"$((KEEP_LAST + 1))" \
+            | awk -v c="$cutoff" '$1 < c {print $3}' \
             | while read -r dir; do
                 echo "pruning $dir (older than $cutoff)"
                 hf buckets rm -R -y "hf://buckets/pollen-robotics/microduck-yocto-cache/$dir" \
