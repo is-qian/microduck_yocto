@@ -4,7 +4,25 @@ LICENSE = "MIT"
 require recipes-core/images/core-image-base.bb
 
 # meta-rockchip: produces the .wic plus a Rockchip update.img in deploy/.
-inherit rockchip-image
+inherit rockchip-image extrausers
+
+# The operator account, the same as the Radxa images': microduck / microduck,
+# sudo with that password. Everything the daemon's tooling assumes defaults to
+# it -- duckctl ssh, scripts/dev-push.sh and provision-board.sh all log in as
+# `microduck@` and sudo from there. robot lets robotctl read the daemons'
+# sockets without root (scripts/install.sh adds its operator the same way);
+# audio, video, dialout and i2c are the devices a person debugging a duck pokes
+# at by hand. The hash is `openssl passwd -6 -salt microduckbeta microduck`,
+# fixed so the image stays reproducible; '$' is escaped for bitbake.
+MICRODUCK_OPERATOR_HASH = "\$6\$microduckbeta\$lxVesOQbjM8IXwxq5s/GpwW0KnK1YuspITBn7crCGbeuodZd.PBnJJIS5E32lQK4/mugkqFe36SAr6iyo82Gu0"
+EXTRA_USERS_PARAMS = "useradd -m -s /bin/bash -G robot,sudo,audio,video,dialout,i2c,plugdev,input -p '${MICRODUCK_OPERATOR_HASH}' microduck;"
+
+ROOTFS_POSTPROCESS_COMMAND += "microduck_operator_sudo;"
+microduck_operator_sudo() {
+	install -d -m 0750 ${IMAGE_ROOTFS}${sysconfdir}/sudoers.d
+	echo '%sudo ALL=(ALL:ALL) ALL' > ${IMAGE_ROOTFS}${sysconfdir}/sudoers.d/10-sudo-group
+	chmod 0440 ${IMAGE_ROOTFS}${sysconfdir}/sudoers.d/10-sudo-group
+}
 
 IMAGE_FEATURES += "ssh-server-openssh"
 
@@ -16,6 +34,7 @@ IMAGE_INSTALL:append = " \
     microduck-data \
     packagegroup-microduck-media \
     alsa-utils-aplay \
+    sudo \
     kernel-modules \
     ca-certificates \
     networkmanager \

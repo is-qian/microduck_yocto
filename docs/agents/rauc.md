@@ -187,6 +187,12 @@ would then carry 2 GiB.
 ## What is not done
 
 - Kernel is not A/B. `boot_b` is reserved and empty.
+- **A fresh card fills `rootfs_b` with the same rootfs as A** (since
+  2026-10-06). Before that it was empty, and U-Boot's script still falls back
+  to B once `BOOT_A_LEFT` reaches 0, booting the shared kernel onto nothing: a
+  panic, and on the beta board a solid face LED and full fan, every boot until
+  B's attempts ran out too. Three reboots inside rauc-mark-good's 180 s are
+  enough to get there.
 - Nothing can select a slot at boot yet. **Stage 2a is verified on hardware
   (2026-09-25)**: a writable U-Boot environment
   (`recipes-bsp/u-boot/files/rauc-env.cfg`) plus `/etc/fw_env.config` and

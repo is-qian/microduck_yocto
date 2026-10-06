@@ -289,4 +289,20 @@ so the first release after it can be pinned here directly.
   -59 dBFS, and talking and clapping 30 cm away barely clears the noise. The
   PDM block has no gain register. Either the mic is not the part or
   orientation Seeed intended, or `default` needs a softvol boost.
+- **Two unexplained failed boots after a full flash** (2026-10-06, build
+  `6ac3d2d3`). Right after `rkdeveloptool wl` + `rd`, slot A failed twice with
+  the face LED off (no kernel), with attempts left. The same idblock, U-Boot
+  and kernel have booted every time since. The U-Boot that seemed to blame is
+  functionally identical to the one that boots: 16 bytes differ, all in the
+  build-host `/memreserve/` addresses mkimage leaks into the FIT header. Without
+  a console on UART2 (TP83/TP84) this stays open; wire one before the next
+  fresh flash.
+- **Reading the board without a console.** The face LED `green1` runs the
+  heartbeat trigger and the fan probes at full duty, so: LED off + fan full = no
+  kernel; LED solid + fan full = a kernel that panicked (the heartbeat freezes);
+  double blink + fan off at idle = up. The Recovery button gets loader mode from
+  any of these. There, `rkdeveloptool rl 8128 32768 env.img` reads U-Boot's env
+  (4-byte CRC32, then NUL-separated `key=value`), which says what the last boots
+  did: `BOOT_A_LEFT` falls by one per attempt and only rauc-mark-good, 180 s
+  after boot, puts it back to 3.
 - **A newer schematic**, to diff against every block above.

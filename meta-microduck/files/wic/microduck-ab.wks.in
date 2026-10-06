@@ -10,7 +10,7 @@
 #   boot           16 MiB      32 MiB   kernel + DTB, shared by both slots
 #   boot_b         48 MiB      32 MiB   reserved, empty
 #   rootfs_a       80 MiB       2 GiB
-#   rootfs_b     2128 MiB       2 GiB   written by RAUC
+#   rootfs_b     2128 MiB       2 GiB   same rootfs as A; RAUC rewrites it
 #   data         4176 MiB       8 GiB   /var/lib/robot, survives updates
 #                            ~12.1 GiB -- needs a 16 GB card or larger.
 #
@@ -44,7 +44,14 @@ part --offset 48M --fixed-size 32M --fstype=none --part-name boot_b
 # The kernel's root= comes from U-Boot's boot script (root=PARTLABEL=rootfs_a|b).
 # The fixed GUIDs only keep two builds of one commit byte-identical.
 part / --source rootfs --offset 80M --fixed-size 2048M --fstype=ext4 --part-name rootfs_a --uuid ${RK_ROOTDEV_UUID} --mkfs-extraopts "${RK_ROOTFS_EXTRAOPTS}"
-part --offset 2128M --fixed-size 2048M --fstype=none --part-name rootfs_b --uuid 614e0001-0000-4b53-8000-1d28000054a9
+#
+# rootfs_b gets the same rootfs as rootfs_a, so a freshly flashed board has two
+# bootable slots. U-Boot's script falls back to B once A has used its attempts
+# (three boots without rauc-mark-good, e.g. three quick reboots), and B shares
+# the kernel in `boot`; with B empty that kernel panics on an empty root, and the
+# board looks bricked until the counters wrap. Seen on the first beta board,
+# 2026-10-06. Costs one more 2 GiB write at flash time.
+part --source rootfs --offset 2128M --fixed-size 2048M --fstype=ext4 --part-name rootfs_b --uuid 614e0001-0000-4b53-8000-1d28000054a9 --mkfs-extraopts "${RK_ROOTFS_EXTRAOPTS}"
 
 # User data: policies, sounds, configd state, wifi profiles. Seeded from the image's
 # own /var/lib/robot, because the mount hides whatever the rootfs has there; wic
