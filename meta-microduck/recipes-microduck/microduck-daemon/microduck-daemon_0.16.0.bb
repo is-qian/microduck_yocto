@@ -59,12 +59,12 @@ SRC_URI = "git://git@github.com/pollen-robotics/microduck_daemon.git;protocol=ss
            file://microduck-slot-health.service \
            file://microduck-voice-bank.service \
 "
-# 0.15.3, the first release that builds on oe-core wrynose's Rust 1.94.1
+# 0.15.3 was the first release that builds on oe-core wrynose's Rust 1.94.1
 # (RUSTVERSION in tcmode-default.inc): 0.15.1 and 0.15.2 needed 1.99 for two
 # atomics' try_update in mediad, and microduck#358 brought the floor back to 1.89
 # and recorded 1.94 as the ceiling in CONTRIBUTING.md. A release that needs a
 # newer Rust than that is a CI failure here, not a reason to pin an older one.
-SRCREV_daemon = "c6725c96be13238461149c105c3748b9bc9d6cf5"
+SRCREV_daemon = "de4021694441f4cc6c63f709d14a91d0c3eacb92"
 SRCREV_bmi088 = "bd113f317b14923f50f9a12a06678fe162b7fe06"
 SRCREV_FORMAT = "daemon_bmi088"
 
@@ -563,5 +563,5 @@ RRECOMMENDS:${PN} += "onnxruntime"
 # rolls a release back on -- so every *attempted* update reverts. Seeded here because an
 # image installs through neither hooks/postinstall nor scripts/install.sh; the recipe
 # carries the rest of the story. Bump it with POLICY_VERSION in the daemon's own
-# scripts/seed-policies.sh (v5 at 0.13.0 to 0.15.1, v7 at 0.15.2 and 0.15.3).
+# scripts/seed-policies.sh (v5 at 0.13.0 to 0.15.1, v7 from 0.15.2 to 0.16.0).
 RDEPENDS:${PN} += "microduck-policies"
