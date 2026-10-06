@@ -52,8 +52,14 @@ on:
 
 # Queue rather than cancel. Cancelling mid-build would leave the HF job running
 # and billing, and the cleanup step below only fires for jobs this run started.
+#
+# One queue per branch: main's builds still run in order, but a branch no longer
+# waits for main or for another branch (each did, for about an hour, on
+# 2026-10-05). Running side by side is safe for two reasons:
+# - each job uploads its inputs to a folder of its own (build-hfjob.sh)
+# - the shared cache is only written atomically, under content-addressed names
 concurrency:
-  group: build-image
+  group: build-image-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:

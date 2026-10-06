@@ -76,14 +76,28 @@ esac
 # The two directories are named explicitly rather than mounting the whole tree:
 # kas checks the upstream layers out in-tree (see .gitignore), so a stray local
 # checkout would otherwise upload gigabytes. Together they are ~400K.
+#
+# They are copied into a fresh directory first, so every job gets a bucket folder
+# of its own. hf names the folder from the hostname and the directory's absolute
+# path (huggingface_hub _jobs_api.py, _derive_job_volume_name), and syncs into it
+# with delete=False. On GitHub the checkout path never changes, so every branch
+# used to sync into the same folder and inherit whatever the others had left
+# there. On 2026-10-05 a run of a branch based on main built the
+# microduck-daemon_0.15.0.bb that a beta-board run had uploaded hours earlier,
+# with main's crate list, and failed in do_compile (job 6ac3b2b3). A rename locally did the same
+# thing in September (docs/agents/hf-jobs.md). The cost is one ~400K folder per
+# job left in jobs-artifacts.
+stage=$(mktemp -d "${TMPDIR:-/tmp}/hfjob-src.XXXXXX")
+trap 'rm -rf "$stage"' EXIT
+cp -R kas meta-microduck "$stage"/
 set -- \
 	--namespace pollen-robotics \
 	--flavor "$FLAVOR" \
 	--timeout "$TIMEOUT" \
 	--name "microduck-${TARGET:-image}-$KAS_CMD" \
 	--detach \
-	-v ./kas:/src/kas \
-	-v ./meta-microduck:/src/meta-microduck \
+	-v "$stage/kas:/src/kas" \
+	-v "$stage/meta-microduck:/src/meta-microduck" \
 	-v "hf://buckets/$BUCKET:/cache" \
 	-e "HFJOB_BUCKET=$BUCKET" \
 	-e "KAS_CMD=$KAS_CMD"
@@ -371,4 +385,7 @@ IN_CONTAINER
 # fires): `bash -lc 'set -eu; exit 0'` -> ERROR; `bash -c 'set -eu; exit 0'` ->
 # COMPLETED, with kas resolving at /usr/local/bin on the image's default PATH. So
 # nothing here needs the login environment, and dropping -l is the whole fix.
-exec hf jobs run "$@" ghcr.io/siemens/kas/kas:5.4 -- /bin/bash -c "$IN_CONTAINER"
+#
+# Not exec'd: the EXIT trap above has to run to remove the staged copy. --detach
+# returns once the job is created, after the inputs are uploaded.
+hf jobs run "$@" ghcr.io/siemens/kas/kas:5.4 -- /bin/bash -c "$IN_CONTAINER"
