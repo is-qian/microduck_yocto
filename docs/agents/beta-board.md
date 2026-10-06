@@ -238,10 +238,10 @@ Each step assumes the ones before it passed.
 
 ## Which daemon the image carries
 
-`microduck-daemon_0.15.3.bb` with `microduck-policies_v7.bb`: the image seeds
-release 0.15.3, the first since microduck#358 brought the Rust floor back to 1.89
-(wrynose has 1.94.1; 0.15.1 and 0.15.2 needed 1.99), and the policy set that
-release names as its floor. A robot with network still converges to newer
+`microduck-daemon_0.16.0.bb` with `microduck-policies_v7.bb`: the image seeds
+release 0.16.0, which carries `tofd` over SPI (microduck#364), and the policy set
+that release names as its floor. Every release from 0.15.3 builds on wrynose's
+Rust 1.94.1; 0.15.1 and 0.15.2 needed 1.99. A robot with network still converges to newer
 releases on its own, because `updaterd` installs CI's prebuilt binaries rather
 than this recipe's build. `microduck-daemon-crates.inc` is regenerated from the
 release's `Cargo.lock` files on every bump.
@@ -277,7 +277,7 @@ release's `Cargo.lock` files on every bump.
   `journalctl -u mediad`.
 - **Fan trips** (60/68/75 °C) are starting points, not measured values.
 - **The ToF over SPI is untested on hardware.** The part is a VL53L8CX
-  (VL53L8CXV9GC/1). `tofd` drives it over SPI from pollen-robotics/microduck#364,
+  (VL53L8CXV9GC/1). `tofd` drives it over SPI from daemon 0.16.0 (pollen-robotics/microduck#364),
   and `microduck-tof-spidev` gives `/dev/spidev3.0` to the robot group. Neither
   has run against the sensor yet.
 - **The face mic is quiet.** The routing is verified: with the speaker
