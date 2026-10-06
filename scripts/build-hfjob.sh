@@ -277,13 +277,22 @@ save() {
 	# ponytail: the archive only grows (16 GB on 2026-10-05). Prune it when that
 	# hurts, e.g. oe-core's scripts/sstate-cache-management.py
 	# --remove-duplicated on an unpacked copy.
+	#
+	# Its SHA-256 goes beside it, as sstate.tar.sha256, computed in the same pass
+	# that writes it, and the next job checks it before using the archive. pipefail
+	# in the command substitution, or a failing tar would hide behind
+	# sha256sum's success. The two renames are not one atomic step: a job
+	# reading between them sees a mismatch and reseeds, which is slow but safe.
 	if [ "$seeded" = 1 ]; then
 		part=/cache/sstate.tar.part-"${JOB_ID:-nojobid}"
 		echo "sstate: publishing $(du -sh "$SSTATE_DIR" | cut -f1) at $(date -u +%T)"
-		if tar -cf "$part" -C "$SSTATE_DIR" . && mv -f "$part" /cache/sstate.tar; then
-			echo "sstate: published at $(date -u +%T)"
+		if sum=$(set -o pipefail; tar -cf - -C "$SSTATE_DIR" . | tee "$part" | sha256sum | cut -d' ' -f1) \
+			&& printf '%s\n' "$sum" > "$part.sha256" \
+			&& mv -f "$part" /cache/sstate.tar \
+			&& mv -f "$part.sha256" /cache/sstate.tar.sha256; then
+			echo "sstate: published at $(date -u +%T), sha256 $sum"
 		else
-			rm -f "$part"
+			rm -f "$part" "$part.sha256"
 			echo "WARNING: could not publish sstate.tar"
 		fi
 	else
@@ -309,20 +318,57 @@ if [ "$KAS_CMD" = build ]; then
 	# leaves the cache alone. Timestamps because these lines carry none of their
 	# own, and the seed time is the number this whole arrangement is about.
 	echo "sstate: seeding at $(date -u +%T)"
-	if [ -f /cache/sstate.tar ]; then
-		# A failed unpack keeps seeded=0: replacing a good archive with what a
-		# half-read one left behind would cost a cold build later.
-		if tar -xf /cache/sstate.tar -C "$SSTATE_DIR"; then
-			seeded=1
-		else
-			echo "WARNING: could not unpack sstate.tar; building without it, and not publishing"
+
+	# The archive is checked before the build uses it: unpacked and hashed in one
+	# read (the read is the expensive part on this mount, 59 s for 17 GB), then
+	# compared with the sha256 save() wrote.
+	#
+	# tee feeds the hasher through a fifo. Not >(sha256sum): bash 5.2 does not set
+	# $! for that, so nothing could wait for the sum (tested in debian:bookworm).
+	# fd 3 holds the fifo open read-write so neither open() can block, and closing
+	# it is what ends the hasher's input. That holds even if tee never ran.
+	#
+	# An archive with no .sha256 predates the check. It is unpacked unverified,
+	# once, and this job's save() writes the sum.
+	seed_from_archive() {
+		[ -f /cache/sstate.tar ] || return 1
+		if [ ! -f /cache/sstate.tar.sha256 ]; then
+			echo "WARNING: sstate.tar has no .sha256 yet; unpacking it unverified"
+			tar -xf /cache/sstate.tar -C "$SSTATE_DIR"
+			return
 		fi
+		fifo=$HOME/sstate.fifo
+		rm -f "$fifo" && mkfifo "$fifo"
+		exec 3<>"$fifo"
+		# 3>&-: the hasher must not hold fd 3 itself, or its input never ends.
+		sha256sum < "$fifo" > "$HOME/sstate.sum" 3>&- &
+		hasher=$!
+		rc=0
+		(set -o pipefail; tee "$fifo" < /cache/sstate.tar | tar -xf - -C "$SSTATE_DIR") || rc=$?
+		exec 3>&-
+		wait "$hasher" || rc=1
+		rm -f "$fifo"
+		[ "$rc" = 0 ] || return 1
+		[ "$(cut -d' ' -f1 "$HOME/sstate.sum")" = "$(cat /cache/sstate.tar.sha256)" ] && return 0
+		echo "WARNING: sstate.tar sha256 $(cut -d' ' -f1 "$HOME/sstate.sum") != $(cat /cache/sstate.tar.sha256)"
+		return 1
+	}
+
+	if seed_from_archive; then
+		echo "sstate: archive verified and unpacked"
 	else
-		# No archive yet: the first job after the switch reads the old per-file
-		# cache once more (~35 min), and its save() writes the first archive.
+		# No archive yet, or one that is corrupt or would not unpack. Never build
+		# on a half-trusted cache: start clean and reseed from the old per-file
+		# /cache/sstate (~35 min). That leaves a complete set, so save() may
+		# publish it, which also replaces a bad archive. With /cache/sstate gone
+		# too, this is a cold build, which publishes a complete set as well.
+		if [ -f /cache/sstate.tar ]; then
+			echo "WARNING: not using sstate.tar; reseeding from /cache/sstate"
+			rm -rf "$SSTATE_DIR" && mkdir -p "$SSTATE_DIR"
+		fi
 		cp -Ru /cache/sstate/. "$SSTATE_DIR"/ || echo "WARNING: some of /cache/sstate did not copy"
-		seeded=1
 	fi
+	seeded=1
 	echo "sstate: seeded=$seeded, $(du -sh "$SSTATE_DIR" | cut -f1) at $(date -u +%T)"
 fi
 

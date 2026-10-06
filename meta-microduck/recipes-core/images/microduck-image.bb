@@ -12,7 +12,11 @@ inherit rockchip-image
 # as it has been converted (image.bbclass, rm_tmp_images), and rockchip's
 # gen_rkparameter reads the .wic after that. build-hfjob.sh leaves it out of the
 # bucket instead.
-IMAGE_FSTYPES += "wic.zst wic.bmap"
+#
+# wic.zst.sha256sum is oe-core's sha256sum conversion: `sha256sum -c` on it
+# checks a download before it goes anywhere near a card. bmaptool checks the
+# data again while flashing, against the per-range sums in the .bmap.
+IMAGE_FSTYPES += "wic.zst wic.zst.sha256sum wic.bmap"
 
 # Two rockchip outputs nothing here uses, 14.5 GB per build between them:
 # - .ufs.wic, a second 13 GB copy with 4K sectors for UFS storage (we boot from SD)
