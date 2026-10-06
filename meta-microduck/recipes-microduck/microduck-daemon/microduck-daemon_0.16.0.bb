@@ -186,7 +186,9 @@ CARGO_BUILD_FLAGS += "--workspace --exclude xtask --exclude test-support --exclu
 # this mediad.service refuses to start and the camera is dead. It is created
 # ahead of the SRCREV_daemon bump that needs it: an unreferenced group is inert.
 USERADD_PACKAGES = "${PN}"
-GROUPADD_PARAM:${PN} = "-r robot; -r robot-account; -r bluetooth; -r btd; -r mediad; -r tofd; -r padd; -r i2c"
+# nfcd, ahead of the release that ships nfcd: microduck-nfc's udev rule names the group,
+# and an unreferenced group is inert (the robot-account precedent above).
+GROUPADD_PARAM:${PN} = "-r robot; -r robot-account; -r bluetooth; -r btd; -r mediad; -r tofd; -r padd; -r i2c; -r nfcd"
 USERADD_PARAM:${PN} = "-r -g btd -d / -s /sbin/nologin -c 'Robot BLE transport adapter' btd; \
                        -r -g mediad -d / -s /sbin/nologin -c 'Robot media and WebRTC gateway' mediad; \
                        -r -g tofd -d / -s /sbin/nologin -c 'Robot ToF sensor daemon' tofd; \

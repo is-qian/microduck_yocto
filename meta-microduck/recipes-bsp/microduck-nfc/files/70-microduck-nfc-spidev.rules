@@ -1,0 +1,8 @@
+# The beta board's NFC reader, an ST25R100 on SPI1 (rk3566-microduck-beta.dts, &spi1), is
+# a spidev, and spidev nodes are root-only by default. nfcd drives it from userspace (it
+# polls the chip's IRQ status registers, so it needs nothing but this device) and runs
+# as nfcd, so the nfcd group gets it.
+#
+# Matched on the controller, fe620000.spi, rather than on spidev1.0, for the reason the
+# ToF's rule gives: an alias renumbering must not hand the ToF's device out instead.
+SUBSYSTEM=="spidev", KERNELS=="fe620000.spi", GROUP="nfcd", MODE="0660"
