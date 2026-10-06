@@ -748,10 +748,13 @@
 
 /*
  * Sheet 23: ST25R100 NFC reader on SPI1_M1, IRQ on GPIO3_C4, reset on
- * GPIO3_C5. No kernel driver exists for it; spidev, for a userspace driver.
- * Seeed DTB: chip select as a GPIO (GPIO3_A1, the CS0_M1 pin) rather than
- * the controller's, and 5 MHz. The interrupt and reset are listed for
- * userspace to find; spidev itself uses neither.
+ * GPIO3_C5, two single-ended antennas (RFO1/RFI1, RFO2/RFI2). No kernel driver
+ * exists for it; spidev, for nfcd's userspace driver (microduck nfc/), which
+ * polls the chip's IRQ status registers rather than the IRQ line. Seeed DTB:
+ * chip select as a GPIO (GPIO3_A1, the CS0_M1 pin) rather than the
+ * controller's, and 5 MHz. RESET is active high (DS14139 §5.1) and held low by
+ * the hog in &gpio3, so the chip runs whatever userspace does; the interrupt
+ * and reset stay listed here for anyone reading the node.
  */
 &spi1 {
 	status = "okay";
@@ -1271,6 +1274,14 @@
 		/* GPIO3_D0-D7 */
 		"", "", "", "",
 		"", "", "", "";
+
+	/* The ST25R100 out of reset (RESET high holds it there). */
+	nfc-reset-hog {
+		gpio-hog;
+		gpios = <RK_PC5 GPIO_ACTIVE_HIGH>;
+		output-low;
+		line-name = "NFC_RST";
+	};
 };
 
 &gpio4 {

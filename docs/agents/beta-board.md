@@ -47,7 +47,8 @@ still a claim to check, in the order below.
 | camera | IMX219 | GC2093 at 0x37 on I2C2 (Seeed also describes a GC2613 that is not fitted) |
 | face board | — | PCA9535 + 12 LEDs and maybe the IMU on I2C3, ToF on SPI3 (1.8 V), stereo PDM mic |
 | fan | — | trips in soc-thermal: off below 52 °C, steps up from 60 °C |
-| other | HDMI | NFC (ST25R100, SPI1), fan header, Qwiic (I2C4), board-ID EEPROM |
+| NFC | USB CLRC663 (bench) | ST25R100 on SPI1 (`/dev/spidev1.0`, group `nfcd`), two antennas (RFO1, RFO2), RESET held low by a hog; read by nfcd |
+| other | HDMI | fan header, Qwiic (I2C4), board-ID EEPROM |
 
 `/dev/ttyS2` is the motor bus on both boards on purpose. `robotd.toml`, the
 daemon's scripts and its docs all name it, and the alias costs one DTS line. The
