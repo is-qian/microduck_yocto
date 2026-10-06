@@ -4,7 +4,25 @@ LICENSE = "MIT"
 require recipes-core/images/core-image-base.bb
 
 # meta-rockchip: produces the .wic in deploy/.
-inherit rockchip-image
+inherit rockchip-image extrausers
+
+# The operator account, the same as the Radxa images': microduck / microduck,
+# sudo with that password. Everything the daemon's tooling assumes defaults to
+# it -- duckctl ssh, scripts/dev-push.sh and provision-board.sh all log in as
+# `microduck@` and sudo from there. robot lets robotctl read the daemons'
+# sockets without root (scripts/install.sh adds its operator the same way);
+# audio, video, dialout and i2c are the devices a person debugging a duck pokes
+# at by hand. The hash is `openssl passwd -6 -salt microduckbeta microduck`,
+# fixed so the image stays reproducible; '$' is escaped for bitbake.
+MICRODUCK_OPERATOR_HASH = "\$6\$microduckbeta\$lxVesOQbjM8IXwxq5s/GpwW0KnK1YuspITBn7crCGbeuodZd.PBnJJIS5E32lQK4/mugkqFe36SAr6iyo82Gu0"
+EXTRA_USERS_PARAMS = "useradd -m -s /bin/bash -G robot,sudo,audio,video,dialout,i2c,plugdev,input -p '${MICRODUCK_OPERATOR_HASH}' microduck;"
+
+ROOTFS_POSTPROCESS_COMMAND += "microduck_operator_sudo;"
+microduck_operator_sudo() {
+	install -d -m 0750 ${IMAGE_ROOTFS}${sysconfdir}/sudoers.d
+	echo '%sudo ALL=(ALL:ALL) ALL' > ${IMAGE_ROOTFS}${sysconfdir}/sudoers.d/10-sudo-group
+	chmod 0440 ${IMAGE_ROOTFS}${sysconfdir}/sudoers.d/10-sudo-group
+}
 
 # The card image to download and flash is the compressed .wic.zst plus its .bmap:
 # `bmaptool copy` writes only the blocks in use, instead of dd copying all 13 GB.
@@ -35,15 +53,18 @@ IMAGE_FEATURES += "ssh-server-openssh"
 
 IMAGE_INSTALL:append = " \
     microduck-daemon \
+    microduck-board \
     rauc \
     u-boot-rockchip-env \
     microduck-data \
     packagegroup-microduck-media \
+    alsa-utils-aplay \
+    sudo \
     kernel-modules \
     ca-certificates \
     networkmanager \
     bluez5 \
-    aic8800-bt \
+    ${MICRODUCK_RADIO_PACKAGES} \
     wireless-regdb-static \
     i2c-tools \
     usbutils \
@@ -58,11 +79,19 @@ IMAGE_INSTALL:append = " \
 # RAUC's uboot backend needs; the fw_printenv/fw_setenv it runs arrive through
 # meta-rauc's own RDEPENDS on u-boot-fw-utils. See recipes-bsp/u-boot/.
 
+# MICRODUCK_RADIO_PACKAGES is per machine (microduck-common.inc has the
+# default): the Zero 3W's is aic8800-bt, the beta board's wq9201s-bt.
+#
 # aic8800-bt is the HCI attach unit, in the shipping image rather than the dev
 # one: BLE is how a robot with no network gets provisioned (configd over btd), so
 # a controller that never attaches is a product fault, not a debug inconvenience.
 # The chip answers only through hciattach with the port speed set before the line
 # discipline attaches -- see the unit for the measurements that established that.
+
+# alsa-utils-aplay is aplay and arecord, and the robot's voice depends on it:
+# robotd and sounds play every wav by running `aplay -D <device>` (robotd's
+# sound.rs), so without it a robot accepts `robotctl quack` and stays silent.
+# Found missing on the first beta board, 2026-10-05.
 
 # microduck-daemon-padd is built but deliberately not installed: it is a gamepad
 # client, and its gilrs/libudev-sys chain is only wanted when someone is

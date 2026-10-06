@@ -1,0 +1,18 @@
+[Unit]
+Description=Route the RK809 codec to the speaker amplifier
+Documentation=file:///etc/alsa/conf.d/60-microduck-beta.conf
+# The card appears when the codec probes; sound.target is reached once udev has
+# seen the sound cards.
+After=sound.target
+Wants=sound.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# The NS4150B amp sits on HPL and is enabled by spk-ctl-gpios, so the codec must
+# be on its SPK path (rk3566-microduck-beta.dts, &rk809_codec). The rk817 codec
+# driver starts on OFF and only a mixer write moves it.
+ExecStart=/usr/bin/amixer -q -c rockchiprk809 cset name='Playback Path' SPK
+
+[Install]
+WantedBy=multi-user.target

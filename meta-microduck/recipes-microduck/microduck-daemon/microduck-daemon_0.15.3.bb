@@ -31,8 +31,8 @@ inherit cargo cargo-update-recipe-crates pkgconfig systemd useradd
 # only the api.github.com/.../releases/assets/<id> form works authenticated.
 #
 # SRCREV_daemon tracks a RELEASE, not main. Every stable release carries a
-# "source_revision" in its manifest.json -- daemon-v0.13.0 says
-# "84684dbf..." -- so pinning that exact commit makes the image's PV the same
+# "source_revision" in its manifest.json -- daemon-v0.15.0 says
+# "a9ec4b20..." -- so pinning that exact commit makes the image's PV the same
 # code as the published release of that version. On a version bump, take the
 # revision from the manifest rather than from the tag or from main:
 #
@@ -57,8 +57,14 @@ SRC_URI = "git://git@github.com/pollen-robotics/microduck_daemon.git;protocol=ss
            file://robotctl.bash_completion \
            file://microduck-slot-health \
            file://microduck-slot-health.service \
+           file://microduck-voice-bank.service \
 "
-SRCREV_daemon = "84684dbf104b12c581db7bfa38ccb2a0b4af466e"
+# 0.15.3, the first release that builds on oe-core wrynose's Rust 1.94.1
+# (RUSTVERSION in tcmode-default.inc): 0.15.1 and 0.15.2 needed 1.99 for two
+# atomics' try_update in mediad, and microduck#358 brought the floor back to 1.89
+# and recorded 1.94 as the ceiling in CONTRIBUTING.md. A release that needs a
+# newer Rust than that is a CI failure here, not a reason to pin an older one.
+SRCREV_daemon = "c6725c96be13238461149c105c3748b9bc9d6cf5"
 SRCREV_bmi088 = "bd113f317b14923f50f9a12a06678fe162b7fe06"
 SRCREV_FORMAT = "daemon_bmi088"
 
@@ -227,7 +233,7 @@ USERADD_PARAM:${PN} = "-r -g btd -d / -s /sbin/nologin -c 'Robot BLE transport a
 # -- so the timer is what gets enabled. microduck-slot-health.service is enabled
 # into boot-complete.target, which gates rauc-mark-good.
 SYSTEMD_PACKAGES = "${PN} ${PN}-padd"
-SYSTEMD_SERVICE:${PN} = "robotd.service updaterd.service configd.service btd.service mediad.service tofd.service robot-boot-check.timer microduck-slot-health.service"
+SYSTEMD_SERVICE:${PN} = "robotd.service updaterd.service configd.service btd.service mediad.service tofd.service robot-boot-check.timer microduck-slot-health.service microduck-voice-bank.service"
 SYSTEMD_SERVICE:${PN}-padd = "padd.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
@@ -318,6 +324,7 @@ do_install:append() {
 
 	# RAUC marks a slot good only if the same check passes; see the script.
 	install -m 0644 ${UNPACKDIR}/microduck-slot-health.service ${D}${systemd_system_unitdir}/
+	install -m 0644 ${UNPACKDIR}/microduck-voice-bank.service ${D}${systemd_system_unitdir}/
 	install -d ${D}${libexecdir}
 	install -m 0755 ${UNPACKDIR}/microduck-slot-health ${D}${libexecdir}/
 
@@ -556,5 +563,5 @@ RRECOMMENDS:${PN} += "onnxruntime"
 # rolls a release back on -- so every *attempted* update reverts. Seeded here because an
 # image installs through neither hooks/postinstall nor scripts/install.sh; the recipe
 # carries the rest of the story. Bump it with POLICY_VERSION in the daemon's own
-# scripts/seed-policies.sh (v5 at 0.13.0 and at 0.14.1).
+# scripts/seed-policies.sh (v5 at 0.13.0 to 0.15.1, v7 at 0.15.2 and 0.15.3).
 RDEPENDS:${PN} += "microduck-policies"

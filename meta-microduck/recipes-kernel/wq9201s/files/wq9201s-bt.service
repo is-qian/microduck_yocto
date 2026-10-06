@@ -1,0 +1,19 @@
+[Unit]
+Description=Attach the WQ9201S Bluetooth HCI on UART1
+Documentation=file:///usr/libexec/wq9201s-bt-attach
+Before=bluetooth.service
+After=systemd-modules-load.service
+ConditionPathExists=/dev/ttyS1
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/sbin/rfkill unblock all
+ExecStart=/usr/libexec/wq9201s-bt-attach
+# No Restart=: the script already makes three attempts, and every start of
+# this unit runs rfkill, which power-cycles the controller through BT_REG_ON
+# (rfkill-bt's "bt turn on power" in dmesg) and wipes the firmware wq_wlan
+# loaded. Restarting on failure did that every ~23 s, forever, on the first
+# beta board (2026-10-05). One try per boot; `systemctl restart` for another.
+
+[Install]
+WantedBy=multi-user.target

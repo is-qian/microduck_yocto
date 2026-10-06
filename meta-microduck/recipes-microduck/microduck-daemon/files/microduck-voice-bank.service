@@ -1,0 +1,20 @@
+[Unit]
+Description=Render the robot's voice bank if it is missing or outdated
+# The release's hooks/postinstall runs `sounds ensure-bank` on every update and
+# scripts/install.sh on a fresh board; an image installs through neither, so a
+# freshly flashed robot had no bank and `robotctl quack` was refused ("this robot
+# has no voice"). Seen on the beta board, 2026-10-06. The render is offline
+# (2.3 s, 82 sounds, 4.3 MB on the beta) and picks a per-robot personality, so it
+# belongs on the robot, not in the image. ensure-bank is a no-op when the bank is
+# current, so running it every boot costs nothing after the first.
+RequiresMountsFor=/var/lib/robot
+Before=robotd.service
+
+[Service]
+Type=oneshot
+# Same command and directory as hooks/postinstall. A robot without a voice walks:
+# a failure here is logged and never holds robotd back.
+ExecStart=-/opt/robot/daemon/current/bin/sounds ensure-bank --dir /var/lib/robot/sounds
+
+[Install]
+WantedBy=multi-user.target

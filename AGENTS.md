@@ -78,6 +78,9 @@ Topics too long for this file, each a list of things that bite:
   `ERROR` for a week (`bash -lc` + `.bash_logout` + `set -e`) and the probe
   technique that found it, verifying an artifact before flashing, what is
   blocked for an agent.
+- `docs/agents/beta-board.md` — the custom PCB's first spin (`microduck-beta`):
+  how it differs from the Zero 3W, flashing its eMMC over USB-C, the order to
+  bring it up in, and why its DTS is a claim to check rather than a fact.
 - `docs/agents/gst-tracers.md` — measuring the media pipeline (dev image): why
   `mediad` needs `RUST_LOG=gst=debug` and a WebRTC consumer before tracers say
   anything, why the CSV tracers never write from inside it, and the measured
@@ -101,6 +104,12 @@ kas/microduck.yml         layer pins + build config. NO absolute paths.
 kas/<host>.env            per-host paths, as env vars (see below).
 meta-microduck/conf/machine/microduck-zero3.conf
                           the Radxa Zero 3W stand-in board.
+meta-microduck/conf/machine/microduck-beta.conf
+                          the beta board, the custom PCB's first spin.
+meta-microduck/recipes-kernel/linux/files/rk3566-microduck-beta.dts
+                          its whole device tree, copied into the kernel tree at
+                          build time (MICRODUCK_BOARD_DTS).
+kas/beta.yml              compose last to build the beta board.
 meta-microduck/conf/machine/include/microduck-common.inc
                           anything shared with the future custom PCB.
 ```
@@ -111,9 +120,9 @@ a path written into `local.conf` names a host directory the container cannot see
 so the build fails or silently writes somewhere useless. `TMPDIR` needs no
 setting — it defaults to `$KAS_BUILD_DIR/tmp`, which is already mounted.
 
-The machine conf is deliberately thin over meta-rockchip's `rk356x.inc`. When
-the custom PCB arrives it should be a second machine conf plus its own DTS,
-reusing `microduck-common.inc` unchanged — so put board-specific things in the
+The machine conf is deliberately thin over meta-rockchip's `rk356x.inc`. The
+custom PCB is now exactly that: `microduck-beta.conf` plus its own DTS,
+reusing `microduck-common.inc` — so put board-specific things in the
 machine conf and shared things in the include, not the other way round.
 
 Add a new `kas/<host>.env` rather than editing an existing one. Paths are the

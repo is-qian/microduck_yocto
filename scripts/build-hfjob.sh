@@ -4,6 +4,7 @@
 #   scripts/build-hfjob.sh                                   # build the image
 #   HFJOB_TARGET=linux-rockchip scripts/build-hfjob.sh       # one recipe
 #   HFJOB_FLAVOR=cpu-basic scripts/build-hfjob.sh checkout   # layers+conf, no build
+#   HFJOB_MACHINE=microduck-beta scripts/build-hfjob.sh      # the beta board
 #
 # The first argument is the kas command, defaulting to `build`, the same shape
 # build-coach.sh uses. `checkout` is worth knowing about: it clones the layers and
@@ -40,6 +41,10 @@ FLAVOR=${HFJOB_FLAVOR:-cpu-performance}
 TIMEOUT=${HFJOB_TIMEOUT:-8h}
 BUCKET=${HFJOB_BUCKET:-pollen-robotics/microduck-yocto-cache}
 TARGET=${HFJOB_TARGET:-}
+# Which board. Passed to kas as KAS_MACHINE, which overrides `machine:` in
+# microduck.yml (kas/beta.yml is the same thing for a local build), and used
+# below to find the deploy directory, which is named after it.
+MACHINE=${HFJOB_MACHINE:-microduck-zero3}
 KAS_CMD=${1:-build}
 
 # The RAUC signing pair, needed only when the target is the bundle.
@@ -94,13 +99,14 @@ set -- \
 	--namespace pollen-robotics \
 	--flavor "$FLAVOR" \
 	--timeout "$TIMEOUT" \
-	--name "microduck-${TARGET:-image}-$KAS_CMD" \
+	--name "microduck-${MACHINE#microduck-}-${TARGET:-image}-$KAS_CMD" \
 	--detach \
 	-v "$stage/kas:/src/kas" \
 	-v "$stage/meta-microduck:/src/meta-microduck" \
 	-v "hf://buckets/$BUCKET:/cache" \
 	-e "HFJOB_BUCKET=$BUCKET" \
-	-e "KAS_CMD=$KAS_CMD"
+	-e "KAS_CMD=$KAS_CMD" \
+	-e "KAS_MACHINE=$MACHINE"
 
 # Appended conditionally, and each guarded: under `set -e` a bare
 # `[ -n "$x" ] && set -- ...` would exit the script whenever x is empty.
@@ -182,7 +188,7 @@ save() {
 	fi
 	saved=1
 
-	img="$KAS_BUILD_DIR"/tmp/deploy/images/microduck-zero3
+	img="$KAS_BUILD_DIR"/tmp/deploy/images/"$KAS_MACHINE"
 	out=/cache/deploy/"${JOB_ID:-nojobid}"
 	if [ -d "$img" ]; then
 		# Loud, not silent: a failed artifact copy is the whole problem this

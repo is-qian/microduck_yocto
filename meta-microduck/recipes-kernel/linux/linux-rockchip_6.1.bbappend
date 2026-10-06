@@ -64,7 +64,53 @@ SRC_URI += "${@bb.utils.contains('MICRODUCK_MOTOR_UART', '1', 'file://motorbus.c
 # showed no /dev/video* and nothing in dmesg whether or not a camera was
 # plugged in, which is a confusing way to look broken.
 #
-# Unconditional, because every microduck has the camera. It is ordered after
-# the MICRODUCK_MOTOR_UART line and touches a different part of the same file,
-# so it applies whether or not 0002 did; both orders are checked.
-SRC_URI += "file://0003-rk3566-radxa-zero-3w-radxa-camera-8m-imx219.patch"
+# Zero 3W only: it edits radxa's Zero 3W dts, and the beta board's camera is a
+# different sensor described (or not yet) in its own DTS. `:append` lands after
+# every `+=`, so it is still ordered after the MICRODUCK_MOTOR_UART line; it
+# touches a different part of the same file, so it applies whether or not 0002
+# did; both orders are checked. (0001, under PATCHPATH, is unconditional and
+# still patches the Zero 3W dts on a beta build -- harmless, that dts is simply
+# not built there.)
+SRC_URI:append:microduck-zero3 = " file://0003-rk3566-radxa-zero-3w-radxa-camera-8m-imx219.patch"
+
+# A board whose device tree lives in this layer rather than in any kernel tree.
+# The machine conf names the file (MICRODUCK_BOARD_DTS); it is copied into the
+# kernel source after patching and listed in the rockchip dts Makefile, so the
+# normal KERNEL_DEVICETREE build -- and meta-rockchip's per-DTB boot.img, which
+# runs `make rockchip/<name>.dtb` through scripts/mkimg -- picks it up like any
+# in-tree board.
+#
+# A file rather than a patch because it is a whole new board in bring-up: it will
+# be edited constantly against a schematic that is itself older than the boards,
+# and a readable .dts diffs better than a patch of one. Empty for the Zero 3W,
+# whose device tree is radxa's own plus the patches above.
+#
+# A shell postfunc, not do_patch:append -- do_patch is a Python task (AGENTS.md).
+MICRODUCK_BOARD_DTS ??= ""
+SRC_URI += "${@'file://' + d.getVar('MICRODUCK_BOARD_DTS') if d.getVar('MICRODUCK_BOARD_DTS') else ''}"
+
+microduck_install_board_dts() {
+	dts="${MICRODUCK_BOARD_DTS}"
+	[ -n "$dts" ] || return 0
+	dir="${S}/arch/${ARCH}/boot/dts/rockchip"
+	install -m 0644 "${UNPACKDIR}/$dts" "$dir/"
+	dtb="${dts%.dts}.dtb"
+	grep -qF "$dtb" "$dir/Makefile" || echo "dtb-\$(CONFIG_ARCH_ROCKCHIP) += $dtb" >> "$dir/Makefile"
+	grep -qF "$dtb" "$dir/Makefile" || bbfatal "$dtb did not make it into $dir/Makefile"
+}
+do_patch[postfuncs] += "microduck_install_board_dts"
+
+# The beta board's extra kernel options, and a check that they took. Same idea as
+# microduck_check_uboot_config: a fragment line whose dependency is missing is
+# silently dropped by merge_config, and the first symptom would be a face board
+# with no LEDs on a board that otherwise boots fine.
+SRC_URI:append:microduck-beta = " file://microduck-beta.cfg"
+
+microduck_check_kernel_fragments() {
+	for frag in ${@' '.join(u.split('://')[1].split(';')[0] for u in d.getVar('SRC_URI').split() if u.startswith('file://microduck-') and u.endswith('.cfg'))}; do
+		for line in $(grep -vE '^[[:space:]]*(#|$)' ${UNPACKDIR}/$frag); do
+			grep -qxF "$line" ${B}/.config || bbfatal "$frag: '$line' is not in the merged ${B}/.config"
+		done
+	done
+}
+do_configure[postfuncs] += "microduck_check_kernel_fragments"

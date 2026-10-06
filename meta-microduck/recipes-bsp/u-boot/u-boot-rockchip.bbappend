@@ -31,3 +31,37 @@ microduck_check_uboot_config() {
 	done
 }
 do_configure[postfuncs] += "microduck_check_uboot_config"
+
+# The beta board's DRAM init. make.sh rk3568 packs the loader and idblock from
+# rkbin's RKBOOT/RK3568MINIALL.ini, which names rk3568_ddr_1560MHz -- the RK3568's
+# blob, at a clock the RK3566 is not rated for. On the beta board (an RK3566 with
+# DDR4) the first image built that way never got past power-on: no USB, no LEDs.
+# Seeed's factory image boots the same board with rk3566_ddr_1056MHz_v1.26 and
+# rk356x_spl_v1.14, so the beta packs exactly those: fetched from upstream rkbin at
+# a pinned commit (meta-rockchip's rkbin snapshot stops at 1.18 / 1.13), and an ini
+# that names them installed over RK3568MINIALL.ini, so make.sh's loader and
+# --idblock steps both pick them up without changing how they are called.
+# Rockchip's DDR blobs detect the DRAM type themselves (DDR3/DDR4/LPDDR3/LPDDR4).
+RKBIN_UPSTREAM = "https://raw.githubusercontent.com/rockchip-linux/rkbin/3e288fe814e059dd06833495f845cab04ac20a5c"
+SRC_URI:append:microduck-beta = " \
+    ${RKBIN_UPSTREAM}/bin/rk35/rk3566_ddr_1056MHz_v1.26.bin;name=rk3566ddr;subdir=rkbin-beta \
+    ${RKBIN_UPSTREAM}/bin/rk35/rk356x_spl_v1.14.bin;name=rk356xspl;subdir=rkbin-beta \
+    file://microduck-beta/RK3568MINIALL.ini;subdir=rkbin-beta \
+"
+SRC_URI[rk3566ddr.sha256sum] = "9966c21aadf00737ccecc2fad6fe3c902ff26956433029f70dfd759d4f60616a"
+SRC_URI[rk356xspl.sha256sum] = "add54b882996c06b3c22f4bdc1bc3f1be90edb5a306d6d72a1c348b452997236"
+
+microduck_beta_rkbin() {
+	install -m 0644 ${UNPACKDIR}/rkbin-beta/rk3566_ddr_1056MHz_v1.26.bin ${UNPACKDIR}/rkbin/bin/rk35/
+	install -m 0644 ${UNPACKDIR}/rkbin-beta/rk356x_spl_v1.14.bin ${UNPACKDIR}/rkbin/bin/rk35/
+	install -m 0644 ${UNPACKDIR}/rkbin-beta/microduck-beta/RK3568MINIALL.ini ${UNPACKDIR}/rkbin/RKBOOT/RK3568MINIALL.ini
+}
+do_configure[prefuncs] += "${@'microduck_beta_rkbin' if d.getVar('MACHINE') == 'microduck-beta' else ''}"
+
+# And fail the build, not the board, if the idblock does not carry it.
+microduck_check_beta_ddr() {
+	if ! grep -aq 'fwver: v1.26' ${B}/idblock.img; then
+		bbfatal "beta idblock does not carry the rk3566 DDR v1.26 blob"
+	fi
+}
+do_compile[postfuncs] += "${@'microduck_check_beta_ddr' if d.getVar('MACHINE') == 'microduck-beta' else ''}"

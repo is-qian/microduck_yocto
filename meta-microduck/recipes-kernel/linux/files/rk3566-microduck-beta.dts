@@ -1,0 +1,1155 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * microduck beta: Seeed "MicroDuck Main Board", RK3566, 1 GB DDR4, 64 GB eMMC.
+ *
+ * Transcribed from the V0.1 schematic dated 2026-09-09 (24 sheets), then
+ * corrected against the device tree Seeed's own image boots on a real board
+ * (Armbian "microduck", vendor 6.1.172, built 2026-09-29; model "Microduck
+ * Main Board V0.1", compatible "seeed,microduck"), read from
+ * /sys/firmware/fdt on 2026-10-05. The schematic is OLDER than the boards, and
+ * where the two disagree Seeed's tree wins, because their image runs on the
+ * board -- its radio associates, for one. Blocks marked "Seeed DTB" were taken
+ * or corrected from it; the rest is still "what V0.1 says". Sheet numbers are
+ * cited so a newer schematic can be diffed against this file block by block.
+ *
+ * Built on Rockchip's own rk3566.dtsi + rk3568-linux.dtsi, the same base as
+ * radxa's rk3566-radxa-zero3.dtsi, so everything SoC-level (MPP, RGA, ISP,
+ * NPU, GPU) is described exactly as on the Zero 3W the image already runs on.
+ * What differs is the board: a different PMIC (RK809, not RK817), a different
+ * motor UART, eMMC instead of SD, a codec instead of HDMI, and a face board.
+ *
+ * Seeed's image is Armbian, and its kernel tree is not ours, so their DTB is
+ * evidence, not a drop-in: SoC-level nodes differ between the two trees.
+ *
+ * Not a Zero 3W in any respect beyond the SoC: do not include
+ * rk3566-radxa-zero3.dtsi here, and do not port fixes between the two blindly.
+ */
+
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+#include <dt-bindings/pwm/pwm.h>
+#include "rk3566.dtsi"
+#include "rk3568-linux.dtsi"
+
+/ {
+	model = "Pollen Robotics microduck beta";
+	/*
+	 * The first entry is what tells software it is on a beta board:
+	 * /proc/device-tree/compatible. The board *revision* within the family
+	 * comes from the SARADC_VIN1 divider instead (see &saradc), so a later
+	 * board spin keeps this string unless it needs a different DTB.
+	 */
+	compatible = "pollen,microduck-beta", "rockchip,rk3566";
+
+	/*
+	 * The motor bus is UART3 here, not UART2 -- but it enumerates as
+	 * /dev/ttyS2, because these two aliases are swapped.
+	 *
+	 * Deliberate: /dev/ttyS2 is the motor bus in robotd.toml, in the daemon's
+	 * install scripts and in every doc, because on the Zero 3W it really is
+	 * UART2. Renaming the device per board would mean a per-machine robotd.toml
+	 * (and so a per-machine build of the whole Rust daemon recipe) to change
+	 * one string. 8250_dw takes its line number from the "serial" alias
+	 * (8250_dw.c: of_alias_get_id(np, "serial")), so this costs nothing.
+	 *
+	 * UART2 itself stays the FIQ debug console (ttyFIQ0), which is not an 8250
+	 * port, so nothing else wants the ttyS2 name.
+	 */
+	aliases {
+		serial2 = &uart3;
+		serial3 = &uart2;
+	};
+
+	/*
+	 * rk3568-linux.dtsi's bootargs carry root=PARTUUID=614e0000-0000. Replaced,
+	 * not appended to, for the reason 0001-*-restore-chosen-bootargs.patch gives
+	 * for the Zero 3W: U-Boot's RAUC script passes root=PARTLABEL=rootfs_a|b,
+	 * and a root= here would REPLACE it and pin every boot to one slot.
+	 *
+	 * Unlike the Zero 3W, earlycon and console=ttyFIQ0 are wanted and safe:
+	 * UART2 (0xfe660000) is the debug UART on test pads TP83/TP84 (sheet 24,
+	 * "Default debug UART 3.3V"), not the motor bus.
+	 */
+	chosen {
+		bootargs = "earlycon=uart8250,mmio32,0xfe660000 console=ttyFIQ0 rw rootwait";
+	};
+
+	/* Sheet 4/5: the battery feeds two TPS54302 bucks. */
+	vbat: vbat {
+		compatible = "regulator-fixed";
+		regulator-name = "vbat";
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	vcc3v3_sys: vcc3v3-sys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc3v3_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vbat>;
+	};
+
+	vcc5v0_sys: vcc5v0-sys {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc5v0_sys";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&vbat>;
+	};
+
+	/*
+	 * Sheet 21/14: the Recovery button pulls SARADC_VIN0 to ground (10k to
+	 * VCCA_1V8 otherwise). Described the way Rockchip's evb does it, because
+	 * Rockchip's U-Boot reads this node from the kernel DTB to decide whether
+	 * to enter rockusb (loader) mode -- which is what lets the button replace
+	 * shorting the maskrom pads for a reflash. NOT verified on this board:
+	 * docs/agents/beta-board.md says how to check.
+	 */
+	adc-keys {
+		compatible = "adc-keys";
+		io-channels = <&saradc 0>;
+		io-channel-names = "buttons";
+		keyup-threshold-microvolt = <1800000>;
+		poll-interval = <100>;
+
+		recovery-key {
+			label = "recovery";
+			linux,code = <KEY_VOLUMEUP>;
+			press-threshold-microvolt = <1750>;
+		};
+	};
+
+	/*
+	 * Sheet 21: 4-pin fan header, PWM8_M0 through a level shifter, tach on
+	 * GPIO3_B0 through a MOSFET with a 10k pull-up. Whether a fan is fitted
+	 * on the beta units is not known; with none, the tach simply reads 0.
+	 * Seeed DTB has the same PWM but no tach interrupt; kept from V0.1.
+	 */
+	fan: pwm-fan {
+		compatible = "pwm-fan";
+		#cooling-cells = <2>;
+		pwms = <&pwm8 0 40000 0>;
+		/* Cooling states 0-3, driven by soc-thermal's fan trips below. */
+		cooling-levels = <0 110 180 255>;
+		interrupt-parent = <&gpio3>;
+		interrupts = <RK_PB0 IRQ_TYPE_EDGE_FALLING>;
+		pulses-per-revolution = <2>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&fan_tach>;
+	};
+
+	/*
+	 * Sheet 7: speaker. The codec's HPL output drives an NS4150B class-D amp
+	 * (enable = AUDIO_AMP_CTL, GPIO1_B0) into the 4 ohm speaker. SPK_OUT is
+	 * not connected, so the codec must play on its *headphone* path; see
+	 * hp-ctl-gpios on &rk809_codec.
+	 */
+	rk809_sound: rk809-sound {
+		compatible = "rockchip,multicodecs-card";
+		rockchip,card-name = "rockchip-rk809";
+		rockchip,format = "i2s";
+		rockchip,mclk-fs = <256>;
+		rockchip,cpu = <&i2s1_8ch>;
+		rockchip,codec = <&rk809_codec>;
+		status = "okay";
+	};
+
+	/*
+	 * Sheet 18/24: the face board's microphone is PDM, on PDM_CLK1_M0
+	 * (GPIO1_A4) and PDM_SDI1_M0 (GPIO1_B2). Not an analog mic into the
+	 * codec: MIC1P/N on the RK809 are tied off (sheet 7).
+	 */
+	/* Seeed DTB: a stereo dmic-codec, card name "face-mic". */
+	dmic_codec: dmic-codec {
+		compatible = "dmic-codec";
+		num-channels = <2>;
+		#sound-dai-cells = <0>;
+	};
+
+	face_mic_sound: face-mic-sound {
+		compatible = "simple-audio-card";
+		simple-audio-card,name = "face-mic";
+		simple-audio-card,format = "pdm";
+
+		simple-audio-card,cpu {
+			sound-dai = <&pdm>;
+		};
+
+		simple-audio-card,codec {
+			sound-dai = <&dmic_codec>;
+		};
+	};
+
+	/*
+	 * Seeed DTB: twelve LEDs on the face board, driven through the PCA9535
+	 * expander on I2C3 (V0.1 does not show the face board). Pins 6, 7, 14
+	 * and 15 of the expander are not LEDs. Labels are Seeed's.
+	 */
+	face_leds: face-leds {
+		compatible = "gpio-leds";
+
+		led-cam {
+			label = "face:cam:red";
+			gpios = <&face_gpio 0 GPIO_ACTIVE_HIGH>;
+		};
+
+		led-green1 {
+			label = "face:green1:green";
+			gpios = <&face_gpio 1 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "heartbeat";
+		};
+
+		led-green2 {
+			label = "face:green2:green";
+			gpios = <&face_gpio 2 GPIO_ACTIVE_HIGH>;
+		};
+
+		led-rgb-blue {
+			label = "face:rgb:blue";
+			gpios = <&face_gpio 3 GPIO_ACTIVE_HIGH>;
+		};
+
+		led-rgb-green {
+			label = "face:rgb:green";
+			gpios = <&face_gpio 4 GPIO_ACTIVE_HIGH>;
+		};
+
+		led-rgb-red {
+			label = "face:rgb:red";
+			gpios = <&face_gpio 5 GPIO_ACTIVE_HIGH>;
+		};
+
+		led-gb-blue {
+			label = "face:gb:blue";
+			gpios = <&face_gpio 8 GPIO_ACTIVE_HIGH>;
+		};
+
+		led-gb-green {
+			label = "face:gb:green";
+			gpios = <&face_gpio 9 GPIO_ACTIVE_HIGH>;
+		};
+
+		led-gr1-red {
+			label = "face:gr1:red";
+			gpios = <&face_gpio 10 GPIO_ACTIVE_HIGH>;
+		};
+
+		led-gr1-green {
+			label = "face:gr1:green";
+			gpios = <&face_gpio 11 GPIO_ACTIVE_HIGH>;
+		};
+
+		led-gr2-red {
+			label = "face:gr2:red";
+			gpios = <&face_gpio 12 GPIO_ACTIVE_HIGH>;
+		};
+
+		led-gr2-green {
+			label = "face:gr2:green";
+			gpios = <&face_gpio 13 GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	/*
+	 * Sheet 22 + Seeed DTB: the WL6201S module is a WuQi WQ9201S (driver
+	 * wq_wlan, firmware wq9201_*, BT as H4 over UART1). Seeed's image
+	 * associates with it, so these GPIOs are measured truth, and they are
+	 * NOT where V0.1 puts them: every control line is on bank 2, not bank 0.
+	 *   WIFI_REG_ON GPIO2_C0, WIFI_WAKE_HOST GPIO2_B7,
+	 *   BT_REG_ON GPIO2_C1, HOST_WAKE_BT GPIO2_B1, BT_WAKE_HOST GPIO2_B2.
+	 * GPIO2_B1/B2 are I2C4_M1 in V0.1 (the Qwiic port), which is why &i2c4
+	 * is disabled below.
+	 */
+	wireless_wlan: wireless-wlan {
+		compatible = "wlan-platdata";
+		rockchip,grf = <&grf>;
+		WIFI,poweren_gpio = <&gpio2 RK_PC0 GPIO_ACTIVE_HIGH>;
+		WIFI,host_wake_irq = <&gpio2 RK_PB7 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_host_wake>;
+		status = "okay";
+	};
+
+	wireless_bluetooth: wireless-bluetooth {
+		compatible = "bluetooth-platdata";
+		uart_rts_gpios = <&gpio2 RK_PB5 GPIO_ACTIVE_LOW>;
+		pinctrl-names = "default", "rts_gpio";
+		pinctrl-0 = <&uart1m0_rtsn>;
+		pinctrl-1 = <&uart1_gpios>;
+		BT,reset_gpio    = <&gpio2 RK_PC1 GPIO_ACTIVE_HIGH>;
+		BT,wake_gpio     = <&gpio2 RK_PB1 GPIO_ACTIVE_HIGH>;
+		BT,wake_host_irq = <&gpio2 RK_PB2 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+
+	sdio_pwrseq: sdio-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_enable_h>;
+		post-power-on-delay-ms = <200>;
+		reset-gpios = <&gpio2 RK_PC0 GPIO_ACTIVE_LOW>;
+	};
+};
+
+&cpu0 {
+	cpu-supply = <&vdd_cpu>;
+};
+
+&dfi {
+	status = "okay";
+};
+
+&dmc {
+	center-supply = <&vdd_logic>;
+	status = "okay";
+};
+
+&gpu {
+	mali-supply = <&vdd_gpu>;
+	status = "okay";
+};
+
+&rknpu {
+	rknpu-supply = <&vdd_npu>;
+	status = "okay";
+};
+
+&rknpu_mmu {
+	status = "okay";
+};
+
+/*
+ * Sheet 4, "IO Power Domain Map" -- and the one block in this file that can
+ * damage the SoC if it is wrong. Telling a 3.3 V-supplied bank it is at 1.8 V
+ * overdrives its pads.
+ *
+ * Seeed DTB, which disagrees with V0.1 on exactly one bank: VCCIO4 (the
+ * radio's SDIO, UART1 and control lines) is 1.8 V on the real board, where
+ * V0.1 draws it from VCC_3V3. Every other value matches both. Still worth one
+ * measurement at C204 (VCCIO4) and C191 (VCCIO6) on the first board, since this
+ * is the block that damages pads when it is wrong. Against the Zero 3W, VCCIO6
+ * is the bank that differs: 1.8 V here (camera, ToF), 3.3 V there.
+ */
+&pmu_io_domains {
+	status = "okay";
+	pmuio1-supply = <&vcc3v3_pmu>;
+	pmuio2-supply = <&vcc3v3_pmu>;
+	vccio1-supply = <&vccio_acodec>;	/* 3.3 V: I2S1 to the codec, amp enable */
+	vccio2-supply = <&vcc_1v8>;		/* 1.8 V: eMMC, FLASH_VOL_SEL high */
+	vccio3-supply = <&vccio_sd>;		/* 3.3 V: SDMMC0, unconnected */
+	vccio4-supply = <&vcc_1v8>;		/* 1.8 V: SDIO, UART1, control lines to the radio */
+	vccio5-supply = <&vcc_3v3>;		/* 3.3 V: motors, IMU I2C3, NFC SPI1, fan */
+	vccio6-supply = <&vcc_1v8>;		/* 1.8 V: camera, ToF SPI3 */
+	vccio7-supply = <&vcc_3v3>;		/* 3.3 V: UART9 test points, face expander IRQ */
+};
+
+/* Sheet 6/7: RK809-5 PMIC and the RK860-1 CPU rail, both on I2C0. */
+&i2c0 {
+	status = "okay";
+
+	/*
+	 * RK860-1 (V0.1 also allows a pin-to-pin TCS4525-WT). Seeed DTB: at 0x41,
+	 * not the 0x40 radxa's Zero 3 RK860 uses, with the same silergy,syr827
+	 * description. VSEL is PMIC_SLEEP_H, as on the Zero 3.
+	 */
+	vdd_cpu: rk860x@41 {
+		compatible = "silergy,syr827";
+		reg = <0x41>;
+		vin-supply = <&vcc5v0_sys>;
+		regulator-compatible = "fan53555-reg";
+		regulator-name = "vdd_cpu";
+		regulator-min-microvolt = <712500>;
+		regulator-max-microvolt = <1390000>;
+		regulator-init-microvolt = <1000000>;
+		regulator-ramp-delay = <2300>;
+		fcs,suspend-voltage-selector = <1>;
+		regulator-boot-on;
+		regulator-always-on;
+		regulator-state-mem {
+			regulator-off-in-suspend;
+		};
+	};
+
+	rk809: pmic@20 {
+		compatible = "rockchip,rk809";
+		reg = <0x20>;
+		interrupt-parent = <&gpio0>;
+		interrupts = <3 IRQ_TYPE_LEVEL_LOW>;
+
+		pinctrl-names = "default", "pmic-sleep",
+				"pmic-power-off", "pmic-reset";
+		pinctrl-0 = <&pmic_int>;
+		pinctrl-1 = <&soc_slppin_slp>, <&rk817_slppin_slp>;
+		pinctrl-2 = <&soc_slppin_gpio>, <&rk817_slppin_pwrdn>;
+		pinctrl-3 = <&soc_slppin_gpio>, <&rk817_slppin_rst>;
+
+		rockchip,system-power-controller;
+		wakeup-source;
+		#clock-cells = <1>;
+		clock-output-names = "rk808-clkout1", "rk808-clkout2";
+		/* 1: rst regs (default in codes), 0: rst the pmic */
+		pmic-reset-func = <0>;
+		/* not save the PMIC_POWER_EN register in uboot */
+		not-save-power-en = <1>;
+
+		/* Sheet 6: every input is VCC3V3_SYS. */
+		vcc1-supply = <&vcc3v3_sys>;
+		vcc2-supply = <&vcc3v3_sys>;
+		vcc3-supply = <&vcc3v3_sys>;
+		vcc4-supply = <&vcc3v3_sys>;
+		vcc5-supply = <&vcc3v3_sys>;
+		vcc6-supply = <&vcc3v3_sys>;
+		vcc7-supply = <&vcc3v3_sys>;
+		vcc8-supply = <&vcc3v3_sys>;
+		vcc9-supply = <&vcc3v3_sys>;
+
+		pwrkey {
+			status = "okay";
+		};
+
+		pinctrl_rk8xx: pinctrl_rk8xx {
+			gpio-controller;
+			#gpio-cells = <2>;
+
+			rk817_slppin_null: rk817_slppin_null {
+				pins = "gpio_slp";
+				function = "pin_fun0";
+			};
+
+			rk817_slppin_slp: rk817_slppin_slp {
+				pins = "gpio_slp";
+				function = "pin_fun1";
+			};
+
+			rk817_slppin_pwrdn: rk817_slppin_pwrdn {
+				pins = "gpio_slp";
+				function = "pin_fun2";
+			};
+
+			rk817_slppin_rst: rk817_slppin_rst {
+				pins = "gpio_slp";
+				function = "pin_fun3";
+			};
+		};
+
+		/*
+		 * Rail names and voltages from sheet 4's power table. The order of
+		 * nodes follows the PMIC channels, not the boot slots.
+		 */
+		regulators {
+			vdd_logic: DCDC_REG1 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <500000>;
+				regulator-max-microvolt = <1350000>;
+				regulator-init-microvolt = <900000>;
+				regulator-ramp-delay = <6001>;
+				regulator-initial-mode = <0x2>;
+				regulator-name = "vdd_logic";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			vdd_gpu: DCDC_REG2 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <500000>;
+				regulator-max-microvolt = <1350000>;
+				regulator-init-microvolt = <900000>;
+				regulator-ramp-delay = <6001>;
+				regulator-initial-mode = <0x2>;
+				regulator-name = "vdd_gpu";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			/*
+			 * DRAM supply, set by the feedback divider (R78/R79), not software.
+			 * V0.1 fits it for DDR3 (1.53 V); the boards carry DDR4, so the
+			 * fitted divider is presumably the DDR4 one (1.2 V).
+			 */
+			vcc_ddr: DCDC_REG3 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-initial-mode = <0x2>;
+				regulator-name = "vcc_ddr";
+				regulator-state-mem {
+					regulator-on-in-suspend;
+				};
+			};
+
+			/* The NPU has its own rail here; on the Zero 3 it shares vdd_gpu. */
+			vdd_npu: DCDC_REG4 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <500000>;
+				regulator-max-microvolt = <1350000>;
+				regulator-init-microvolt = <900000>;
+				regulator-ramp-delay = <6001>;
+				regulator-initial-mode = <0x2>;
+				regulator-name = "vdd_npu";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			vcc_1v8: DCDC_REG5 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-name = "vcc_1v8";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			/* MIPI CSI analog 0.9 V. */
+			vdda0v9_image: LDO_REG1 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <900000>;
+				regulator-max-microvolt = <900000>;
+				regulator-name = "vdda0v9_image";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			vdda_0v9: LDO_REG2 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <900000>;
+				regulator-max-microvolt = <900000>;
+				regulator-name = "vdda_0v9";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			vdda0v9_pmu: LDO_REG3 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <900000>;
+				regulator-max-microvolt = <900000>;
+				regulator-name = "vdda0v9_pmu";
+				regulator-state-mem {
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <900000>;
+				};
+			};
+
+			/*
+			 * 3.3 V, not the evb's 3.0 V: sheet 4 puts VCCIO1 at 3.3 V,
+			 * and VCCIO1 carries the I2S1 lines and the amp enable.
+			 */
+			vccio_acodec: LDO_REG4 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-name = "vccio_acodec";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			vccio_sd: LDO_REG5 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-name = "vccio_sd";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			vcc3v3_pmu: LDO_REG6 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-name = "vcc3v3_pmu";
+				regulator-state-mem {
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <3300000>;
+				};
+			};
+
+			vcca_1v8: LDO_REG7 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-name = "vcca_1v8";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			vcca1v8_pmu: LDO_REG8 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-name = "vcca1v8_pmu";
+				regulator-state-mem {
+					regulator-on-in-suspend;
+					regulator-suspend-microvolt = <1800000>;
+				};
+			};
+
+			/* MIPI CSI analog 1.8 V. */
+			vcca1v8_image: LDO_REG9 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-name = "vcca1v8_image";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			vcc_3v3: SWITCH_REG1 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-name = "vcc_3v3";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+
+			vcc3v3_sd: SWITCH_REG2 {
+				regulator-always-on;
+				regulator-boot-on;
+				regulator-name = "vcc3v3_sd";
+				regulator-state-mem {
+					regulator-off-in-suspend;
+				};
+			};
+		};
+
+		/*
+		 * The amp hangs off HPL (sheet 7), enabled by GPIO1_B0. Seeed DTB
+		 * drives it as spk-ctl-gpios, so the speaker is the SPK path -- but
+		 * on that path rk817_codec.c powers the DACs feeding HPL only with
+		 * use-ext-amplifier (otherwise it powers them DOWN and uses the
+		 * internal class-D on SPK_OUT, which is not connected). Seeed's tree
+		 * omits it; this one sets it. Userspace still selects the path once:
+		 * `amixer cset name='Playback Path' SPK`. Not verified on hardware.
+		 */
+		rk809_codec: codec {
+			#sound-dai-cells = <0>;
+			compatible = "rockchip,rk809-codec", "rockchip,rk817-codec";
+			clocks = <&cru I2S1_MCLKOUT>;
+			clock-names = "mclk";
+			assigned-clocks = <&cru I2S1_MCLKOUT>, <&cru I2S1_MCLK_TX_IOE>;
+			assigned-clock-rates = <12288000>;
+			assigned-clock-parents = <&cru I2S1_MCLKOUT_TX>, <&cru I2S1_MCLKOUT_TX>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&i2s1m0_mclk &amp_ctl>;
+			spk-ctl-gpios = <&gpio1 RK_PB0 GPIO_ACTIVE_HIGH>;
+			use-ext-amplifier;
+			hp-volume = <20>;
+			spk-volume = <3>;
+			status = "okay";
+		};
+	};
+};
+
+/*
+ * Sheet 24: board ID EEPROM, FT24C32A at 0x50. Its WP pin is pulled high by R52
+ * and the GPIO that could drive it (EEPROM_WP, GPIO0_C7) goes through R53,
+ * which V0.1 marks DNP -- so from software it is read-only. Writing it means
+ * shorting TP37 (WP) to TP36 (GND). Whether Seeed programs anything into it is
+ * not known; read /sys/bus/i2c/devices/1-0050/eeprom to find out.
+ */
+&i2c1 {
+	status = "okay";
+
+	board_eeprom: eeprom@50 {
+		compatible = "atmel,24c32";
+		reg = <0x50>;
+		pagesize = <32>;
+		read-only;
+	};
+};
+
+/*
+ * Sheet 17/24: the face board's IMU, on I2C3_M1 with INT1/INT2 on GPIO3_B4/B3.
+ * tofd drives it from userspace through /dev/i2c-3, which is the second of its
+ * BUS_CANDIDATES, so it needs nothing more than the bus.
+ */
+&i2c3 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c3m1_xfer>;
+
+	/*
+	 * Seeed DTB: a PCA9535 16-bit expander on the face board, interrupt on
+	 * GPIO4_C7 (the BTB pin V0.1 leaves unnamed). It drives the face LEDs.
+	 * Whether the BMI088 is on this bus too is not in their tree -- tofd
+	 * opens it from userspace, so `i2cdetect -y 3` is the check.
+	 */
+	face_gpio: gpio@20 {
+		compatible = "nxp,pca9535";
+		reg = <0x20>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		interrupt-controller;
+		#interrupt-cells = <2>;
+		interrupt-parent = <&gpio4>;
+		interrupts = <RK_PC7 IRQ_TYPE_LEVEL_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&face_gpio_int>;
+	};
+};
+
+/*
+ * Sheet 24 shows a Qwiic connector on I2C4_M1 (GPIO2_B1/B2). On the real board
+ * those two pins are the radio's BT wake lines (Seeed DTB), and Seeed leaves
+ * I2C4 disabled. Enabling it would take the pins away from Bluetooth.
+ */
+&i2c4 {
+	status = "disabled";
+};
+
+/*
+ * Sheet 15/24: the face board's ToF sensor is on SPI3_M0 at 1.8 V, with
+ * TOF_INT on GPIO4_B6 and TOF_SYNC on GPIO4_B7. That rules out the VL53L5CX
+ * the prototype uses (I2C only); which part it is, and so its maximum clock, is
+ * not known. Exposed as spidev for tofd, at Seeed DTB's 8 MHz.
+ */
+&spi3 {
+	status = "okay";
+	pinctrl-names = "default", "high_speed";
+	pinctrl-0 = <&spi3m0_cs0 &spi3m0_pins>;
+	pinctrl-1 = <&spi3m0_cs0 &spi3m0_pins_hs>;
+
+	tof_spi: spidev@0 {
+		compatible = "rockchip,spidev";
+		reg = <0>;
+		spi-max-frequency = <8000000>;
+	};
+};
+
+/*
+ * Sheet 23: ST25R100 NFC reader on SPI1_M1, IRQ on GPIO3_C4, reset on
+ * GPIO3_C5. No kernel driver exists for it; spidev, for a userspace driver.
+ * Seeed DTB: chip select as a GPIO (GPIO3_A1, the CS0_M1 pin) rather than
+ * the controller's, and 5 MHz. The interrupt and reset are listed for
+ * userspace to find; spidev itself uses neither.
+ */
+&spi1 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi1m1_pins>;
+	cs-gpios = <&gpio3 RK_PA1 GPIO_ACTIVE_LOW>;
+
+	nfc_reader: spidev@0 {
+		compatible = "rockchip,spidev";
+		reg = <0>;
+		spi-max-frequency = <5000000>;
+		interrupt-parent = <&gpio3>;
+		interrupts = <RK_PC4 IRQ_TYPE_EDGE_RISING>;
+		reset-gpios = <&gpio3 RK_PC5 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+/*
+ * Sheet 24: the Dynamixel bus. UART3_M1 (TX GPIO3_B7, RX GPIO3_C0) into a
+ * half-duplex buffer pair whose direction is switched by the TX line itself,
+ * so there is no RTS/direction GPIO to describe. /dev/ttyS2 -- see aliases.
+ */
+&uart3 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart3m1_xfer>;
+};
+
+/* Bluetooth HCI, same pins as on the Zero 3W. */
+&uart1 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart1m0_xfer &uart1m0_ctsn>;
+};
+
+&pwm8 {
+	status = "okay";
+	pinctrl-names = "active";
+	pinctrl-0 = <&pwm8m0_pins>;
+};
+
+&i2s1_8ch {
+	status = "okay";
+	rockchip,trcm-sync-tx-only;
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2s1m0_sclktx &i2s1m0_lrcktx &i2s1m0_sdi0 &i2s1m0_sdo0>;
+};
+
+/*
+ * The mic is on data line 1, so path 0 is pointed at SDI1:
+ * rockchip,path-map[n] is the SDI line path n reads (rockchip_pdm.c,
+ * rockchip_pdm_path_parse). Not verified on hardware.
+ */
+&pdm {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&pdmm0_clk1 &pdmm0_sdi1>;
+	rockchip,path-map = <1 0 2 3>;
+};
+
+/*
+ * Channel 0: the Recovery button. Channel 1: the hardware revision divider
+ * (sheet 14, "Hardware board ID"): 10k up to 1.8 V, down-resistor per revision.
+ * V0.1 fits only the pull-up, so raw 1023 is "Version_1"; Seeed's table
+ * defines seven levels. Read it with
+ *   cat /sys/bus/iio/devices/iio:device0/in_voltage1_raw
+ */
+&saradc {
+	status = "okay";
+	vref-supply = <&vcca_1v8>;
+};
+
+&tsadc {
+	status = "okay";
+};
+
+/* Sheet 20: 8-bit eMMC at 1.8 V, the only storage. */
+&sdhci {
+	bus-width = <8>;
+	supports-emmc;
+	non-removable;
+	no-sdio;
+	no-sd;
+	max-frequency = <200000000>;
+	status = "okay";
+};
+
+/* No SD slot (SDMMC0 is unconnected on sheet 12). */
+&sdmmc0 {
+	status = "disabled";
+};
+
+&sdmmc1 {
+	supports-sdio;
+	bus-width = <4>;
+	disable-wp;
+	cap-sd-highspeed;
+	cap-sdio-irq;
+	keep-power-in-suspend;
+	non-removable;
+	rockchip,default-sample-phase = <180>;
+	mmc-pwrseq = <&sdio_pwrseq>;
+	no-sd;
+	no-mmc;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdmmc1_bus4 &sdmmc1_cmd &sdmmc1_clk>;
+	sd-uhs-sdr104;
+	status = "okay";
+};
+
+/*
+ * Sheet 13/24: USB is the USB-C "Recovery USB" alone -- OTG0 at USB 2.0, the
+ * port the boot ROM's maskrom mode uses. In Linux it is the dwc3 OTG port;
+ * there is no USB host connector and no USB 3 lane.
+ */
+&usb2phy0 {
+	status = "okay";
+};
+
+&u2phy0_otg {
+	status = "okay";
+};
+
+&usbdrd30 {
+	status = "okay";
+};
+
+&usbdrd_dwc3 {
+	status = "okay";
+};
+
+/* SoC media blocks, as on the Zero 3: mediad encodes with MPP. */
+&mpp_srv {
+	status = "okay";
+};
+
+&rk_rga {
+	status = "okay";
+};
+
+&rkvenc {
+	venc-supply = <&vdd_logic>;
+	status = "okay";
+};
+
+&rkvenc_mmu {
+	status = "okay";
+};
+
+&rkvdec {
+	status = "okay";
+};
+
+&rkvdec_mmu {
+	status = "okay";
+};
+
+&vepu {
+	status = "okay";
+};
+
+&vepu_mmu {
+	status = "okay";
+};
+
+&vdpu {
+	status = "okay";
+};
+
+&vdpu_mmu {
+	status = "okay";
+};
+
+&jpegd {
+	status = "okay";
+};
+
+&jpegd_mmu {
+	status = "okay";
+};
+
+&iep {
+	status = "okay";
+};
+
+&iep_mmu {
+	status = "okay";
+};
+
+/*
+ * The camera (sheet 15): a GC2613 on a 4-lane BTB connector, of which two data
+ * lanes are wired, I2C2_M1 at 1.8 V, MCLK from CIF_CLKOUT (GPIO4_C0), PWDN on
+ * GPIO3_C6 and RST on GPIO4_C1.
+ *
+ * Deliberately NOT described yet. radxa's kernel has no gc2613 driver
+ * (drivers/media/i2c has gc2035/2053/2093/2145/2155/2355/2375h/2385 only), and a
+ * sensor node nothing binds leaves rkisp waiting on an async subdev that never
+ * arrives -- no /dev/video* at all, which is worse than an honest absence. When
+ * a driver exists, the chain to copy is 0003-*-imx219.patch: sensor ->
+ * csi2_dphy0 -> rkisp_vir0, plus rkisp/rkcif and their MMUs.
+ */
+
+/*
+ * The fan, as active trips and cooling maps in soc-thermal.
+ *
+ * In soc-thermal and not in a zone of its own: Rockchip's thermal driver
+ * registers exactly one zone per TSADC channel, the one named for it in the
+ * SoC dtsi, so a second zone on sensor 0 is parsed and never registered (seen
+ * on the board, 2026-10-05: no fan-thermal in /sys/class/thermal).
+ *
+ * soc-thermal runs power_allocator by default (CONFIG_THERMAL_DEFAULT_GOV_
+ * POWER_ALLOCATOR), which steers only its last passive trip and only cooling
+ * devices with a power model -- a fan has none, so under it the fan would never
+ * move. microduck-fan switches the zone to step_wise at boot (the governor
+ * cannot be chosen from DT), which walks the fan through these active trips and
+ * still throttles the CPU at the dtsi's 85 C "target" trip, one step at a time.
+ *
+ * Without any of this the fan never stops: pwm-fan probes at full duty
+ * (pwm-fan.c: set_pwm(ctx, MAX_PWM)) and only a thermal zone ever lowers it,
+ * which is what Seeed's image does -- its fan is bound to nothing.
+ *
+ * Off below 52 C, low from 60 C, medium from 68 C, full from 75 C. Measured on
+ * the board: duty 0/110/180/255 gives 0/7.9k/12.9k/18k rpm, so 0 is off on this
+ * fan. Trip temperatures are starting points to tune on the robot.
+ */
+&soc_thermal {
+	trips {
+		fan_low: fan-low {
+			temperature = <60000>;
+			hysteresis = <8000>;
+			type = "active";
+		};
+
+		fan_mid: fan-mid {
+			temperature = <68000>;
+			hysteresis = <4000>;
+			type = "active";
+		};
+
+		fan_high: fan-high {
+			temperature = <75000>;
+			hysteresis = <4000>;
+			type = "active";
+		};
+	};
+
+	cooling-maps {
+		fan-map0 {
+			trip = <&fan_low>;
+			cooling-device = <&fan 1 1>;
+		};
+
+		fan-map1 {
+			trip = <&fan_mid>;
+			cooling-device = <&fan 2 2>;
+		};
+
+		fan-map2 {
+			trip = <&fan_high>;
+			cooling-device = <&fan 3 3>;
+		};
+	};
+};
+
+&pinctrl {
+	pmic {
+		pmic_int: pmic_int {
+			rockchip,pins = <0 RK_PA3 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+
+		soc_slppin_gpio: soc_slppin_gpio {
+			rockchip,pins = <0 RK_PA2 RK_FUNC_GPIO &pcfg_output_low_pull_down>;
+		};
+
+		soc_slppin_slp: soc_slppin_slp {
+			rockchip,pins = <0 RK_PA2 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+
+		soc_slppin_rst: soc_slppin_rst {
+			rockchip,pins = <0 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	audio {
+		amp_ctl: amp-ctl {
+			rockchip,pins = <1 RK_PB0 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+	};
+
+	fan {
+		fan_tach: fan-tach {
+			rockchip,pins = <3 RK_PB0 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	wifi {
+		wifi_enable_h: wifi-enable-h {
+			rockchip,pins = <2 RK_PC0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		wifi_host_wake: wifi-host-wake {
+			rockchip,pins = <2 RK_PB7 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+	};
+
+	face {
+		face_gpio_int: face-gpio-int {
+			rockchip,pins = <4 RK_PC7 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	wireless-bluetooth {
+		uart1_gpios: uart1-gpios {
+			rockchip,pins = <2 RK_PB5 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+};
+
+/*
+ * Line names for every signal V0.1 routes to a GPIO, so userspace finds them by
+ * name (`gpiofind TOF_INT`) rather than by a number that a board revision can
+ * move. Pins the DT already owns are named too, for `gpioinfo` readability.
+ */
+&gpio0 {
+	gpio-line-names =
+		/* GPIO0_A0-A7 */
+		"", "TSADC_SHUT", "PMIC_SLEEP", "PMIC_INT",
+		"", "", "", "FLASH_VOL_SEL",
+		/* GPIO0_B0-B7 */
+		"CLK32K_IN", "I2C0_SCL", "I2C0_SDA", "I2C1_SCL",
+		"I2C1_SDA", "", "", "",
+		/* GPIO0_C0-C7 */
+		"", "", "", "",
+		"", "", "", "EEPROM_WP",
+		/* GPIO0_D0-D7 */
+		"DEBUG_RX", "DEBUG_TX", "", "",
+		"", "", "", "";
+};
+
+&gpio1 {
+	gpio-line-names =
+		/* GPIO1_A0-A7 */
+		"", "", "I2S1_MCLK", "I2S1_SCLK",
+		"PDM_CLK1", "I2S1_LRCK", "PDM_CLK0", "I2S1_SDO0",
+		/* GPIO1_B0-B7 */
+		"AUDIO_AMP_CTL", "", "PDM_SDI1", "I2S1_SDI0",
+		"", "", "", "",
+		/* GPIO1_C0-C7 */
+		"", "", "", "",
+		"", "", "", "",
+		/* GPIO1_D0-D7 */
+		"", "", "", "",
+		"", "", "", "";
+};
+
+&gpio2 {
+	gpio-line-names =
+		/* GPIO2_A0-A7 */
+		"", "", "", "SDIO_D0",
+		"SDIO_D1", "SDIO_D2", "SDIO_D3", "SDIO_CMD",
+		/* GPIO2_B0-B7 */
+		"SDIO_CLK", "HOST_WAKE_BT", "BT_WAKE_HOST", "BT_UART_RX",
+		"BT_UART_TX", "BT_UART_RTS", "BT_UART_CTS", "WIFI_WAKE_HOST",
+		/* GPIO2_C0-C7 */
+		"WIFI_REG_ON", "BT_REG_ON", "", "",
+		"", "", "", "",
+		/* GPIO2_D0-D7 */
+		"", "", "", "",
+		"", "", "", "";
+};
+
+&gpio3 {
+	gpio-line-names =
+		/* GPIO3_A0-A7 */
+		"", "NFC_CS", "", "",
+		"", "", "", "",
+		/* GPIO3_B0-B7 */
+		"FAN_TACH", "FAN_PWM", "", "IMU_INT2",
+		"IMU_INT1", "IMU_SCL", "IMU_SDA", "MOTOR_TX",
+		/* GPIO3_C0-C7 */
+		"MOTOR_RX", "NFC_MOSI", "NFC_MISO", "NFC_CLK",
+		"NFC_IRQ", "NFC_RST", "CAM_PWDN", "",
+		/* GPIO3_D0-D7 */
+		"", "", "", "",
+		"", "", "", "";
+};
+
+&gpio4 {
+	gpio-line-names =
+		/* GPIO4_A0-A7 */
+		"", "", "", "",
+		"", "", "TOF_CS", "",
+		/* GPIO4_B0-B7 */
+		"TOF_MISO", "", "TOF_MOSI", "TOF_CLK",
+		"CAM_SDA", "CAM_SCL", "TOF_INT", "TOF_SYNC",
+		/* GPIO4_C0-C7 */
+		"CAM_MCLK", "CAM_RST", "", "",
+		"", "UART9_TX", "UART9_RX", "FACE_GPIO_INT",
+		/* GPIO4_D0-D7 */
+		"BTB_GPIO4_D0", "", "", "",
+		"", "", "", "";
+};

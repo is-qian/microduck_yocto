@@ -48,11 +48,12 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/Apache-2.0;md5=89aea4e17d99a7ca
 # `version` against its own pin, and exits 0 for anything at or above it. A set from
 # another repo, or one with no record, it refuses to touch at all.
 
-# The pin is `PV`, so it is in the filename: microduck-policies_v5.bb. And it belongs to
+# The pin is `PV`, so it is in the filename: microduck-policies_v7.bb. And it belongs to
 # the daemon rather than to us -- `POLICY_VERSION` in the release's own
 # scripts/seed-policies.sh, which an xtask test holds against
-# [workspace.metadata.policies] in Cargo.toml. It is v5 at daemon 0.13.0 and still v5 at
-# 0.14.1, so rename this file in step with a daemon bump.
+# [workspace.metadata.policies] in Cargo.toml. It was v5 from daemon 0.13.0 to 0.15.1 and
+# is v7 from 0.15.2 (velstand steers the trunk while standing; sitstand no longer tips
+# backward), so rename this file in step with a daemon bump.
 #
 # Seeding *below* what the daemon names is the one thing that actively breaks: its
 # defaults name files only the newer set carries -- velstand.onnx is exactly such a file,
@@ -63,9 +64,9 @@ POLICY_REPO = "pollen-robotics/microduck-policies"
 
 # Fetched by commit, recorded as the tag. A Hub tag is a mutable ref -- it can be moved
 # onto different weights -- and "reproducible" is the reason this tree pins every layer
-# to a commit too. `.source` still says `v5`, because that is the string seed-policies.sh
+# to a commit too. `.source` still says `v7`, because that is the string seed-policies.sh
 # and `robotctl policy check` compare against.
-POLICY_REV = "99e9e7bd11b0b1f8744434a3e255993776fd3888"
+POLICY_REV = "6677ec007142bbaf05123a468f6ae58d13808786"
 POLICY_BASE = "https://huggingface.co/${POLICY_REPO}/resolve/${POLICY_REV}"
 
 # The whole set, not the subset robotd's defaults happen to name today.
@@ -103,11 +104,11 @@ SRC_URI = "\
 # The Hub stores these in LFS, and an LFS object's oid *is* its sha256 -- so these came
 # from the tree listing at ${POLICY_REV} and were confirmed against the downloaded bytes,
 # rather than being taken on trust from one of the two.
-SRC_URI[manifest.sha256sum] = "622048c2c23ea58942023f66fd16b189a875fd169e88d85beb16ebbe63b20c94"
-SRC_URI[velstand.sha256sum] = "1c659be55da94bc5753b707de5c6a3e7c49931e05ca3b6991615cef1a8ba9a45"
+SRC_URI[manifest.sha256sum] = "5c6a73f95f388f131aaef570f6113f0d36b84a72d5755662cd57e67adf7fd24c"
+SRC_URI[velstand.sha256sum] = "ce894d30b3343036d499bfac1102bdaa58d59a21c1b58401ecb70fb6a2f63e0a"
 SRC_URI[alpha_walking.sha256sum] = "e36332d383997d51401897734cd3e79cf5038406feddb18b4d57ecfb141daa6c"
 SRC_URI[alpha_stand.sha256sum] = "1569268713e40deea795dd2922dba50d3621e15a872855408b6b1b125b1c094b"
-SRC_URI[alpha_sitstand.sha256sum] = "c6c40e35e726eabd803d633e090d112994f469921152448367953fbaf9799bc8"
+SRC_URI[alpha_sitstand.sha256sum] = "a6f102d9fd655782ba85bfffe18175c34621da719cffcdd673be7982a06fc254"
 SRC_URI[alpha_ground_pick.sha256sum] = "ffbf5109982ff999b0ba53afe86b9ae731bbec679d67fb7f8ab4c52152c88872"
 SRC_URI[ball_kick_left.sha256sum] = "d6928284dccd3dd61e08bf2f760effa74309fbefd97b2b31afb2a60f526d196a"
 SRC_URI[ball_kick_right.sha256sum] = "147a32c388c6b19111b3ac3b550a9a6dc8b8bf267118af4d8c3712522eedb5af"

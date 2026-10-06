@@ -1,0 +1,16 @@
+[Unit]
+Description=USB-C gadget: serial console and network link
+Documentation=file:///usr/sbin/microduck-usb-gadget
+After=sys-kernel-config.mount systemd-modules-load.service
+Wants=sys-kernel-config.mount
+# The getty and the DHCP server follow the gadget, not the other way round.
+Before=serial-getty@ttyGS0.service microduck-usb-dhcp.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/microduck-usb-gadget start
+ExecStop=/usr/sbin/microduck-usb-gadget stop
+
+[Install]
+WantedBy=multi-user.target
