@@ -2,7 +2,7 @@
 # Wait for a Hugging Face Jobs build and decide, honestly, whether it worked.
 #
 #   scripts/wait-hfjob.sh <job-id>
-#   POLL=60 scripts/wait-hfjob.sh <job-id>     # seconds between polls, default 90
+#   POLL=60 scripts/wait-hfjob.sh <job-id>     # seconds between polls, default 30
 #
 # Exits 0 only if the build genuinely succeeded, 1 otherwise. Prints the
 # artifacts URL on success so a caller can pick it up.
@@ -34,7 +34,7 @@ set -eu
 
 JOB=${1:?usage: wait-hfjob.sh <job-id>}
 NS=${HFJOB_NAMESPACE:-pollen-robotics}
-POLL=${POLL:-90}
+POLL=${POLL:-30}
 # A backstop, not a target. Without one, any failure to recognise the end of a
 # build becomes a silent hang: the first version of this script looped for 37
 # minutes after the build had finished, because it was parsing a CLI output
@@ -66,6 +66,18 @@ while :; do
 			cat "$log.cur" >> "$seen"
 			sort -u "$seen" -o "$seen"
 		fi
+	fi
+
+	# A failed task fails the build: bitbake stops scheduling at the first one
+	# but lets every running task finish first, which can take most of an hour
+	# (a kernel, chromium-sized compiles) before "Tasks Summary" appears. Nothing
+	# that happens in that time can turn the verdict around, so give it now; the
+	# workflow's cancel step then stops the job, and its billing, too.
+	if grep -qE "ERROR: Task .* failed with exit code" "$log" 2>/dev/null; then
+		echo
+		echo "FAILED: a bitbake task failed (not waiting for the running tasks to drain)"
+		grep -E "ERROR:" "$log" | sed 's/^[0-9-]* [0-9:]* - [A-Z]* *- //' | cut -c1-300 | tail -20
+		exit 1
 	fi
 
 	# Primary signal: the log itself. bitbake prints "Tasks Summary" exactly once

@@ -26,6 +26,11 @@ COMPATIBLE_MACHINE = "microduck-beta"
 
 inherit systemd
 
+# librkaiq.so links libdrm.so.2. Without libdrm in DEPENDS the shlib scan has no
+# provider for it and package_qa fails (file-rdeps); with it the runtime
+# dependency is added automatically.
+DEPENDS = "libdrm"
+
 do_configure[noexec] = "1"
 do_compile[noexec] = "1"
 
