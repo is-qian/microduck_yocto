@@ -164,7 +164,12 @@ set -eu
 # dies at mkdir. $HOME, /tmp and /var/tmp are all the same 1.7 TB overlay. Plain
 # -R, not -a: -a preserves ownership, which a non-root uid cannot do, and that
 # would fail the job before bitbake ever started.
-mkdir -p "$HOME"/work && cp -R /src/. "$HOME"/work/
+#
+# -R still keeps the mode, and the mount serves every file read-only, so the copy
+# is read-only too. Nothing wrote into the layer until update_crates, which then
+# failed with "Permission denied: .../microduck-daemon-crates.inc" (job
+# 6ac64022), hence the chmod.
+mkdir -p "$HOME"/work && cp -R /src/. "$HOME"/work/ && chmod -R u+w "$HOME"/work
 cd "$HOME"/work
 . kas/hfjob.env
 mkdir -p "$DL_DIR" "$SSTATE_DIR"
