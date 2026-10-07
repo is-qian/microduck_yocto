@@ -1,7 +1,7 @@
 # The beta board (`microduck-beta`) — what an agent needs to know
 
 The first spin of the custom microduck PCB: a Seeed-designed RK3566 board
-(derived from their Home Assistant Green), 1 GB DDR4 (V0.1's schematic says
+(derived from their Home Assistant Green), 1 GB LPDDR4X (V0.1's schematic says
 DDR3), 64 GB eMMC, no SD slot.
 Machine `microduck-beta`, device tree
 `meta-microduck/recipes-kernel/linux/files/rk3566-microduck-beta.dts`.
@@ -173,10 +173,28 @@ mode talks to. Flashing goes through it, with `rkdeveloptool`.
    **bytes**, not sectors: `rl 0 33554432 first32M.img` reads the first 32 MiB.
    That is the cheap backup of a board's bootloader area before reflashing.
 
-   `db` succeeding is the first hardware result worth recording. It runs the
-   same rkbin DRAM init as the image's idblock, on DDR4, which nothing had
-   tried yet. The `.wic` is sparse at 12.1 GiB, and `wl` writes every byte of
-   it, zeros included, so expect minutes rather than seconds over USB 2.
+   The `.wic` is sparse at 12.1 GiB, and `wl` writes every byte of it, zeros
+   included, so expect minutes rather than seconds over USB 2.
+
+### A board stuck in maskrom
+
+Symptom: no boot from power-on, the Recovery button gives **maskrom** (not
+loader), `db` "succeeds" but `rfi` fails and nothing re-enumerates. That is the
+DRAM init training and then the DRAM losing what usbplug/SPL write to it: the
+stock rk3566 v1.26 blob with `trfc_mode=0`. Seeed's blob sets `trfc_mode=1`
+(longer refresh-cycle time); some boards need it, others cope without, and any
+image whose idblock lacks it bricks the boards that need it. Images carry it
+since the `beta-ddr-trfc` change (u-boot-rockchip.bbappend). To recover a board,
+`db` a loader whose 471 DDR blob has `trfc_mode=1`, then `ul` it (rewrites the
+idblock) and `wl` the image, followed by `ul` again if the image predates the fix.
+
+To see the DRAM init's log without soldering to TP83/TP84, re-target the DDR
+blob's UART to UART3_M1 (the motor bus) with rkbin's `ddrbin_tool.py`, and read
+the Dynamixel DATA line at 1500000 baud with a USB servo adapter (servos
+unplugged, adapter unpowered). The tool rewrites only `uart_addr`: the
+uart3/m1 iomux entries (from its own `uart_id_2_iomux` table) have to be
+written into the blob's iomux table by hand. usbplug inherits the blob's UART,
+so its log follows.
 
 There is no `seed-wifi.sh` for eMMC: the board is not a card you can mount.
 Until the radio has a recipe, the way in is the USB-C gadget
