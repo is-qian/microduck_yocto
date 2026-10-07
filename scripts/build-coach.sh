@@ -4,6 +4,7 @@
 #   scripts/build-coach.sh                                    # default target
 #   scripts/build-coach.sh shell -c 'bitbake microduck-daemon'
 #   scripts/build-coach.sh shell -c 'bitbake -c update_crates microduck-daemon'
+#   DAEMON_VERSION=0.16.1 scripts/build-coach.sh              # not the newest daemon
 #
 # Exists so the kas-container invocation lives in one place. Composing it inline
 # over ssh needs three levels of quoting (ssh '...', sh -c "...", --runtime-args
@@ -27,7 +28,24 @@ cd "$(dirname "$0")/.."
 CMD=${1:-build}
 [ $# -gt 0 ] && shift
 
-exec "$HOME"/bin/kas-container \
-	--ssh-agent \
-	--runtime-args "--memory=28g --memory-swap=28g" \
-	"$CMD" kas/microduck.yml:kas/limited-ram.yml "$@"
+# The daemon release the image seeds: the newest unless DAEMON_VERSION names one
+# (scripts/daemon-release.sh). Passed as -e in --runtime-args because
+# kas-container forwards no environment of its own beyond its fixed list, so an
+# exported variable never reaches kas inside the container.
+daemon=$(scripts/daemon-release.sh "${DAEMON_VERSION:-latest}")
+daemon_env=$(printf '%s\n' "$daemon" | sed 's/^/-e /' | tr '\n' ' ')
+
+kas() {
+	"$HOME"/bin/kas-container \
+		--ssh-agent \
+		--runtime-args "--memory=28g --memory-swap=28g $daemon_env" \
+		"$@"
+}
+
+# The crate list follows the release's Cargo.lock, so regenerate it before a
+# build. It rewrites the tracked microduck-daemon-crates.inc in this checkout;
+# that diff is the release's, not a mistake.
+if [ "$CMD" = build ]; then
+	kas shell kas/microduck.yml:kas/limited-ram.yml -c "bitbake -c update_crates microduck-daemon"
+fi
+kas "$CMD" kas/microduck.yml:kas/limited-ram.yml "$@"

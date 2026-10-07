@@ -208,9 +208,15 @@ either breaks A/B without touching a single Yocto file:
   `/var/lib/robot` to "make it persist" — that would let a slot switch and a
   daemon update disagree about which release is installed.
 
-Also: `SRCREV_daemon` tracks a **release**, never `main` — the commit a
-`daemon-v<PV>` manifest names as `source_revision`. Same version string on
-different code is how `updaterd` decides there is nothing to do.
+Also: the daemon recipe has **no version of its own**. Every build seeds the
+newest stable release unless it names one (`daemon_version` in CI,
+`HFJOB_DAEMON_VERSION` / `DAEMON_VERSION` for the build scripts), and
+`scripts/daemon-release.sh` resolves that to the release manifest's
+`source_revision` — a **release** commit, never `main`. Same version string on
+different code is how `updaterd` decides there is nothing to do. Without the two
+variables the recipe skips itself, so a bare `kas build` stops at "nothing
+provides microduck-daemon"; use the scripts. `daemon-release.sh` also refuses a
+release that needs a policy set other than the one `microduck-policies` seeds.
 
 ## Commits
 

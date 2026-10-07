@@ -14,8 +14,7 @@ fetches a private repo over SSH.
 ```sh
 ssh -A coach
 cd /data1/fabien/microduck/microduck_os_main
-. kas/coach.env
-kas-container build kas/microduck.yml
+scripts/build-coach.sh
 ```
 
 On the laptop, source `kas/lotus.env` instead — `/home` has ~28 GB free, which
@@ -39,6 +38,22 @@ see. `TMPDIR` needs no setting; it defaults to `$KAS_BUILD_DIR/tmp`.
 (in `~/bin`) is a shell wrapper around the `ghcr.io/siemens/kas/kas` image, which
 also sidesteps coach being Ubuntu 22.04 — older than wrynose's supported host
 distros.
+
+### Which daemon the image seeds
+
+The newest stable `microduck_daemon` release, unless the build names another.
+The recipe carries no version: `scripts/daemon-release.sh` looks the release up
+and prints its version and `source_revision`, and the build scripts pass both
+in and regenerate the crate list for it.
+
+```sh
+DAEMON_VERSION=0.16.1 scripts/build-coach.sh
+```
+
+The same choice is `HFJOB_DAEMON_VERSION` for `scripts/build-hfjob.sh` and the
+`daemon_version` input on the `build-image` workflow, whose summary records
+which release a run built. A plain `kas build kas/microduck.yml` sets none of
+this, so the daemon recipe skips itself and the image does not build.
 
 ### Two images: dev and shippable
 

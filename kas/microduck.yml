@@ -30,6 +30,14 @@ machine: microduck-zero3
 # tasks differ, every package is shared.
 target: microduck-image-dev
 
+# Which microduck_daemon release the image seeds. The recipe has no version of its
+# own and is skipped without these; scripts/daemon-release.sh resolves a release
+# to the pair, and build-hfjob.sh / build-coach.sh pass it in (README.md, "Which
+# daemon the image seeds"). null: forwarded to bitbake when set, nothing otherwise.
+env:
+  MICRODUCK_DAEMON_VERSION: null
+  MICRODUCK_DAEMON_SRCREV: null
+
 repos:
   # This repo. Contributes meta-microduck; no url/commit, kas uses the checkout.
   microduck_os:

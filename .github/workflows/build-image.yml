@@ -42,6 +42,10 @@ on:
         type: choice
         options: [microduck-zero3, microduck-beta]
         default: microduck-zero3
+      daemon_version:
+        description: "microduck_daemon release to seed, e.g. 0.16.1 (empty = the newest release)"
+        type: string
+        default: ""
       flavor:
         description: "HF Jobs hardware flavor"
         type: choice
@@ -105,6 +109,10 @@ jobs:
           # until it is the board people flash, so a push does not cost two builds.
           HFJOB_MACHINE: ${{ inputs.machine || 'microduck-zero3' }}
           HFJOB_FLAVOR: ${{ inputs.flavor || 'cpu-performance' }}
+          # The newest daemon release unless the run names one, push included.
+          # build-hfjob.sh resolves it to a commit and prints `daemon: ...`,
+          # which goes into the summary below, so every run says what it seeded.
+          HFJOB_DAEMON_VERSION: ${{ inputs.daemon_version || 'latest' }}
           RAUC_DEV_KEY: ${{ secrets.RAUC_DEV_KEY }}
           RAUC_DEV_CERT: ${{ secrets.RAUC_DEV_CERT }}
         run: |
@@ -132,6 +140,7 @@ jobs:
           echo "parsed job id: $id"
           echo "job_id=$id" >> "$GITHUB_OUTPUT"
           echo "Launched https://huggingface.co/jobs/pollen-robotics/$id" >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "$out" | grep -E '^daemon: ' >> "$GITHUB_STEP_SUMMARY" || true
 
       # Judges the build on its logs, never on its exit status -- see the long
       # explanation at the top of wait-hfjob.sh. Every green build of this image
