@@ -91,9 +91,9 @@ RDEPENDS:${PN} = " \
 #
 # Deliberately absent:
 #
-#   rockchip-rkaiq / rockchip-rkisp -- the camera ISP stack, M6. Needs the GC2093
-#     device-tree node and its tuning file, and rkaiq_3A_server ships a sysvinit
-#     script that needs a systemd unit written.
+#   rockchip-rkaiq / rockchip-rkisp -- meta-rockchip's ISP stack. The beta board
+#     gets Seeed's rkaiq build and tuning file from microduck-beta-camera instead
+#     (that recipe says why); the Zero 3W's IMX219 has no tuning file.
 #
 #   gstreamer1.0-plugins-rs (webrtcsink) -- M8, and no upstream recipe exists.
 #

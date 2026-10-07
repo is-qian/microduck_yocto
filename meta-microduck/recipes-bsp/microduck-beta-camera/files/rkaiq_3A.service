@@ -1,0 +1,30 @@
+# Rockchip's ISP 3A server: applies the camera's tuning file (white balance, colour,
+# denoise, sharpening) and runs the ISP's 3A loop on every stream mediad opens.
+#
+# It has to be listening before the stream starts. Started mid-stream it waits for
+# a start event that already happened, and attached to a stream that is then
+# restarted it rejects the new frame ids ("stats disorder") and the picture goes
+# untuned. So mediad pulls it in and starts after it (mediad-rkaiq.conf), and
+# PartOf takes it down and back up with every stop or restart of mediad.
+[Unit]
+Description=Rockchip rkaiq 3A server (camera tuning)
+After=systemd-modules-load.service dev-media0.device
+Before=mediad.service
+PartOf=mediad.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/rkaiq_3A_server
+# Its statistics thread is SCHED_RR, and with the cgroup v2 cpu controller attached
+# a non-root cgroup cannot create RT threads: EPERM whatever the capabilities, and
+# the ISP gets no 3A at all. Seeed's unit moves it to the root cgroup; so does this.
+ExecStartPost=/bin/sh -c 'echo $MAINPID > /sys/fs/cgroup/cgroup.procs'
+# Ready means waiting for mediad's stream: the tuning file loaded and its worker
+# threads up, the last of them xc:ldchThread (about 0.2 s after start, measured).
+# Hold mediad back until then; give up after 5 s rather than block the boot.
+ExecStartPost=/bin/sh -c 'for i in $(seq 50); do grep -qx xc:ldchThread /proc/$MAINPID/task/*/comm 2>/dev/null && exit 0; sleep 0.1; done; exit 0'
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

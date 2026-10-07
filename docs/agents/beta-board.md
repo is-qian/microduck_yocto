@@ -289,10 +289,15 @@ release's `Cargo.lock` files on every bump.
   (`/var/lib/robot/weird-ble`, written by the daemon recipe on every machine)
   is to be re-measured on this radio.
 - **The camera on our image.** The DTS describes the GC2093 from Seeed's node,
-  and daemon 0.15.3's mediad drives it on a board declared `beta`. On Seeed's
-  image it captured at 30 fps with auto-exposure running; on ours it has not run
-  yet. Check `media-ctl -p` shows `m00_b_gc2093 2-0037`, then
-  `journalctl -u mediad`.
+  and mediad drives it on a board declared `beta`. The ISP's tuning comes from
+  `microduck-beta-camera`: Seeed's rkaiq v6.0x32 3A server and their
+  `gc2093_SIDB205300385-VA_default.json`, the same package their factory image
+  installs. Without it the picture is untuned and green. `rkaiq_3A.service` has
+  to be listening before mediad's stream starts and restarts with mediad (the
+  unit says why); `journalctl -u rkaiq_3A` should show `rk_aiq_uapi_sysctl_start
+  success` and no `stats disorder`. mediad still runs its own exposure loop on
+  top of rkaiq's AE; the picture looked right with both (2026-10-07), but that
+  overlap is worth knowing about if exposure ever hunts.
 - **Fan trips** (60/68/75 °C) are starting points, not measured values.
 - **The ToF over SPI is untested on hardware.** The part is a VL53L8CX
   (VL53L8CXV9GC/1). `tofd` drives it over SPI from daemon 0.16.0 (pollen-robotics/microduck#364),
