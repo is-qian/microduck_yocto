@@ -44,6 +44,9 @@ python microduck_boot_fingerprint() {
 RAUC_SLOT_rootfs = "microduck-image-dev"
 # Required: bundle.bbclass defaults to the first IMAGE_FSTYPES entry, tar.zst here.
 RAUC_SLOT_rootfs[fstype] = "ext4"
+# Carries the running slot's machine-id over, so the journal on the data partition
+# stays one directory across updates. See the hook.
+RAUC_SLOT_rootfs[hooks] = "post-install"
 
 # The signing pair lives in the build directory and never in this repo or the
 # image; only the public CA is committed (recipes-core/rauc/files/ca.cert.pem).

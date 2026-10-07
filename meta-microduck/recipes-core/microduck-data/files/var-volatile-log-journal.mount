@@ -1,0 +1,23 @@
+[Unit]
+Description=Persistent journal on the data partition
+
+# /var/log is oe-core's symlink into the /var/volatile tmpfs
+# (meta/files/fs-perms-volatile-log.txt), and a mount unit's Where= must be the
+# path /proc/self/mountinfo reports, so this names the real path, not /var/log/journal.
+#
+# Only the journal moves; the rest of /var/log stays in RAM. On the data partition
+# rather than the rootfs, so the logs of a slot that failed survive the rollback
+# away from it. microduck-daemon's journald drop-in sets Storage=persistent and
+# SystemMaxUse=200M; before this mount that configured a tmpfs.
+RequiresMountsFor=/var/lib/robot
+Wants=microduck-journal-dir.service
+After=microduck-journal-dir.service
+
+[Mount]
+What=/var/lib/robot/journal
+Where=/var/volatile/log/journal
+Type=none
+Options=bind
+
+[Install]
+WantedBy=local-fs.target

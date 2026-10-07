@@ -193,7 +193,9 @@ local_conf_header:
     # busybox-syslog, a second logger next to journald. default-providers.inc sets
     # VIRTUAL-RUNTIME_base-utils-syslog ?= "busybox-syslog". microduck_daemon
     # ships a journald drop-in with Storage=persistent and ForwardToSyslog=no, so
-    # journald is the log store and syslog is dead weight.
+    # journald is the log store and syslog is dead weight. /var/log itself is
+    # oe-core's tmpfs symlink; the journal under it is bind-mounted from the data
+    # partition by recipes-core/microduck-data.
     VIRTUAL-RUNTIME_base-utils-syslog = ""
 
     # dnsmasq.service, a general-purpose DNS/DHCP server. The *binary* is wanted:
