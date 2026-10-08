@@ -28,10 +28,10 @@ cd "$(dirname "$0")/.."
 CMD=${1:-build}
 [ $# -gt 0 ] && shift
 
-# The daemon release the image seeds: the newest unless DAEMON_VERSION names one
-# (scripts/daemon-release.sh). Passed as -e in --runtime-args because
-# kas-container forwards no environment of its own beyond its fixed list, so an
-# exported variable never reaches kas inside the container.
+# The daemon release (README.md, "Which daemon the image seeds"), passed as -e
+# in --runtime-args because kas-container forwards no environment of its own
+# beyond its fixed list, so an exported variable never reaches kas inside the
+# container.
 daemon=$(scripts/daemon-release.sh "${DAEMON_VERSION:-latest}")
 daemon_env=$(printf '%s\n' "$daemon" | sed 's/^/-e /' | tr '\n' ' ')
 
@@ -42,9 +42,9 @@ kas() {
 		"$@"
 }
 
-# The crate list follows the release's Cargo.lock, so regenerate it before a
-# build. It rewrites the tracked microduck-daemon-crates.inc in this checkout;
-# that diff is the release's, not a mistake.
+# The crate list follows the release's Cargo.lock. Regenerating it rewrites the
+# tracked microduck-daemon-crates.inc in this checkout; that diff is the
+# release's, not a mistake.
 if [ "$CMD" = build ]; then
 	kas shell kas/microduck.yml:kas/limited-ram.yml -c "bitbake -c update_crates microduck-daemon"
 fi

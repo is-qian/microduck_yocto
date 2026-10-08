@@ -30,13 +30,9 @@ inherit cargo cargo-update-recipe-crates pkgconfig systemd useradd
 # releases/download/<tag>/<asset> URL returns 404 with or without a token, and
 # only the api.github.com/.../releases/assets/<id> form works authenticated.
 #
-# Which release: none in this file. Every build seeds the newest stable release
-# unless it names another, and scripts/daemon-release.sh turns that choice into
-# the two variables below, from the release's manifest.json. build-hfjob.sh and
-# build-coach.sh call it and pass both in (`env:` in kas/microduck.yml); CI's
-# `daemon_version` input names a release, and the run summary records which one
-# was built. Without them the recipe skips itself and says why, rather than
-# quietly building some old version nobody chose.
+# Which release: none in this file; it comes in as the two variables below
+# (README.md, "Which daemon the image seeds"), and without them the recipe skips
+# itself rather than building a version nobody chose.
 #
 # SRCREV_daemon is still a RELEASE, never main: the manifest's source_revision,
 # the commit CI built that release's binaries from -- not the tag, not main. That
@@ -47,9 +43,8 @@ inherit cargo cargo-update-recipe-crates pkgconfig systemd useradd
 # not identify the code makes "is this robot up to date?" unanswerable. AUTOREV on
 # main would be the same mistake, and kas/microduck.yml rejects it by name.
 #
-# microduck-daemon-crates.inc follows the release's Cargo.lock, so both build
-# scripts run `bitbake -c update_crates microduck-daemon` first. The committed
-# copy is only what the last regeneration wrote.
+# microduck-daemon-crates.inc is regenerated per build; the committed copy is
+# only what the last regeneration wrote.
 MICRODUCK_DAEMON_VERSION ??= ""
 MICRODUCK_DAEMON_SRCREV ??= ""
 PV = "${MICRODUCK_DAEMON_VERSION}"

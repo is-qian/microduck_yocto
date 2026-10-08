@@ -9,15 +9,9 @@
 #   MICRODUCK_DAEMON_VERSION=0.16.1
 #   MICRODUCK_DAEMON_SRCREV=d818af5d91fce0e3f5f8c22d47d47caf7b3f17a1
 #
-# which microduck-daemon.bb takes as PV and SRCREV_daemon. The recipe has no
-# version of its own: every build seeds the release named here, so a build script
-# calls this, and so does a person building by hand. build-hfjob.sh and
-# build-coach.sh do it for you.
-#
-# The pair comes from the release's manifest.json, not from the tag or main: its
-# source_revision is the commit CI built that release's binaries from, so the
-# image's PV names the same code updaterd would install (the recipe says why
-# that matters).
+# which microduck-daemon.bb takes as PV and SRCREV_daemon (README.md, "Which
+# daemon the image seeds"). Both come from the release's manifest.json, never the
+# tag or main; the recipe says why.
 set -eu
 
 cd "$(dirname "$0")/.."
@@ -32,8 +26,9 @@ manifest=$(curl -fsSL "$url") || {
 	echo "$0: no daemon release manifest at $url" >&2
 	exit 1
 }
-version=$(printf '%s' "$manifest" | python3 -c 'import json, sys; print(json.load(sys.stdin)["version"])')
-srcrev=$(printf '%s' "$manifest" | python3 -c 'import json, sys; print(json.load(sys.stdin)["source_revision"])')
+read -r version srcrev <<EOF
+$(printf '%s' "$manifest" | python3 -c 'import json, sys; m = json.load(sys.stdin); print(m["version"], m["source_revision"])')
+EOF
 
 # The image seeds one policy set (microduck-policies_<v>.bb), and a release names
 # the one it needs in scripts/seed-policies.sh. A mismatch builds fine and gives a

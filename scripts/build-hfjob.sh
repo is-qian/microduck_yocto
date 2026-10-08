@@ -48,14 +48,10 @@ TARGET=${HFJOB_TARGET:-}
 MACHINE=${HFJOB_MACHINE:-microduck-zero3}
 KAS_CMD=${1:-build}
 
-# Which microduck_daemon release the image seeds: the newest stable one unless
-# HFJOB_DAEMON_VERSION names another (e.g. 0.16.1). The recipe has no version of
-# its own; scripts/daemon-release.sh says why, and refuses a release whose policy
-# set the image does not seed -- here, before the job bills anything. Its
-# `daemon: ...` line on stderr is what CI copies into the run summary.
+# The daemon release (README.md, "Which daemon the image seeds"). Resolved here,
+# so a release the image cannot seed is refused before the job bills anything.
+# Its `daemon: ...` line on stderr is what CI copies into the run summary.
 daemon=$(scripts/daemon-release.sh "${HFJOB_DAEMON_VERSION:-latest}")
-DAEMON_VERSION=$(printf '%s\n' "$daemon" | sed -n 's/^MICRODUCK_DAEMON_VERSION=//p')
-DAEMON_SRCREV=$(printf '%s\n' "$daemon" | sed -n 's/^MICRODUCK_DAEMON_SRCREV=//p')
 
 # The RAUC signing pair, needed only when the target is the bundle.
 #
@@ -126,7 +122,9 @@ fi
 if [ -n "${HFJOB_TASK:-}" ]; then
 	set -- "$@" -e "KAS_TASK=$HFJOB_TASK"
 fi
-set -- "$@" -e "MICRODUCK_DAEMON_VERSION=$DAEMON_VERSION" -e "MICRODUCK_DAEMON_SRCREV=$DAEMON_SRCREV"
+for kv in $daemon; do
+	set -- "$@" -e "$kv"
+done
 if [ -n "${HFJOB_SSH_KEY:-}" ]; then
 	# base64, because $(cat key) strips the trailing newline that OpenSSH requires
 	# on an ed25519 key -- which cost a build: kas picked the secret up, piped it to
@@ -486,13 +484,23 @@ fi
 rc=0
 
 # Every daemon release brings its own Cargo.lock, so the crate list has to be
-# regenerated from it first, or do_fetch is missing whatever crates the release
+# regenerated from it first, or the build is missing whatever crates the release
 # added. This writes microduck-daemon-crates.inc into this job's own copy of the
 # layer; the build below parses the new one. For a release whose lock matches the
 # committed list it rewrites the same file, and changes no task hash.
+#
+# Only for a target that builds the daemon: the step costs ~4.5 min even on a
+# warm cache (job 6ac641f3). microduck-*, not the images alone, because
+# do_build[rdeptask] builds RDEPENDS too, and microduck-board, -nfc, -face-leds,
+# -tof-spidev and -data all RDEPEND on the daemon. The few microduck-* recipes
+# that do not just pay the 4.5 min.
 if [ "$KAS_CMD" = build ]; then
-	echo "daemon: regenerating the crate list for $MICRODUCK_DAEMON_VERSION"
-	kas shell kas/microduck.yml:kas/hfjob.yml -c "bitbake -c update_crates microduck-daemon" || rc=$?
+	case "${KAS_TARGET:-microduck-image}" in
+	microduck-*)
+		echo "daemon: regenerating the crate list for $MICRODUCK_DAEMON_VERSION"
+		kas shell kas/microduck.yml:kas/hfjob.yml -c "bitbake -c update_crates microduck-daemon" || rc=$?
+		;;
+	esac
 fi
 if [ "$rc" = 0 ]; then
 	kas "$KAS_CMD" kas/microduck.yml:kas/hfjob.yml || rc=$?
