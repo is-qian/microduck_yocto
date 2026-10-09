@@ -8,6 +8,14 @@
 header:
   version: 14
 local_conf_header:
+  buildhistory: |
+    # Per-image package sizes, published by build-hfjob.sh's save(). Image only:
+    # no per-recipe history, no SDK. Hooks are vardepsexclude; only the image
+    # recipe's last 7 tasks rehash (IMAGE_CLASSES gains image-artifact-names).
+    # COMMIT: the default "1" git-commits every build.
+    INHERIT += "buildhistory"
+    BUILDHISTORY_FEATURES = "image"
+    BUILDHISTORY_COMMIT = "0"
   hashserv-db: |
     # Without this, sstate reuse between jobs is 0%.
     #
