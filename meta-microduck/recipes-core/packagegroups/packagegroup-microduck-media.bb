@@ -97,11 +97,6 @@ RDEPENDS:${PN} = " \
 #
 #   gstreamer1.0-plugins-rs (webrtcsink) -- M8, and no upstream recipe exists.
 #
-# rockchip-libmali used to arrive anyway: mali.inc makes it the provider of
-# virtual/egl and virtual/libgles*, and gstreamer1.0-plugins-base built its GL
-# library against them. The microduck distro drops `opengl`, which removes both;
-# nothing here needs the GPU (conf/distro/microduck.conf).
-#
 # TODO trim: this packagegroup grew the image 549 -> 745 MiB (+196 MiB), mostly
 # because the plugins-bad meta package pulls ~100 subpackages -- dvb, decklink,
 # vulkan, waylandsink, rfbsrc, festival and so on, none of which a robot wants.

@@ -15,8 +15,6 @@
 header:
   version: 14
 
-# meta-microduck/conf/distro/microduck.conf: poky plus every choice about what
-# the robot runs. Keep those there, not in local_conf_header below.
 distro: microduck
 machine: microduck-zero3
 
@@ -96,9 +94,7 @@ repos:
     commit: 38da0e5866a953e664001ba90b5edad68d68cd5d
 
 local_conf_header:
-  # Build-host behaviour only. Anything that changes the rootfs belongs in
-  # meta-microduck/conf/distro/microduck.conf, so the layer builds the same robot
-  # with or without this file.
+  # Build-host only; rootfs policy is in meta-microduck/conf/distro/microduck.conf.
   microduck: |
     # Vendor BSP kernel + rkaiq + full GStreamer is comfortably 100 GB+ of
     # TMPDIR without this.

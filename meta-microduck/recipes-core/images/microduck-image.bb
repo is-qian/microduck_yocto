@@ -70,26 +70,8 @@ IMAGE_INSTALL:append = " \
     htop \
 "
 
-# Not listed, because the machine declares them: bluez5, iw, wpa-supplicant,
-# wireless-regdb-static and usbutils arrive through packagegroup-base's
-# bluetooth/wifi/usbhost groups, driven by MACHINE_FEATURES in
-# conf/machine/include/microduck-common.inc. Listing them here again would be
-# the local.conf habit one level up.
-#
-# packagegroup-base-wifi picks wireless-regdb-static, not wireless-regdb, and
-# that matters: the -static package ships /lib/firmware/regulatory.db, which
-# kernels >= 4.15 load themselves; the plain one installs CRDA files for the
-# obsolete crda userspace. Without the db the QEMU boot logs
-#   platform regulatory.0: Direct firmware load for regulatory.db failed, error -2
-# and cfg80211 falls back to restrictive built-in rules -- which on a wifi
-# product shows up much later as missing channels or reduced TX power.
-
-# rauc is listed even though it would arrive on its own: meta-rauc's
-# packagegroup-base.bbappend adds packagegroup-base-rauc when DISTRO_FEATURES
-# has rauc, and core-image-base does install packagegroup-base (through
-# packagegroup-base-extended -- an earlier version of this comment said it did
-# not). Naming it here keeps the update mechanism visible in the one recipe that
-# ships.
+# bluez5, iw, wpa-supplicant, wireless-regdb-static, usbutils: from packagegroup-base via MACHINE_FEATURES.
+# rauc would arrive via packagegroup-base too; listed to keep the updater visible.
 
 # u-boot-rockchip-env is /etc/fw_env.config and /etc/u-boot-initial-env, which
 # RAUC's uboot backend needs; the fw_printenv/fw_setenv it runs arrive through
