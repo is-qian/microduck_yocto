@@ -1,0 +1,15 @@
+[Unit]
+Description=Create the journal directory on the data partition
+
+# The wks seeds /var/lib/robot/journal into a freshly flashed data partition; a
+# partition flashed before it existed never gets re-seeded, and a bind mount fails
+# on a missing source. tmpfiles runs too late: after local-fs.target. journald's
+# own tmpfiles line fixes the group and ACLs once the mount is up.
+DefaultDependencies=no
+RequiresMountsFor=/var/lib/robot
+Before=var-volatile-log-journal.mount
+ConditionPathIsDirectory=!/var/lib/robot/journal
+
+[Service]
+Type=oneshot
+ExecStart=/bin/mkdir -m 2755 /var/lib/robot/journal
