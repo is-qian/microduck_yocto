@@ -496,7 +496,7 @@ rc=0
 # that do not just pay the 4.5 min.
 if [ "$KAS_CMD" = build ]; then
 	case "${KAS_TARGET:-microduck-image}" in
-	microduck-*)
+	*microduck-*)
 		echo "daemon: regenerating the crate list for $MICRODUCK_DAEMON_VERSION"
 		kas shell kas/microduck.yml:kas/hfjob.yml -c "bitbake -c update_crates microduck-daemon" || rc=$?
 		;;

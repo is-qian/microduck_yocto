@@ -29,6 +29,12 @@ manifest=$(curl -fsSL "$url") || {
 read -r version srcrev <<EOF
 $(printf '%s' "$manifest" | python3 -c 'import json, sys; m = json.load(sys.stdin); print(m["version"], m["source_revision"])')
 EOF
+# A failing $(...) inside a heredoc trips neither set -e nor read, so an
+# unparseable manifest would otherwise print empty values and exit 0.
+[ -n "$version" ] && [ -n "$srcrev" ] || {
+	echo "$0: no version/source_revision in $url" >&2
+	exit 1
+}
 
 # The image seeds one policy set (microduck-policies_<v>.bb), and a release names
 # the one it needs in scripts/seed-policies.sh. A mismatch builds fine and gives a
