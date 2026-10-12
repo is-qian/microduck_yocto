@@ -208,9 +208,10 @@ either breaks A/B without touching a single Yocto file:
   `/var/lib/robot` to "make it persist" — that would let a slot switch and a
   daemon update disagree about which release is installed.
 
-Also: `SRCREV_daemon` tracks a **release**, never `main` — the commit a
-`daemon-v<PV>` manifest names as `source_revision`. Same version string on
-different code is how `updaterd` decides there is nothing to do.
+Also: the daemon recipe has **no version of its own** (README.md, "Which daemon
+the image seeds"), and `SRCREV_daemon` is still a **release** commit, never
+`main` — the manifest's `source_revision`. Same version string on different code
+is how `updaterd` decides there is nothing to do.
 
 ## Commits
 

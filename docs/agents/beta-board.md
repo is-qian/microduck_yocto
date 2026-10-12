@@ -257,13 +257,15 @@ Each step assumes the ones before it passed.
 
 ## Which daemon the image carries
 
-`microduck-daemon_0.16.0.bb` with `microduck-policies_v7.bb`: the image seeds
-release 0.16.0, which carries `tofd` over SPI (microduck#364), and the policy set
-that release names as its floor. Every release from 0.15.3 builds on wrynose's
-Rust 1.94.1; 0.15.1 and 0.15.2 needed 1.99. A robot with network still converges to newer
+The newest daemon release unless the build names one (README.md, "Which daemon
+the image seeds"; a CI run's summary has a `daemon:` line), with
+`microduck-policies_v7.bb`, the policy set releases 0.15.2 onwards name as their
+floor. `tofd` drives the ToF over SPI from 0.16.0 (microduck#364), so this board
+needs 0.16.0 or later. Every release from 0.15.3 builds on wrynose's Rust 1.94.1;
+0.15.1 and 0.15.2 needed 1.99. A robot with network still converges to newer
 releases on its own, because `updaterd` installs CI's prebuilt binaries rather
 than this recipe's build. `microduck-daemon-crates.inc` is regenerated from the
-release's `Cargo.lock` files on every bump.
+release's `Cargo.lock` files before every build.
 
 ## Open items, each blocking something specific
 
