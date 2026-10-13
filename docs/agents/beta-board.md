@@ -4,7 +4,7 @@ The first spin of the custom microduck PCB: a Seeed-designed RK3566 board
 (derived from their Home Assistant Green), 1 GB LPDDR4X (V0.1's schematic says
 DDR3), 64 GB eMMC, no SD slot.
 Machine `microduck-beta`, device tree
-`meta-microduck/recipes-kernel/linux/files/rk3566-microduck-beta.dts`.
+`meta-microduck-bsp/recipes-kernel/linux/files/rk3566-microduck-beta.dts`.
 
 **Our image has not run on a board yet.** The DTS compiles against radxa's tree
 at the pinned `SRCREV`, with the same dtc warnings as the Zero 3W's and no new

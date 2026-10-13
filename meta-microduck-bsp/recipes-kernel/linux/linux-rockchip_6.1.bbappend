@@ -12,6 +12,7 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 SRCREV = "270a678f8364683447f994adec9d31eb182eaf85"
 SRC_URI = " \
     git://github.com/radxa/kernel.git;protocol=https;nobranch=1;branch=linux-6.1-stan-rkr4.1 \
+    file://0001-rk3566-radxa-zero-3w-restore-chosen-bootargs.patch \
     file://cgroups.cfg \
     file://mali-csf.cfg \
     file://no-mali400.cfg \
@@ -42,12 +43,14 @@ SRC_URI = " \
 # linux-rockchip_6.1/ directory: a do_mounts retry plus two drm-rockchip
 # cursor/plane HACKs, all cut against JeffyCN's tree. None are needed here, and
 # a failed apply is a hard error rather than tolerable fuzz -- so point
-# PATCHPATH at our own directory instead. auto-patch.bbclass no-ops when the
-# directory does not exist, which is the case until we need a patch.
+# PATCHPATH at a directory that does not exist: auto-patch.bbclass then adds
+# nothing. Our patches go through SRC_URI only. A patch auto-patch adds is an
+# *absolute* file:// URL, which put the layer's checkout path into the kernel's
+# task signatures (moving the layer rehashed the kernel and everything after it).
 #
 # `:=` because THISDIR is a parse-time variable; a lazy `=` would expand to the
 # wrong layer.
-PATCHPATH := "${THISDIR}/patches"
+PATCHPATH := "${THISDIR}/no-auto-patches"
 
 # See MICRODUCK_MOTOR_UART in conf/machine/include/microduck-common.inc.
 #
@@ -59,9 +62,9 @@ PATCHPATH := "${THISDIR}/patches"
 # /dev/ttyFIQ0 (correct) and still no /dev/ttyS2 -- fe660000.serial was not even a
 # platform device, and robotd kept looping on "cannot open the bus".
 #
-# The patch goes through SRC_URI rather than the patches/ directory above because
-# PATCHPATH is unconditional: uart2 must stay disabled when MICRODUCK_MOTOR_UART
-# is "0", or that mode loses the serial console it exists to keep.
+# The patch is conditional, unlike the ones in SRC_URI above: uart2 must stay
+# disabled when MICRODUCK_MOTOR_UART is "0", or that mode loses the serial
+# console it exists to keep.
 SRC_URI += "${@bb.utils.contains('MICRODUCK_MOTOR_UART', '1', 'file://motorbus.cfg file://0002-rk3566-radxa-zero-3w-uart2-for-the-motor-bus.patch', '', d)}"
 
 # The camera, and unlike the motor bus it needs no config fragment: the sensor
@@ -74,9 +77,8 @@ SRC_URI += "${@bb.utils.contains('MICRODUCK_MOTOR_UART', '1', 'file://motorbus.c
 # different sensor described (or not yet) in its own DTS. `:append` lands after
 # every `+=`, so it is still ordered after the MICRODUCK_MOTOR_UART line; it
 # touches a different part of the same file, so it applies whether or not 0002
-# did; both orders are checked. (0001, under PATCHPATH, is unconditional and
-# still patches the Zero 3W dts on a beta build -- harmless, that dts is simply
-# not built there.)
+# did; both orders are checked. (0001 is unconditional and still patches the
+# Zero 3W dts on a beta build -- harmless, that dts is simply not built there.)
 SRC_URI:append:microduck-zero3 = " file://0003-rk3566-radxa-zero-3w-radxa-camera-8m-imx219.patch"
 
 # A board whose device tree lives in this layer rather than in any kernel tree.

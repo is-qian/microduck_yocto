@@ -43,7 +43,7 @@
 set -euo pipefail
 
 SANDBOX=${1:?usage: $0 /path/to/v2017.09/sandbox/u-boot}
-PATCH=$(dirname "$0")/../meta-microduck/recipes-bsp/u-boot/files/0001-evb_rk3568-select-the-RAUC-slot-before-Rockchip-s-boot.patch
+PATCH=$(dirname "$0")/../meta-microduck-bsp/recipes-bsp/u-boot/files/0001-evb_rk3568-select-the-RAUC-slot-before-Rockchip-s-boot.patch
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 
 # The macro exactly as the patch adds it, compiled so the C string escaping is

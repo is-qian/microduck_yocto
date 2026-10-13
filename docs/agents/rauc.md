@@ -8,7 +8,7 @@ narrative; this is the list of things that will bite you.
 
 ## The partition table is load-bearing, and one name is not ours
 
-`meta-microduck/files/wic/microduck-ab.wks.in`. Every partition has an explicit
+`meta-microduck-bsp/files/wic/microduck-ab.wks.in`. Every partition has an explicit
 `--offset` and `--fixed-size`, so wic fails rather than shifting anything. A
 bundle built against one layout writing into another is the failure this prevents.
 

@@ -84,9 +84,9 @@ esac
 # to the org's private jobs-artifacts bucket and mounts them read-only. Needs
 # huggingface_hub >= 1.30.
 #
-# The two directories are named explicitly rather than mounting the whole tree:
-# kas checks the upstream layers out in-tree (see .gitignore), so a stray local
-# checkout would otherwise upload gigabytes. Together they are ~400K.
+# kas/ and our three layers are named explicitly rather than mounting the whole
+# tree: kas checks the upstream layers out in-tree (see .gitignore), so a stray
+# local checkout would otherwise upload gigabytes. Together they are ~2 MB.
 #
 # They are copied into a fresh directory first, so every job gets a bucket folder
 # of its own. hf names the folder from the hostname and the directory's absolute
@@ -100,15 +100,18 @@ esac
 # job left in jobs-artifacts.
 stage=$(mktemp -d "${TMPDIR:-/tmp}/hfjob-src.XXXXXX")
 trap 'rm -rf "$stage"' EXIT
-cp -R kas meta-microduck "$stage"/
+inputs="kas meta-microduck meta-microduck-bsp meta-microduck-distro"
+cp -R $inputs "$stage"/
 set -- \
 	--namespace pollen-robotics \
 	--flavor "$FLAVOR" \
 	--timeout "$TIMEOUT" \
 	--name "microduck-${MACHINE#microduck-}-${TARGET:-image}-$KAS_CMD" \
-	--detach \
-	-v "$stage/kas:/src/kas" \
-	-v "$stage/meta-microduck:/src/meta-microduck" \
+	--detach
+for d in $inputs; do
+	set -- "$@" -v "$stage/$d:/src/$d"
+done
+set -- "$@" \
 	-v "hf://buckets/$BUCKET:/cache" \
 	-e "HFJOB_BUCKET=$BUCKET" \
 	-e "KAS_CMD=$KAS_CMD" \

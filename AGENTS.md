@@ -102,21 +102,37 @@ message.
 ```
 kas/microduck.yml         layer pins + build config. NO absolute paths.
 kas/<host>.env            per-host paths, as env vars (see below).
-meta-microduck/conf/distro/microduck.conf
+meta-microduck-distro/conf/distro/microduck.conf
                           what the robot runs: DISTRO_FEATURES, init, network
                           stack, default services, BBMASK. Not local_conf_header,
                           which is for build-host behaviour only (rm_work, fetch).
-meta-microduck/conf/machine/microduck-zero3.conf
+meta-microduck-bsp/conf/machine/microduck-zero3.conf
                           the Radxa Zero 3W stand-in board.
-meta-microduck/conf/machine/microduck-beta.conf
+meta-microduck-bsp/conf/machine/microduck-beta.conf
                           the beta board, the custom PCB's first spin.
-meta-microduck/recipes-kernel/linux/files/rk3566-microduck-beta.dts
+meta-microduck-bsp/recipes-kernel/linux/files/rk3566-microduck-beta.dts
                           its whole device tree, copied into the kernel tree at
                           build time (MICRODUCK_BOARD_DTS).
 kas/beta.yml              compose last to build the beta board.
-meta-microduck/conf/machine/include/microduck-common.inc
+meta-microduck-bsp/conf/machine/include/microduck-common.inc
                           anything shared with the future custom PCB.
 ```
+
+Three layers, split the way `yocto-check-layer` requires (one layer cannot be
+both DISTRO and BSP):
+
+- `meta-microduck-bsp`: what is true because of the *board*: machine confs,
+  kernel, U-Boot, radio drivers and attach, board support (fan, USB gadget,
+  audio routing, reboot voltage, camera tuning), the partition layout
+  (`files/wic`), SoC multimedia pins (MPP, gstreamer-rockchip).
+- `meta-microduck-distro`: `conf/distro/microduck.conf` only.
+- `meta-microduck`: the robot's software: images, packagegroups, the daemon,
+  policies, ONNX Runtime, the RAUC bundle and config, data partition, media.
+
+A recipe that would make sense on a different board goes in `meta-microduck`.
+So does anything that needs a daemon's user or group, even when it names a
+board device (the face-LED, NFC and ToF udev rules): the BSP layer must not
+depend on the software layer, and `yocto-check-layer` fails it if it does.
 
 Paths are **environment variables in `kas/<host>.env`, not `local_conf_header`
 entries.** kas-container bind-mounts `KAS_BUILD_DIR`, `DL_DIR` and `SSTATE_DIR`;
