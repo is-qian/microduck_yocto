@@ -14,9 +14,15 @@ SRC_URI = " \
     git://github.com/radxa/kernel.git;protocol=https;nobranch=1;branch=linux-6.1-stan-rkr4.1 \
     file://cgroups.cfg \
     file://mali-csf.cfg \
+    file://no-mali400.cfg \
     file://qemu-virt.cfg \
     file://rauc.cfg \
+    file://0004-scripts-resource_tool-zero-index-entries-before-writ.patch \
 "
+
+# Reproducible boot.img: microduck-bundle refuses a bundle whose boot.img differs from the card's.
+#   no-mali400.cfg    the Mali-400 driver baked `date` into the Image
+#   0004-*.patch      resource_tool wrote stack garbage into resource.img
 
 # WATCH OUT when adding config fragments. linux-rockchip.inc builds the defconfig
 # with:
