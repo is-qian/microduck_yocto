@@ -51,8 +51,11 @@ local_conf_header:
     # - Everything else is checksummed, so the mirror path becomes the file's name
     #   in DL_DIR. That covers the 1700 .crate files, which sit flat in downloads/.
     #
-    # PREMIRRORS, not MIRRORS, so the bucket is tried before upstream. Upstream
-    # is still tried if the bucket lacks something. Mirror settings do not enter
+    # git and crates are PREMIRRORS (bucket first); ftp/http/https tarballs are
+    # MIRRORS (upstream first, bucket as fallback). Tarball reads through the
+    # bucket mount die in do_fetch with exit code 135 (SIGBUS, sidecar
+    # "httpx ReadTimeout") whenever a build has many to fetch: 5 of 8 cold-cache
+    # builds 2026-10-06..13, 0 of 4 with this split. Mirror settings do not enter
     # task signatures: with them set, job 6ac3abad still matched 98% of sstate.
     #
     # Not yet exercised: a git clone of a large repo (the kernel's is 10 GB)
@@ -62,8 +65,10 @@ local_conf_header:
     PREMIRRORS:prepend = "\
         git://.*/.* git:///cache/downloads/git2/MIRRORNAME;protocol=file \
         gitsm://.*/.* gitsm:///cache/downloads/git2/MIRRORNAME;protocol=file \
+        crate://.*/.* file:///cache/downloads/ \
+    "
+    MIRRORS:prepend = "\
         ftp://.*/.* file:///cache/downloads/ \
         http://.*/.* file:///cache/downloads/ \
         https://.*/.* file:///cache/downloads/ \
-        crate://.*/.* file:///cache/downloads/ \
     "
