@@ -576,5 +576,6 @@ RRECOMMENDS:${PN} += "onnxruntime"
 # rolls a release back on -- so every *attempted* update reverts. Seeded here because an
 # image installs through neither hooks/postinstall nor scripts/install.sh; the recipe
 # carries the rest of the story. Bump it with POLICY_VERSION in the daemon's own
-# scripts/seed-policies.sh (v5 at 0.13.0 to 0.15.1, v7 from 0.15.2 to 0.16.0).
+# scripts/seed-policies.sh (v5 at 0.13.0 to 0.15.1, v7 from 0.15.2 to 0.16.1, v8 from
+# 0.16.2).
 RDEPENDS:${PN} += "microduck-policies"
