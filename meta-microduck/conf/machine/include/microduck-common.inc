@@ -50,3 +50,11 @@ SERIAL_CONSOLES = "${@'' if d.getVar('MICRODUCK_MOTOR_UART') == '1' else '150000
 # Not alsa: its alsa-state restore would race microduck-beta-audio's codec setup.
 MACHINE_FEATURES = "wifi bluetooth usbhost"
 MACHINE_FEATURES_OPTED_OUT = "rtc"
+
+# Our boot chain, as our own choice rather than rockchip-common.inc's ?= defaults:
+# linux-rockchip_6.1.bbappend and u-boot-rockchip.bbappend are written against
+# exactly these. meta-rockchip added linux-rockchip_6.12 in 2026-09.
+PREFERRED_PROVIDER_virtual/kernel = "linux-rockchip"
+PREFERRED_VERSION_linux-rockchip = "6.1%"
+PREFERRED_VERSION_linux-libc-headers = "6.1-custom%"
+PREFERRED_PROVIDER_virtual/bootloader = "u-boot-rockchip"
