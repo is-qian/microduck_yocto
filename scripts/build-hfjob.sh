@@ -229,6 +229,15 @@ save() {
 		if [ -d "$KAS_BUILD_DIR"/tmp/log ]; then
 			cp -R "$KAS_BUILD_DIR"/tmp/log "$out"/bitbake-log || true
 		fi
+		# installed-package-sizes.txt is "<KiB>\tKiB\t<package>", largest first.
+		bh="$KAS_BUILD_DIR"/buildhistory/images
+		if [ -d "$bh" ]; then
+			cp -R "$bh" "$out"/buildhistory || true
+			find "$bh" -name installed-package-sizes.txt | while read -r f; do
+				awk -v i="$(basename "$(dirname "$f")")" '{t+=$1} END{printf "buildhistory: %s: %d packages, %d KiB installed; largest:\n", i, NR, t}' "$f"
+				head -n 10 "$f" | awk '{printf "buildhistory:   %8d KiB  %s\n", $1, $3}'
+			done
+		fi
 	else
 		echo "no deploy/images dir -- nothing to copy out"
 	fi
