@@ -15,7 +15,7 @@
 header:
   version: 14
 
-distro: poky
+distro: microduck
 machine: microduck-zero3
 
 # The dev image, while we are still bringing the board up: every image built so
@@ -94,19 +94,11 @@ repos:
     commit: 38da0e5866a953e664001ba90b5edad68d68cd5d
 
 local_conf_header:
+  # Build-host only; rootfs policy is in meta-microduck/conf/distro/microduck.conf.
   microduck: |
-    # rockchip-libmali is a redistributable binary blob.
-    LICENSE_FLAGS_ACCEPTED = "commercial"
-
     # Vendor BSP kernel + rkaiq + full GStreamer is comfortably 100 GB+ of
     # TMPDIR without this.
     INHERIT += "rm_work"
-
-    # meta-rauc's sanity-meta-rauc.bbclass warns on every single parse without
-    # this. It is not only cosmetic: busybox and curl carry bbappends keyed off
-    # the feature (tar long options, and nghttp2 so adaptive updates can pipeline
-    # their range requests).
-    DISTRO_FEATURES:append = " rauc"
 
   kernel-shallow: |
     # radxa/kernel is a full Linux history: 13,224,308 objects and 10.7M deltas.
@@ -125,88 +117,3 @@ local_conf_header:
     # meta-microduck/recipes-kernel/linux/patches/ instead.
     BB_GIT_SHALLOW:pn-linux-rockchip = "1"
     BB_GIT_SHALLOW_DEPTH:pn-linux-rockchip = "1"
-
-    # Root login with no password lives in microduck-image-dev.bb, not here.
-    #
-    # It was EXTRA_IMAGE_FEATURES in this file, which applies to every image built
-    # from this config, under a comment asking whoever ships an image to remember
-    # to delete the line. Scoping it to a recipe whose name says what it is makes
-    # `bitbake microduck-image` shippable by construction instead.
-    #
-    # wrynose removed the `debug-tweaks` catch-all; that recipe takes the pieces we
-    # actually want. Deliberately NOT included, there or here: serial-autologin-root
-    # (typing `root` is not the bottleneck), tools-debug, tools-sdk, dev-pkgs,
-    # staticdev -- dev headers and debuggers belong in the SDK (`-c populate_sdk`),
-    # not on the robot. reachy_mini_os ships build-essential and gdb on the device
-    # because PyGObject compiles on-target; we have no reason to repeat that.
-
-    # A robot has no display server. Dropping x11 also drops the XSERVER list
-    # that rockchip-common.inc sets up.
-    DISTRO_FEATURES:remove = "x11"
-
-  display-server-mask: |
-    # meta-rockchip repoints xserver-xorg and weston at JeffyCN forks with
-    # SRCREV = "${AUTOREV}" and, for xserver, a ${PV}-derived branch name. Both
-    # are problems:
-    #
-    #  - AUTOREV means a git ls-remote on every parse and a build that cannot be
-    #    reproduced, which defeats the reason we pin every layer to a commit.
-    #  - The xserver tag it derives, 21.1.22_2025_11_06, does not exist: the fork
-    #    stops at 21.1.21 while oe-core wrynose ships xserver-xorg 21.1.22. That
-    #    is a hard parse failure for the whole tree, not just for X.
-    #
-    # We need neither a display server: M5's GStreamer path is kmssrc, which
-    # wants libdrm, not X or Weston. Mask both bbappends.
-    #
-    # Revisit if a display is ever added -- masking the bbappend means losing
-    # meta-rockchip's Rockchip-specific patches along with the breakage.
-    BBMASK += "meta-rockchip/recipes-graphics/(xorg-xserver|wayland/weston)"
-
-  init: |
-    INIT_MANAGER = "systemd"
-
-    # NetworkManager owns the network, and only NetworkManager.
-    #
-    # docs/architecture.md:190 in microduck_daemon fixes this choice: "Wifi
-    # credentials | NetworkManager | We never store them; clients drive NM via its
-    # DBus API." wpa-supplicant stays -- NM has no supplicant of its own and drives
-    # wpa_supplicant over D-Bus, so dropping it would break wifi entirely.
-    #
-    # What has to go is systemd's own stack. INIT_MANAGER = "systemd" otherwise
-    # installs *and enables* systemd-networkd and systemd-resolved next to NM:
-    # two daemons managing the same interfaces, and two competing wait-online
-    # units both gating network-online.target -- which updaterd.service depends
-    # on, so a networkd wait-online that never settles stalls the updater on a
-    # board whose wifi is fine.
-    # nss-resolve has to go with resolved: oe-core enables it by default and
-    # systemd's meson refuses the combination --
-    #   "nss-resolve is requested but resolve is disabled"
-    # Nothing in systemd's PACKAGECONFIG depends on networkd. Without nss-resolve
-    # glibc just uses /etc/resolv.conf, which NetworkManager writes itself.
-    VIRTUAL-RUNTIME_net_manager = "networkmanager"
-    PACKAGECONFIG:remove:pn-systemd = "networkd resolved nss-resolve"
-
-  services: |
-    # Three services poky enables by default that a robot should not be running.
-    # Found by importing the rootfs into an arm64 container and listing
-    # /etc/systemd/system/multi-user.target.wants -- the build is perfectly happy
-    # with all of them.
-
-    # rpcbind, listening on :111. Pulled in by DISTRO_FEATURES "nfs" (a poky
-    # default) via packagegroup-base-nfs. This is not an NFS client.
-    DISTRO_FEATURES:remove = "nfs"
-
-    # busybox-syslog, a second logger next to journald. default-providers.inc sets
-    # VIRTUAL-RUNTIME_base-utils-syslog ?= "busybox-syslog". microduck_daemon
-    # ships a journald drop-in with Storage=persistent and ForwardToSyslog=no, so
-    # journald is the log store and syslog is dead weight. /var/log itself is
-    # oe-core's tmpfs symlink; the journal under it is bind-mounted from the data
-    # partition by recipes-core/microduck-data.
-    VIRTUAL-RUNTIME_base-utils-syslog = ""
-
-    # dnsmasq.service, a general-purpose DNS/DHCP server. The *binary* is wanted:
-    # NetworkManager needs it for shared/hotspot connections, which is how wifi
-    # provisioning will work (Reachy Mini's equivalent drives `nmcli Hotspot`).
-    # But NM spawns its own instance, so the standalone service should not be
-    # listening. Keep the package, disable the unit.
-    SYSTEMD_AUTO_ENABLE:pn-dnsmasq = "disable"

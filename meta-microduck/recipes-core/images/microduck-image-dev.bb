@@ -28,7 +28,6 @@ IMAGE_INSTALL:append = " \
     less \
     strace \
     e2fsprogs \
-    iw \
     tcpdump \
     evtest \
     gstreamer1.0-tracers \
@@ -92,7 +91,8 @@ IMAGE_INSTALL:append = " \
 # and sends nothing, which is the distinction the whole of
 # microduck_daemon/docs/robot/pair-a-gamepad.md turns on.
 #
-# iw and tcpdump for the aic8800. nmcli reports that a link is associated but not
+# tcpdump for the radio (iw is already there, from packagegroup-base-wifi via
+# MACHINE_FEATURES). nmcli reports that a link is associated but not
 # why it is bad, and this radio is the component the BLE workarounds in
 # install-dev.md exist to work around.
 #

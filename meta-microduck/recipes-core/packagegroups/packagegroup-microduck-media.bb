@@ -97,13 +97,6 @@ RDEPENDS:${PN} = " \
 #
 #   gstreamer1.0-plugins-rs (webrtcsink) -- M8, and no upstream recipe exists.
 #
-# rockchip-libmali arrives anyway, and not by choice: mali.inc sets
-# PREFERRED_PROVIDER_virtual/egl and virtual/libgles* to it, and
-# gstreamer1.0-plugins-base builds an `opengl` subpackage needing EGL/GLES. So the
-# licence-flagged GPU blob is in the image via GStreamer. Dropping `opengl` from
-# DISTRO_FEATURES would remove both, but rk356x.inc assumes a GPU is present, so
-# that is a change to make deliberately rather than in passing.
-#
 # TODO trim: this packagegroup grew the image 549 -> 745 MiB (+196 MiB), mostly
 # because the plugins-bad meta package pulls ~100 subpackages -- dvb, decklink,
 # vulkan, waylandsink, rfbsrc, festival and so on, none of which a robot wants.

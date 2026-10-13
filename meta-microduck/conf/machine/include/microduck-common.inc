@@ -44,3 +44,9 @@ MICRODUCK_RADIO_PACKAGES ?= "aic8800-bt"
 MICRODUCK_RADIO_DEV_PACKAGES ?= "aic8800-bt-test"
 
 SERIAL_CONSOLES = "${@'' if d.getVar('MICRODUCK_MOTOR_UART') == '1' else '1500000;ttyFIQ0'}"
+
+# Via packagegroup-base: wifi -> iw, wpa-supplicant, wireless-regdb-static;
+# bluetooth -> bluez5; usbhost -> usbutils. rtc opted out: no RTC on the boards.
+# Not alsa: its alsa-state restore would race microduck-beta-audio's codec setup.
+MACHINE_FEATURES = "wifi bluetooth usbhost"
+MACHINE_FEATURES_OPTED_OUT = "rtc"
