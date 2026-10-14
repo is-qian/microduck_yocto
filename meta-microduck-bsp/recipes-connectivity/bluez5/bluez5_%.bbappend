@@ -12,5 +12,5 @@
 # hciattach is unaffected: it already sets the rate with cfsetospeed().
 #
 # Fixed upstream after 5.87; drop this once the bluez5 recipe carries it.
-FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
-SRC_URI += "file://0001-btattach-Update-for-glibc-2.42-compatibility.patch"
+FILESEXTRAPATHS:prepend:microduck-machine := "${THISDIR}/files:"
+SRC_URI:append:microduck-machine = " file://0001-btattach-Update-for-glibc-2.42-compatibility.patch"

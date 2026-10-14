@@ -8,4 +8,4 @@
 # Verified on the board 2026-09-29: WebRTC at 30 fps in a browser, and mpph264enc
 # holds its bitrate. Drop this when meta-rockchip moves both pins itself.
 
-SRCREV = "c5b8620973c7e22224fcc78ad5016740979c2e0a"
+SRCREV:microduck-machine = "c5b8620973c7e22224fcc78ad5016740979c2e0a"

@@ -21,4 +21,4 @@
 # No dependency cycle: this option DEPENDS on gstreamer1.0, and
 # gstreamer1.0-plugins-bad's webrtc option DEPENDS on libnice, so the chain is
 # plugins-bad -> libnice -> gstreamer1.0 and core does not depend on plugins-bad.
-PACKAGECONFIG:append = " gstreamer"
+PACKAGECONFIG:append:microduck = " gstreamer"

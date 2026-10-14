@@ -7,7 +7,7 @@
 #
 # Both flags together: gstreamer 1.28's plugins/tracers/meson.build errors on
 # coretracers=enabled without tracer_hooks.
-PACKAGECONFIG:append = " tracer-hooks coretracers"
+PACKAGECONFIG:append:microduck = " tracer-hooks coretracers"
 
-PACKAGE_BEFORE_PN += "${PN}-tracers"
+PACKAGE_BEFORE_PN:append:microduck = " ${PN}-tracers"
 FILES:${PN}-tracers = "${libdir}/gstreamer-1.0/libgstcoretracers.so"
