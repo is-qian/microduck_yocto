@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check meta-microduck/files/wic/microduck-ab.wks.in for overlapping partitions.
+"""Check meta-microduck-bsp/files/wic/microduck-ab.wks.in for overlapping partitions.
 
 wic catches an overlap too, but only ~50 minutes into a build. The A/B layout is
 the one place where a silently shifted offset is not a cosmetic bug: a bundle
@@ -15,7 +15,7 @@ import re
 import sys
 from pathlib import Path
 
-WKS = Path(__file__).resolve().parent.parent / "meta-microduck/files/wic/microduck-ab.wks.in"
+WKS = Path(__file__).resolve().parent.parent / "meta-microduck-bsp/files/wic/microduck-ab.wks.in"
 
 # name -> measured bytes of the artifact that must fit (2026-09-17).
 #

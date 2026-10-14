@@ -46,6 +46,6 @@ FILES:${PN} += " \
 "
 
 # dnsmasq: the binary only -- the image disables its own dnsmasq.service
-# (SYSTEMD_AUTO_ENABLE:pn-dnsmasq = "disable" in kas/microduck.yml), and
+# (SYSTEMD_AUTO_ENABLE:pn-dnsmasq = "disable" in the microduck distro), and
 # microduck-usb-dhcp.service runs a private instance bound to usb0.
 RDEPENDS:${PN} = "dnsmasq iproute2 util-linux-mountpoint"

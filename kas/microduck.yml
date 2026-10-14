@@ -37,9 +37,13 @@ env:
   MICRODUCK_DAEMON_SRCREV: null
 
 repos:
-  # This repo. Contributes meta-microduck; no url/commit, kas uses the checkout.
+  # This repo; no url/commit, kas uses the checkout. Three layers, split the way
+  # yocto-check-layer requires (one layer cannot be both DISTRO and BSP):
+  # -bsp the boards, -distro the policy, meta-microduck the robot's software.
   microduck_os:
     layers:
+      meta-microduck-bsp:
+      meta-microduck-distro:
       meta-microduck:
 
   openembedded-core:
@@ -94,7 +98,7 @@ repos:
     commit: 38da0e5866a953e664001ba90b5edad68d68cd5d
 
 local_conf_header:
-  # Build-host only; rootfs policy is in meta-microduck/conf/distro/microduck.conf.
+  # Build-host only; rootfs policy is in meta-microduck-distro/conf/distro/microduck.conf.
   microduck: |
     # Vendor BSP kernel + rkaiq + full GStreamer is comfortably 100 GB+ of
     # TMPDIR without this.
@@ -114,6 +118,6 @@ local_conf_header:
     # leaves the shallow window and this breaks. Bump the depth when it does. If
     # that becomes annoying, the durable fix is to go back to JeffyCN's small
     # mirror and carry the three Zero 3W device trees as patches in
-    # meta-microduck/recipes-kernel/linux/patches/ instead.
+    # meta-microduck-bsp/recipes-kernel/linux/files/ instead.
     BB_GIT_SHALLOW:pn-linux-rockchip = "1"
     BB_GIT_SHALLOW_DEPTH:pn-linux-rockchip = "1"

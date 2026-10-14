@@ -282,7 +282,7 @@ the RAUC section below.
 
 The board is the SDIO AICSemi AIC8800DS2 variant, so `KERNEL_DEVICETREE` is pinned
 to `rk3566-radxa-zero-3w-aic8800ds2.dtb` and the out-of-tree driver comes from
-`meta-microduck/recipes-kernel/aic8800`.
+`meta-microduck-bsp/recipes-kernel/aic8800`.
 
 Verified present in the rootfs (not merely in the manifest):
 
@@ -495,7 +495,7 @@ No reboot is automatic when the slot itself is the cause, so a bench board with 
 genuinely missing peripheral cannot loop between two unhealthy slots.
 ### Partition layout
 
-`meta-microduck/files/wic/microduck-ab.wks.in`. Every partition has an explicit
+`meta-microduck-bsp/files/wic/microduck-ab.wks.in`. Every partition has an explicit
 offset and size, and everything addresses partitions by GPT **label**, never by
 number. Run `scripts/check-wks-layout.py` after changing it.
 

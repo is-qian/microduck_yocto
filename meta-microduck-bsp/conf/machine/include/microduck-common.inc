@@ -23,7 +23,7 @@
 # ssh: no USB-UART adapter was ever attached, so the serial console UART2 was
 # being held for could not be read anyway, while robotd sat in a retry loop
 # ("cannot open the bus ... /dev/ttyS2: No such file or directory", attempt=330).
-# The no-boot path is still covered: the dts patch in recipes-kernel/linux/patches
+# The no-boot path is still covered: the dts patch in recipes-kernel/linux/files
 # puts console=tty0 in bootargs, so a kernel that dies prints to HDMI. That patch
 # also still names console=ttyFIQ0, which simply fails to register once the FIQ
 # debugger is gone -- harmless. Do NOT "fix" it to console=ttyS2, which would put
