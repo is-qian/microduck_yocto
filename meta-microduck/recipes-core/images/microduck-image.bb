@@ -70,6 +70,9 @@ IMAGE_INSTALL:append = " \
     htop \
 "
 
+# The beta's face LEDs, ToF and NFC reader, for the daemons' groups (robot, nfcd).
+IMAGE_INSTALL:append:microduck-beta = " microduck-face-leds microduck-tof-spidev microduck-nfc"
+
 # bluez5, iw, wpa-supplicant, wireless-regdb-static, usbutils: from packagegroup-base via MACHINE_FEATURES.
 # rauc would arrive via packagegroup-base too; listed to keep the updater visible.
 

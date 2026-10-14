@@ -27,5 +27,5 @@
 # The recipe file is gstreamer1.0-rockchip.bb with no version, so this append is
 # named to match it exactly -- a _%.bbappend would not attach to it.
 
-SRC_URI = "git://github.com/pollen-robotics/gstreamer_rockship.git;protocol=https;branch=mpph264enc-webrtc"
-SRCREV = "e404bf996cc89cdb9e91aca2dbd2d4c0b3eb4d5a"
+SRC_URI:microduck-machine = "git://github.com/pollen-robotics/gstreamer_rockship.git;protocol=https;branch=mpph264enc-webrtc"
+SRCREV:microduck-machine = "e404bf996cc89cdb9e91aca2dbd2d4c0b3eb4d5a"

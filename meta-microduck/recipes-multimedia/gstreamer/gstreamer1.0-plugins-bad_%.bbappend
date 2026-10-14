@@ -13,7 +13,7 @@
 # WebRTC data channels run over SCTP, and microduck_daemon's architecture.md plans
 # `control` and `teleop` datachannels, so this is wanted rather than incidental.
 # PACKAGECONFIG[sctp] carries no DEPENDS: GStreamer brings its own implementation.
-PACKAGECONFIG:append = " webrtc srtp sctp"
+PACKAGECONFIG:append:microduck = " webrtc srtp sctp"
 
 # PACKAGECONFIG is necessary but not sufficient. It builds libgstwebrtc.so and
 # links libnice, and webrtcbin then registers and inspects fine -- but refuses to
@@ -33,4 +33,4 @@ PACKAGECONFIG:append = " webrtc srtp sctp"
 # that what arrived was a libnice built without its plugin. Stating it on
 # -webrtc puts the requirement where the element is, so it travels with whoever
 # installs webrtcbin instead of being a coincidence of our packagegroup.
-RDEPENDS:${PN}-webrtc += "libnice"
+RDEPENDS:${PN}-webrtc:append:microduck = " libnice"

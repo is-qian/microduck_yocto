@@ -30,6 +30,14 @@
 # printk back on the servo wires, the exact failure this flag exists to prevent.
 MICRODUCK_MOTOR_UART ?= "1"
 
+# One override for every microduck machine, so this layer's appends to recipes
+# that other machines build too (bluez5, rockchip-mpp, gstreamer1.0-rockchip)
+# apply to ours only: yocto-check-layer's test_signatures fails a BSP layer
+# whose mere presence changes other machines' recipes. Not `microduck` (the
+# distro's override) and not `microduck-board` (a package name, so
+# `FILES:microduck-board` would be ambiguous).
+MACHINEOVERRIDES =. "microduck-machine:"
+
 # Which electronic board this is, in microduck_daemon's terms ([board] version in
 # robotd.toml: "zero3" or "beta"). microduck-board writes it into the image; the
 # updater derives the hardware revision a release is checked against from it. Each
