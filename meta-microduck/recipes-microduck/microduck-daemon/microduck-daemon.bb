@@ -568,8 +568,9 @@ RDEPENDS:${PN} += "gstreamer1.0-plugins-rs gstreamer1.0-rockchip"
 # Packaged as recipes-microduck/onnxruntime (Microsoft's prebuilt aarch64 tarball, the
 # same one scripts/setup-board.sh fetches). RRECOMMENDS rather than RDEPENDS because
 # robotd installs and starts fine without it and only fails when asked to walk, so a
-# minimal image can drop it. ORT_DYLIB_PATH overrides the location.
-RRECOMMENDS:${PN} += "onnxruntime"
+# minimal image can drop it. ORT_DYLIB_PATH overrides the location. aarch64 only,
+# like the tarball: elsewhere (yocto-check-layer's x86 world) it does not exist.
+RRECOMMENDS:${PN}:append:aarch64 = " onnxruntime"
 
 # The policy set. RDEPENDS, not RRECOMMENDS: a powered robot with no set reports
 # `unhealthy` (robotd/src/main.rs, policy_error), and unhealthy is what the health gate

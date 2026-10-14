@@ -6,6 +6,11 @@ PV = "0.1.0"
 
 inherit bundle
 
+# Out of `world`, as image.bbclass does for images: this builds microduck-image-dev,
+# which only our machines can (u-boot-rockchip-env), and bundle.bbclass does not
+# exclude itself. yocto-check-layer's x86 world build failed on it.
+EXCLUDE_FROM_WORLD = "1"
+
 # Must equal compatible= in recipes-core/rauc/files/system.conf; RAUC refuses a
 # bundle for another machine.
 RAUC_BUNDLE_COMPATIBLE = "${MACHINE}"

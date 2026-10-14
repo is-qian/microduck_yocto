@@ -5,7 +5,7 @@
 # systemd-growfs-root.service, which resizes the mounted ext4 online before
 # local-fs.target. A no-op on a slot that already fills its partition, e.g. a
 # freshly flashed slot A.
-do_install:append() {
+do_install:append:microduck() {
 	sed -i 's|^\(/dev/root[[:space:]]\+/[[:space:]]\+auto[[:space:]]\+\)defaults[[:space:]]|\1defaults,x-systemd.growfs |' ${D}${sysconfdir}/fstab
 	grep -q '^/dev/root[[:space:]].*x-systemd\.growfs' ${D}${sysconfdir}/fstab || bbfatal "fstab root line changed upstream; x-systemd.growfs not applied"
 }
