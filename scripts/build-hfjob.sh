@@ -6,6 +6,8 @@
 #   HFJOB_FLAVOR=cpu-basic scripts/build-hfjob.sh checkout   # layers+conf, no build
 #   HFJOB_MACHINE=microduck-beta scripts/build-hfjob.sh      # the beta board
 #   HFJOB_DAEMON_VERSION=0.16.1 scripts/build-hfjob.sh       # not the newest daemon
+#   HFJOB_KAS_EXTRA=kas/cve.yml HFJOB_TARGET=microduck-image scripts/build-hfjob.sh
+#                                                            # + CVE scan (kas/cve.yml)
 #
 # The first argument is the kas command, defaulting to `build`, the same shape
 # build-coach.sh uses. `checkout` is worth knowing about: it clones the layers and
@@ -47,6 +49,16 @@ TARGET=${HFJOB_TARGET:-}
 # below to find the deploy directory, which is named after it.
 MACHINE=${HFJOB_MACHINE:-microduck-zero3}
 KAS_CMD=${1:-build}
+# Extra kas files composed after hfjob.yml, colon-separated, e.g. kas/cve.yml.
+# Checked here: a typo would otherwise fail inside a job that is already billing.
+KAS_EXTRA=${HFJOB_KAS_EXTRA:-}
+for f in $(echo "$KAS_EXTRA" | tr ':' ' '); do
+	case "$f" in
+	kas/*) [ -f "$f" ] && continue ;;
+	esac
+	echo "$0: HFJOB_KAS_EXTRA: '$f' is not a file under kas/ (only kas/ is sent to the job)" >&2
+	exit 1
+done
 
 # The daemon release (README.md, "Which daemon the image seeds"). Resolved here,
 # so a release the image cannot seed is refused before the job bills anything.
@@ -124,6 +136,9 @@ if [ -n "$TARGET" ]; then
 fi
 if [ -n "${HFJOB_TASK:-}" ]; then
 	set -- "$@" -e "KAS_TASK=$HFJOB_TASK"
+fi
+if [ -n "$KAS_EXTRA" ]; then
+	set -- "$@" -e "KAS_EXTRA=$KAS_EXTRA"
 fi
 for kv in $daemon; do
 	set -- "$@" -e "$kv"
@@ -494,6 +509,7 @@ fi
 # whoever reads the log, so copy it out either way and return the real code at the
 # end -- the exit status still fails the job, it just stops costing the artifacts.
 rc=0
+kas_files=kas/microduck.yml:kas/hfjob.yml${KAS_EXTRA:+:$KAS_EXTRA}
 
 # Every daemon release brings its own Cargo.lock, so the crate list has to be
 # regenerated from it first, or the build is missing whatever crates the release
@@ -510,12 +526,12 @@ if [ "$KAS_CMD" = build ]; then
 	case "${KAS_TARGET:-microduck-image}" in
 	*microduck-*)
 		echo "daemon: regenerating the crate list for $MICRODUCK_DAEMON_VERSION"
-		kas shell kas/microduck.yml:kas/hfjob.yml -c "bitbake -c update_crates microduck-daemon" || rc=$?
+		kas shell "$kas_files" -c "bitbake -c update_crates microduck-daemon" || rc=$?
 		;;
 	esac
 fi
 if [ "$rc" = 0 ]; then
-	kas "$KAS_CMD" kas/microduck.yml:kas/hfjob.yml || rc=$?
+	kas "$KAS_CMD" "$kas_files" || rc=$?
 fi
 
 # No copy here: save() already ran it, or is about to via the EXIT trap. Doing it
