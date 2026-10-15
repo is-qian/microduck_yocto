@@ -325,22 +325,36 @@ save() {
 	# hurts, e.g. oe-core's scripts/sstate-cache-management.py
 	# --remove-duplicated on an unpacked copy.
 	#
-	# Its SHA-256 goes beside it, as sstate.tar.sha256, computed in the same pass
-	# that writes it, and the next job checks it before using the archive. pipefail
-	# in the command substitution, or a failing tar would hide behind
-	# sha256sum's success. The two renames are not one atomic step: a job
-	# reading between them sees a mismatch and reseeds, which is slow but safe.
+	# Named by its own SHA-256 (sstate-<sum>.tar, computed in the same pass that
+	# writes it) and never overwritten. Only then does sstate.current, a pointer
+	# holding that sum, change -- one rename. A reader takes the pointer once and
+	# opens the archive it names, so it always gets a matching pair. The old
+	# sstate.tar + sstate.tar.sha256 were two renames; a job reading between
+	# them, or while another job replaced the tar, saw a mismatch and fell back
+	# to the 35-minute reseed (2026-10-06, 2026-10-15). pipefail in the command
+	# substitution, or a failing tar would hide behind sha256sum's success.
 	if [ "$seeded" = 1 ]; then
 		part=/cache/sstate.tar.part-"${JOB_ID:-nojobid}"
 		echo "sstate: publishing $(du -sh "$SSTATE_DIR" | cut -f1) at $(date -u +%T)"
 		if sum=$(set -o pipefail; tar -cf - -C "$SSTATE_DIR" . | tee "$part" | sha256sum | cut -d' ' -f1) \
-			&& printf '%s\n' "$sum" > "$part.sha256" \
-			&& mv -f "$part" /cache/sstate.tar \
-			&& mv -f "$part.sha256" /cache/sstate.tar.sha256; then
+			&& mv -f "$part" /cache/sstate-"$sum".tar \
+			&& printf '%s\n' "$sum" > /cache/sstate.current.part-"${JOB_ID:-nojobid}" \
+			&& mv -f /cache/sstate.current.part-"${JOB_ID:-nojobid}" /cache/sstate.current; then
 			echo "sstate: published at $(date -u +%T), sha256 $sum"
+			# Drop superseded archives (and the pre-pointer pair), but keep the one
+			# this job seeded from: another job started at the same time may still
+			# be reading it.
+			# shortcut: a job still reading an older archive than that loses it and
+			# reseeds; keep the last N if jobs ever run three at a time.
+			for old in /cache/sstate-*.tar /cache/sstate.tar /cache/sstate.tar.sha256; do
+				case "$old" in
+				/cache/sstate-"$sum".tar | /cache/sstate-"${seed_sum:-none}".tar) ;;
+				*) rm -f "$old" ;;
+				esac
+			done
 		else
-			rm -f "$part" "$part.sha256"
-			echo "WARNING: could not publish sstate.tar"
+			rm -f "$part" /cache/sstate.current.part-"${JOB_ID:-nojobid}"
+			echo "WARNING: could not publish the sstate archive"
 		fi
 	else
 		echo "sstate: seed did not complete, not publishing"
@@ -375,15 +389,21 @@ if [ "$KAS_CMD" = build ]; then
 	# fd 3 holds the fifo open read-write so neither open() can block, and closing
 	# it is what ends the hasher's input. That holds even if tee never ran.
 	#
-	# An archive with no .sha256 predates the check. It is unpacked unverified,
-	# once, and this job's save() writes the sum.
+	# The pointer is read once, so the archive and the sum it is checked against
+	# always belong together (see save()). Before the first pointer exists, the
+	# old sstate.tar + sstate.tar.sha256 pair is read as before; this job's
+	# save() then publishes the new way and removes it.
 	seed_from_archive() {
-		[ -f /cache/sstate.tar ] || return 1
-		if [ ! -f /cache/sstate.tar.sha256 ]; then
-			echo "WARNING: sstate.tar has no .sha256 yet; unpacking it unverified"
-			tar -xf /cache/sstate.tar -C "$SSTATE_DIR"
-			return
+		if [ -f /cache/sstate.current ]; then
+			seed_sum=$(cat /cache/sstate.current)
+			archive=/cache/sstate-$seed_sum.tar
+		elif [ -f /cache/sstate.tar.sha256 ]; then
+			seed_sum=$(cat /cache/sstate.tar.sha256)
+			archive=/cache/sstate.tar
+		else
+			return 1
 		fi
+		[ -f "$archive" ] || return 1
 		fifo=$HOME/sstate.fifo
 		rm -f "$fifo" && mkfifo "$fifo"
 		exec 3<>"$fifo"
@@ -391,13 +411,13 @@ if [ "$KAS_CMD" = build ]; then
 		sha256sum < "$fifo" > "$HOME/sstate.sum" 3>&- &
 		hasher=$!
 		rc=0
-		(set -o pipefail; tee "$fifo" < /cache/sstate.tar | tar -xf - -C "$SSTATE_DIR") || rc=$?
+		(set -o pipefail; tee "$fifo" < "$archive" | tar -xf - -C "$SSTATE_DIR") || rc=$?
 		exec 3>&-
 		wait "$hasher" || rc=1
 		rm -f "$fifo"
 		[ "$rc" = 0 ] || return 1
-		[ "$(cut -d' ' -f1 "$HOME/sstate.sum")" = "$(cat /cache/sstate.tar.sha256)" ] && echo "sstate: sha256 verified" && return 0
-		echo "WARNING: sstate.tar sha256 $(cut -d' ' -f1 "$HOME/sstate.sum") != $(cat /cache/sstate.tar.sha256)"
+		[ "$(cut -d' ' -f1 "$HOME/sstate.sum")" = "$seed_sum" ] && echo "sstate: sha256 verified ($archive)" && return 0
+		echo "WARNING: $archive sha256 $(cut -d' ' -f1 "$HOME/sstate.sum") != $seed_sum"
 		return 1
 	}
 
@@ -409,8 +429,8 @@ if [ "$KAS_CMD" = build ]; then
 		# /cache/sstate (~35 min). That leaves a complete set, so save() may
 		# publish it, which also replaces a bad archive. With /cache/sstate gone
 		# too, this is a cold build, which publishes a complete set as well.
-		if [ -f /cache/sstate.tar ]; then
-			echo "WARNING: not using sstate.tar; reseeding from /cache/sstate"
+		if [ -n "${archive:-}" ]; then
+			echo "WARNING: not using $archive; reseeding from /cache/sstate"
 			rm -rf "$SSTATE_DIR" && mkdir -p "$SSTATE_DIR"
 		fi
 		cp -Ru /cache/sstate/. "$SSTATE_DIR"/ || echo "WARNING: some of /cache/sstate did not copy"
