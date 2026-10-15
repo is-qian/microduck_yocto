@@ -48,8 +48,10 @@ SRC_URI = "git://gitlab.freedesktop.org/gstreamer/gst-plugins-rs.git;protocol=ht
 "
 
 # Tag gstreamer-1.28.2 -- note the prefix, the tags are not bare version numbers.
-# Pinned to match our GStreamer core exactly (1.28.2) rather than taking the newest
-# 1.28.x and assuming forward compatibility.
+# Chosen to match GStreamer core 1.28.2. The 2026-10-15 oe-core bump moved core to
+# 1.28.5 and this stayed: GStreamer keeps its ABI within 1.x, and gstreamer-1.28.5
+# moves three of the git pins below (gstreamer-rs, gtk-rs-core, gtk4-rs), reworks
+# Cargo.lock and needs the webrtcsink patch rebased -- a bump of its own.
 SRCREV_plugins = "08eeb63ff2f74405447089f20c48868478a6076d"
 SRCREV_bindings = "f49606f22450e992556221e5c9dfeb628b8b54b0"
 SRCREV_gtkcore = "48b79229f29fd9f87509e5ae3b34e8e584d6b92b"
