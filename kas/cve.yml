@@ -1,6 +1,7 @@
 # microduck OS -- CVE scan of an image's SBOM, on demand.
 #
 #   kas build kas/microduck.yml:kas/cve.yml --target microduck-image
+#   HFJOB_KAS_EXTRA=kas/cve.yml HFJOB_TARGET=microduck-image scripts/build-hfjob.sh
 #
 # Writes <image>.sbom-cve-check.*.json beside the image in deploy/images. Not in
 # every build: the fragment fetches two large git databases (CVEProject's
