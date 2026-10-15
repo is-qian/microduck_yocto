@@ -393,10 +393,23 @@ if [ "$KAS_CMD" = build ]; then
 	# always belong together (see save()). Before the first pointer exists, the
 	# old sstate.tar + sstate.tar.sha256 pair is read as before; this job's
 	# save() then publishes the new way and removes it.
+	#
+	# The bucket shows a finished job's writes late -- a job reported COMPLETED
+	# while a reader still saw the old tar with the new sum (2026-10-15) -- so the
+	# pointer can name an archive that is not visible yet. Every archive is named
+	# by its own sum, so any one of them can be checked: take the newest that is.
 	seed_from_archive() {
 		if [ -f /cache/sstate.current ]; then
 			seed_sum=$(cat /cache/sstate.current)
 			archive=/cache/sstate-$seed_sum.tar
+			if [ ! -f "$archive" ]; then
+				# shellcheck disable=SC2012 # names are sstate-<hex>.tar, no spaces
+				archive=$(ls -t /cache/sstate-*.tar 2>/dev/null | head -n 1)
+				[ -n "$archive" ] || return 1
+				seed_sum=${archive#/cache/sstate-}
+				seed_sum=${seed_sum%.tar}
+				echo "WARNING: sstate.current names an archive not visible yet; using $archive"
+			fi
 		elif [ -f /cache/sstate.tar.sha256 ]; then
 			seed_sum=$(cat /cache/sstate.tar.sha256)
 			archive=/cache/sstate.tar

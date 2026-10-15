@@ -7,8 +7,9 @@
 # the kas image, against a tmpfs /cache and a fake `kas` that adds one sstate
 # object per "job". Checks the archive protocol: a legacy sstate.tar pair is
 # read and replaced, the pointer is followed, superseded archives go, a corrupt
-# one is refused, and the archive a concurrent reader started from survives the
-# next publish -- the race that cost two 35-minute reseeds.
+# one is refused, the archive a concurrent reader started from survives the
+# next publish, and a pointer the bucket shows before its archive falls back to
+# the newest archive -- the two ways that cost 35-minute reseeds.
 set -u
 
 if [ ! -e /body.sh ]; then
@@ -66,6 +67,13 @@ check 'grep -q "WARNING: /cache/sstate-.* != " /tmp/log-j4 && grep -q reseeding 
 before=$(cat /cache/sstate.current)
 job j5
 check '[ -f /cache/sstate-$before.tar ]' "a concurrent reader's archive survives the next publish"
+
+# 6. The bucket shows a finished job's writes late: a pointer naming an archive
+# that is not visible yet falls back to the newest one that is.
+older=$(cat /cache/sstate.current)
+echo 0000 > /cache/sstate.current
+job j6
+check 'grep -q "not visible yet; using /cache/sstate-$older.tar" /tmp/log-j6 && grep -q "sha256 verified (/cache/sstate-$older.tar)" /tmp/log-j6' "a pointer ahead of its archive falls back to the newest archive"
 
 [ "$fail" = 0 ] && echo "all passed" || echo "FAILED (logs: /tmp/log-j*)"
 exit "$fail"
