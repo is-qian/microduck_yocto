@@ -1,0 +1,27 @@
+# microduck OS -- CVE scan of an image's SBOM, on demand.
+#
+#   kas build kas/microduck.yml:kas/cve.yml --target microduck-image
+#
+# Writes <image>.sbom-cve-check.*.json beside the image in deploy/images. Not in
+# every build: the fragment fetches two large git databases (CVEProject's
+# cvelistV5 and fkie-cad's NVD feeds) at their latest revision, so each scan
+# re-fetches. The rootfs does not change -- only SPDX and the scan task do.
+header:
+  version: 14
+local_conf_header:
+  cve: |
+    # oe-core's wrynose fragment: sbom-cve-check in IMAGE_CLASSES, AUTOREV
+    # databases, VEX in the SBOM. create-spdx is already in INHERIT_DISTRO.
+    OE_FRAGMENTS += "core/yocto/sbom-cve-check"
+    # The fragment sets this for linux-yocto only. Without it every CVE in the
+    # whole kernel tree is reported, not just those in what our config compiles.
+    SPDX_INCLUDE_COMPILED_SOURCES:pn-linux-rockchip = "1"
+    # meta-rockchip's PV is "6.1", which reads as 6.1.0: every fix since then
+    # would count as unpatched (4176 of the first scan's 4246). The Makefile of
+    # the pinned SRCREV says 6.1.84 (uname -r on the board) -- keep in step.
+    CVE_VERSION:pn-linux-rockchip = "6.1.84"
+    # Results go to the files, not the log: the kernel's one-line warning is
+    # longer than the 64 KiB line kas can read, and kas crashed on it.
+    SBOM_CVE_CHECK_SHOW_WARNINGS = "0"
+    # Plus <image>.cve.txt, a summary readable without jq.
+    SBOM_CVE_CHECK_EXPORT_VARS:append = " SBOM_CVE_CHECK_EXPORT_SUMMARY"
