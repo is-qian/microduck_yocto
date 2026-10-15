@@ -542,6 +542,11 @@ CI builds the card image only; bundles are built where the key is.
 
 ### Building, flashing and updating
 
+A tagged version needs no build: publishing a GitHub release builds both boards
+from its tag and attaches the `.wic.zst` (+ `.bmap`, checksum), the RAUC bundle,
+the manifest and, for the beta, `microduck-beta-loader.bin`. Fetch them with
+`gh release download <tag>`.
+
 ```sh
 # The bundle target builds the matching .wic as well.
 KAS_BUILD_DIR=/mnt/data/fabien/yocto/build HFJOB_TARGET=microduck-bundle scripts/build-hfjob.sh
