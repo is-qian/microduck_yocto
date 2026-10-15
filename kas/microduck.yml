@@ -49,14 +49,14 @@ repos:
   openembedded-core:
     url: https://git.openembedded.org/openembedded-core
     branch: wrynose
-    commit: f09a0f28aeb54ddd90415dd458338e1565bb5a49
+    commit: 0f03c732a0a2d0506b41b1abe60b3f368b2300dc
     layers:
       meta:
 
   bitbake:
     url: https://git.openembedded.org/bitbake
     branch: "2.18"
-    commit: fae9db3168dbff1b8c76fe9c6726a9687ff97514
+    commit: 51fd94a67fa17650a9ff623492005972bbc7d26f
     layers:
       # Not a layer -- oe-core requires bitbake >= 2.18.0 and locates it by path.
       .: disabled
@@ -64,7 +64,7 @@ repos:
   meta-yocto:
     url: https://git.yoctoproject.org/meta-yocto
     branch: wrynose
-    commit: 1b132647002eea43a2c7a7f857f63f42dacbc26c
+    commit: 7c25b11156553145fa6b241a2d4f65d94438f804
     layers:
       meta-poky:
       meta-yocto-bsp: disabled
@@ -72,7 +72,7 @@ repos:
   meta-openembedded:
     url: https://git.openembedded.org/meta-openembedded
     branch: wrynose
-    commit: af8b6d6b2f0b11595b0a0d5b82efa3129d52a628
+    commit: f28a144aa0a0ae05ca2ee91e1aef6aa05f6a12db
     layers:
       meta-oe:            # meta-rockchip depends on this (openembedded-layer)
       meta-python:
