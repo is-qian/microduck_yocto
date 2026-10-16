@@ -63,8 +63,6 @@ SRC_URI = "git://git@github.com/pollen-robotics/microduck_daemon.git;protocol=ss
            git://github.com/pollen-robotics/bmi088-rs;protocol=https;nobranch=1;name=bmi088;destsuffix=bmi088-rs \
            file://60-robot-i2c.rules \
            file://robotctl.bash_completion \
-           file://microduck-slot-health \
-           file://microduck-slot-health.service \
            file://microduck-voice-bank.service \
 "
 # 0.15.3 was the first release that builds on oe-core wrynose's Rust 1.94.1
@@ -243,10 +241,9 @@ USERADD_PARAM:${PN} = "-r -g btd -d / -s /sbin/nologin -c 'Robot BLE transport a
 # and padd.service would be installed but never enabled.
 #
 # robot-boot-check.service has no [Install] by design -- only its timer starts it
-# -- so the timer is what gets enabled. microduck-slot-health.service is enabled
-# into boot-complete.target, which gates rauc-mark-good.
+# -- so the timer is what gets enabled.
 SYSTEMD_PACKAGES = "${PN} ${PN}-padd"
-SYSTEMD_SERVICE:${PN} = "robotd.service updaterd.service configd.service btd.service mediad.service tofd.service robot-boot-check.timer microduck-slot-health.service microduck-voice-bank.service"
+SYSTEMD_SERVICE:${PN} = "robotd.service updaterd.service configd.service btd.service mediad.service tofd.service robot-boot-check.timer microduck-voice-bank.service"
 SYSTEMD_SERVICE:${PN}-padd = "padd.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
@@ -335,11 +332,7 @@ do_install:append() {
 	install -m 0755 ${S}/scripts/robot-boot-check ${D}${prefix}/local/sbin/
 	install -m 0755 ${S}/scripts/robot-rescue ${D}${prefix}/local/sbin/
 
-	# RAUC marks a slot good only if the same check passes; see the script.
-	install -m 0644 ${UNPACKDIR}/microduck-slot-health.service ${D}${systemd_system_unitdir}/
 	install -m 0644 ${UNPACKDIR}/microduck-voice-bank.service ${D}${systemd_system_unitdir}/
-	install -d ${D}${libexecdir}
-	install -m 0755 ${UNPACKDIR}/microduck-slot-health ${D}${libexecdir}/
 
 	# /dev/i2c-* arrives 0600 root:root, so tofd's SupplementaryGroups=i2c buys it
 	# nothing without this -- the same shape of silent failure that left
@@ -423,7 +416,6 @@ FILES:${PN} += " \
     ${systemd_system_unitdir} \
     ${prefix}/local/sbin/robot-boot-check \
     ${prefix}/local/sbin/robot-rescue \
-    ${libexecdir}/microduck-slot-health \
     ${nonarch_base_libdir}/udev/rules.d/60-robot-i2c.rules \
     ${sysconfdir}/robot \
     ${sysconfdir}/systemd/journald.conf.d/10-robot.conf \
@@ -580,3 +572,7 @@ RRECOMMENDS:${PN}:append:aarch64 = " onnxruntime"
 # scripts/seed-policies.sh (v5 at 0.13.0 to 0.15.1, v7 from 0.15.2 to 0.16.1, v8 from
 # 0.16.2).
 RDEPENDS:${PN} += "microduck-policies"
+
+# RAUC marks a slot good only if the same check robot-boot-check makes passes:
+# its own recipe, installed wherever the daemon is.
+RDEPENDS:${PN} += "microduck-slot-health"

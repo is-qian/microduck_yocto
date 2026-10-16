@@ -16,13 +16,7 @@ inherit rockchip-image extrausers
 # fixed so the image stays reproducible; '$' is escaped for bitbake.
 MICRODUCK_OPERATOR_HASH = "\$6\$microduckbeta\$lxVesOQbjM8IXwxq5s/GpwW0KnK1YuspITBn7crCGbeuodZd.PBnJJIS5E32lQK4/mugkqFe36SAr6iyo82Gu0"
 EXTRA_USERS_PARAMS = "useradd -m -s /bin/bash -G robot,sudo,audio,video,dialout,i2c,plugdev,input -p '${MICRODUCK_OPERATOR_HASH}' microduck;"
-
-ROOTFS_POSTPROCESS_COMMAND += "microduck_operator_sudo;"
-microduck_operator_sudo() {
-	install -d -m 0750 ${IMAGE_ROOTFS}${sysconfdir}/sudoers.d
-	echo '%sudo ALL=(ALL:ALL) ALL' > ${IMAGE_ROOTFS}${sysconfdir}/sudoers.d/10-sudo-group
-	chmod 0440 ${IMAGE_ROOTFS}${sysconfdir}/sudoers.d/10-sudo-group
-}
+# Group sudo may sudo: recipes-extended/sudo/sudo_%.bbappend.
 
 # The card image to download and flash is the compressed .wic.zst plus its .bmap:
 # `bmaptool copy` writes only the blocks in use, instead of dd copying all 13 GB.
