@@ -67,15 +67,11 @@ IMAGE_INSTALL:append = " \
 # bash-completion, which is the piece that was actually missing -- bash itself is
 # already in both images. The daemon recipe's package block has the chain.
 #
-# aic8800-bt-test is AICSemi's own bt_test, and it is here rather than in the
-# shipping image because it is a diagnostic for an unsolved problem: the board
-# has no HCI controller. btattach on /dev/ttyS1 transmits and never receives
-# (TX 4 / RX 0, HCI_Reset -110) at every baud and flow-control setting, and the
-# driver offers no other path -- aic8800_btlpm registers a platform driver and
-# rfkill, no chrdev, no HCI transport. bt_test speaks the vendor's three
-# transports, including `-s wlan wlan0`, which would mean HCI over SDIO rather
-# than the UART. Remove it once the transport is known and something brings the
-# controller up for real.
+# MICRODUCK_RADIO_DEV_PACKAGES is aic8800-bt-test on the Zero 3W: AICSemi's own
+# bt_test, which talks to the chip directly, so it tells a hardware fault from a
+# stack fault. The controller itself works -- aic8800-bt-attach.service brings it
+# up with hciattach (never btattach; AGENTS.md says why) -- so this is only a
+# diagnostic, and the shipping image does not carry it.
 
 # coreutils and util-linux instead of trusting busybox. Busybox's applets are
 # subtly reduced in ways that cost debugging time rather than being a mild

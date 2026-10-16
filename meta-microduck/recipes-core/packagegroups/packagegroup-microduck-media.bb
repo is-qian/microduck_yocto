@@ -1,9 +1,6 @@
 SUMMARY = "GStreamer with Rockchip hardware video codecs"
-DESCRIPTION = "Provisioned ahead of its consumer on purpose. mediad does not exist \
-yet -- microduck_daemon's README lists it as 'Not built yet' and \
-docs/architecture.md:306 still has GStreamer webrtcbin vs webrtc-rs as an open \
-decision. The point of building it now is to find out whether RK3566 hardware H.264 \
-encode works before mediad is written around the assumption that it does."
+DESCRIPTION = "The media stack mediad builds its pipelines from: GStreamer core and \
+plugins, the Rockchip MPP/RGA hardware codecs and their device permissions."
 
 LICENSE = "MIT"
 
@@ -86,7 +83,7 @@ RDEPENDS:${PN} = " \
 # the whole point of this milestone and it needs the hardware.
 #
 # Note the plugin reports Version 1.14.4 (a GStreamer 1.14-era codebase) while our
-# core is 1.28.2. It builds and loads, but that gap is worth remembering if elements
+# core is 1.28.5. It builds and loads, but that gap is worth remembering if elements
 # behave oddly.
 #
 # Deliberately absent:
@@ -95,11 +92,10 @@ RDEPENDS:${PN} = " \
 #     gets Seeed's rkaiq build and tuning file from microduck-beta-camera instead
 #     (that recipe says why); the Zero 3W's IMX219 has no tuning file.
 #
-#   gstreamer1.0-plugins-rs (webrtcsink) -- M8, and no upstream recipe exists.
+# webrtcsink is not listed here: it is gstreamer1.0-plugins-rs, our own recipe
+# (recipes-multimedia/gstreamer), which microduck-daemon RDEPENDS on.
 #
-# TODO trim: this packagegroup grew the image 549 -> 745 MiB (+196 MiB), mostly
-# because the plugins-bad meta package pulls ~100 subpackages -- dvb, decklink,
-# vulkan, waylandsink, rfbsrc, festival and so on, none of which a robot wants.
-# The fix is to depend on specific plugin subpackages instead of the metas, but the
-# right list is not knowable until mediad exists and its pipeline is written. Doing
-# it now would be guessing; the metas at least prove the whole stack builds.
+# TODO trim: the plugins-* meta packages pull ~190 plugin subpackages (20.6 MiB on
+# 2026-10-15) and, through rsvg, cairo, pango and taglib, ~16 MiB of rendering and
+# font libraries a headless robot never uses. mediad exists now, so the fix is
+# known: depend on the subpackages of the elements its pipelines use, not the metas.
