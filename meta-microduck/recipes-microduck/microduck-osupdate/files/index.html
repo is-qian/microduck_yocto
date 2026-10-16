@@ -5,12 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>microduck · OS update</title>
 <style>
-  body { font: 16px/1.5 system-ui, sans-serif; max-width: 34rem; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 36rem; margin: 2rem auto; padding: 0 1rem; color: #222; }
   h1 { font-size: 1.4rem; }
+  h2 { font-size: 1.05rem; margin-top: 1.6rem; }
   dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; }
   dt { color: #666; }
   dd { margin: 0; font-variant-numeric: tabular-nums; }
-  button { font: inherit; padding: .5rem 1rem; margin-right: .5rem; }
+  button, select { font: inherit; padding: .4rem .8rem; }
+  select { width: 100%; margin: .3rem 0 .6rem; }
   progress { width: 100%; height: 1rem; }
   #msg { min-height: 1.5em; }
   .note { color: #666; font-size: .9rem; }
@@ -20,23 +22,33 @@
 <h1>OS update</h1>
 <dl>
   <dt>Board</dt><dd id="machine">…</dd>
-  <dt>Channel</dt><dd id="channel">…</dd>
   <dt>Running</dt><dd id="installed">…</dd>
-  <dt>Available</dt><dd id="available">…</dd>
   <dt>State</dt><dd id="phase">…</dd>
   <dt>Last update</dt><dd id="result">…</dd>
 </dl>
 <p><progress id="progress" max="100" value="0" hidden></progress></p>
+<p id="msg" role="status" aria-live="polite"></p>
+
+<h2>Install a build</h2>
+<label for="builds">Published builds (channel <span id="channel">…</span>)</label>
+<select id="builds"><option>Check for updates to list them</option></select>
 <p>
   <button id="check">Check for updates</button>
-  <button id="install" disabled>Install</button>
+  <button id="install" disabled>Install selected</button>
 </p>
-<p id="msg" role="status" aria-live="polite"></p>
-<p class="note">Installing writes the other slot, reboots into it, and falls back to
-this one by itself if the new system does not come up healthy.</p>
+
+<h2>Other slot</h2>
+<dl>
+  <dt>Slot</dt><dd id="oslot">…</dd>
+  <dt>Holds</dt><dd id="obuild">…</dd>
+</dl>
+<p><button id="switch" disabled>Boot it</button></p>
+<p class="note">Installing writes the other slot and reboots into it; "Boot it" reboots
+into what that slot already holds, with no download. Either way the robot goes back
+by itself if the new system does not come up healthy.</p>
 <script>
 const $ = (id) => document.getElementById(id);
-let last = null;
+let last = null, listed = "";
 
 async function call(method, path) {
   const opts = { method, cache: "no-store" };
@@ -46,21 +58,59 @@ async function call(method, path) {
   return r.json();
 }
 
+function label(b, s) {
+  let t = b.version;
+  if (b.build === s.installed_build) t += " — running";
+  else if (s.other && b.build === s.other.build) t += " — in the other slot";
+  return t;
+}
+
+// The list, grouped by channel, newest first; the channel's newest is "latest".
+function fillBuilds(s) {
+  const key = JSON.stringify(s.builds) + s.installed_build + (s.other && s.other.build);
+  if (key === listed) return;
+  listed = key;
+  const sel = $("builds"), keep = sel.value;
+  sel.textContent = "";
+  const byChannel = {};
+  for (const b of s.builds) (byChannel[b.channel] ||= []).push(b);
+  const channels = Object.keys(byChannel).sort((a, b) => (a === s.channel ? -1 : b === s.channel ? 1 : a.localeCompare(b)));
+  for (const c of channels) {
+    const g = document.createElement("optgroup");
+    g.label = c;
+    byChannel[c].reverse().forEach((b, i) => {
+      const o = document.createElement("option");
+      o.value = b.build;
+      o.textContent = label(b, s) + (i === 0 ? " (latest)" : "");
+      g.appendChild(o);
+    });
+    sel.appendChild(g);
+  }
+  if (!s.builds.length) sel.innerHTML = "<option>No published builds for this board yet</option>";
+  else if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+  else if (s.available) sel.value = s.available.build;
+}
+
 function show(s) {
   last = s;
+  const busy = s.phase !== "idle";
   $("machine").textContent = s.machine || "?";
   $("channel").textContent = s.channel;
-  $("installed").textContent = (s.installed_build || "flashed image") + " (slot " + s.slot + ")";
-  $("available").textContent = s.available ? s.available.version + " (" + s.available.build + ")" : "not checked";
+  $("installed").textContent = (s.installed_build || "the flashed image") + " (slot " + s.slot + ")";
   $("phase").textContent = s.phase;
   $("result").textContent = s.last_result || "—";
   $("msg").textContent = s.message || "";
-  const busy = s.phase !== "idle";
   $("progress").hidden = s.phase !== "downloading";
   $("progress").value = s.progress;
-  const newer = s.available && s.available.build !== s.installed_build;
-  $("install").disabled = busy || !newer;
+  fillBuilds(s);
+  const chosen = $("builds").value;
+  $("install").disabled = busy || !/^[0-9]{14}$/.test(chosen) || chosen === s.installed_build;
   $("check").disabled = busy;
+  const o = s.other || {};
+  $("oslot").textContent = o.slot || "?";
+  $("obuild").textContent = (o.build || "the flashed image") +
+    (o.installed ? ", installed " + o.installed : "") + (o.good ? " — good" : " — not marked good");
+  $("switch").disabled = busy || !o.good;
 }
 
 async function poll() {
@@ -72,10 +122,16 @@ async function poll() {
   }
 }
 
+$("builds").onchange = () => last && show(last);
 $("check").onclick = async () => { $("msg").textContent = "Checking…"; show(await call("POST", "/api/check")); };
 $("install").onclick = async () => {
-  if (!confirm("Install " + last.available.version + " and reboot the robot?")) return;
-  show(await call("POST", "/api/apply"));
+  const opt = $("builds").selectedOptions[0];
+  if (!confirm("Install " + opt.textContent + " and reboot the robot?")) return;
+  show(await call("POST", "/api/apply?build=" + encodeURIComponent(opt.value)));
+};
+$("switch").onclick = async () => {
+  if (!confirm("Reboot into slot " + last.other.slot + " (" + (last.other.build || "the flashed image") + ")?")) return;
+  show(await call("POST", "/api/switch"));
 };
 poll();
 setInterval(poll, 2000);

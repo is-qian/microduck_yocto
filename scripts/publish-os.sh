@@ -8,7 +8,9 @@
 # and writes, in the public bucket (pollen-robotics/microduck-os):
 #
 #   os/<machine>/<build>/microduck-bundle.raucb   never overwritten
-#   os/<machine>/<channel>.env                    the channel: which bundle
+#   os/<machine>/builds/<build>.env               that build's manifest
+#   os/<machine>/index.txt                        every published build, for the list
+#   os/<machine>/<channel>.env                    the channel: its newest build
 #
 # The bundle first, the channel file last, so a robot never reads a channel naming
 # a bundle that is not there yet. microduck-osupdate on the robot reads the channel
@@ -47,9 +49,26 @@ version=${OS_VERSION:-0.1.0}-$build
 
 path=os/$MACHINE/$build/microduck-bundle.raucb
 $HF buckets cp "$work/bundle.raucb" "hf://buckets/$PUBLIC/$path" > /dev/null
-printf 'VERSION=%s\nBUILD=%s\nURL=%s\nSHA256=%s\nSIZE=%s\nCOMPATIBLE=%s\nJOB=%s\n' \
+printf 'VERSION=%s\nBUILD=%s\nURL=%s\nSHA256=%s\nSIZE=%s\nCOMPATIBLE=%s\nJOB=%s\nCHANNEL=%s\n' \
 	"$version" "$build" "https://huggingface.co/buckets/$PUBLIC/resolve/$path" \
-	"$sha256" "$size" "$MACHINE" "$JOB" > "$work/channel.env"
+	"$sha256" "$size" "$MACHINE" "$JOB" "$CHANNEL" > "$work/channel.env"
+# The build's own manifest, never overwritten: what a robot installs when someone
+# picks this build from the list rather than a channel's newest.
+$HF buckets cp "$work/channel.env" "hf://buckets/$PUBLIC/os/$MACHINE/builds/$build.env" > /dev/null
+
+# The index the robot's list comes from: "<channel> <build> <version>", newest
+# last, one line per build (a republished build moves to the end).
+# shortcut: read-modify-write, so two publishes at the same moment can drop one's
+# line; its builds/<build>.env and channel file are still there. CI publishes
+# one at a time; a lock, or one file per line, if that changes.
+if ! $HF buckets cp "hf://buckets/$PUBLIC/os/$MACHINE/index.txt" "$work/index.txt" > /dev/null 2>&1; then
+	: > "$work/index.txt"
+fi
+grep -v " $build " "$work/index.txt" > "$work/index.new" || true
+printf '%s %s %s\n' "$CHANNEL" "$build" "$version" >> "$work/index.new"
+$HF buckets cp "$work/index.new" "hf://buckets/$PUBLIC/os/$MACHINE/index.txt" > /dev/null
+
+# Last: the channel moves only once its build is listed and installable.
 $HF buckets cp "$work/channel.env" "hf://buckets/$PUBLIC/os/$MACHINE/$CHANNEL.env" > /dev/null
 
 echo "published $version to $MACHINE/$CHANNEL:"
