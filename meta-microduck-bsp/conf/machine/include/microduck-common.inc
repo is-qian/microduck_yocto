@@ -67,10 +67,10 @@ PREFERRED_VERSION_linux-rockchip = "6.1%"
 PREFERRED_VERSION_linux-libc-headers = "6.1-custom%"
 PREFERRED_PROVIDER_virtual/bootloader = "u-boot-rockchip"
 
-# No kernel in the rootfs's /boot: U-Boot loads boot.img from the `boot`
-# partition (bootrkp), and nothing reads /boot -- no extlinux.conf or boot.scr for
-# distro_bootcmd, the bundle hook hashes the partition. Image, boot.img and
-# zboot.img there were 68 MiB per slot. oe-core's kernel.bbclass leaves this
-# RRECOMMENDS for machines to clear; rockchip-common.inc clears the old RDEPENDS,
-# which oe-core no longer sets.
-RRECOMMENDS:${KERNEL_PACKAGE_NAME}-base = ""
+# The kernel lives in each rootfs slot: U-Boot loads /boot/Image and
+# /boot/microduck.dtb from the slot it picked (recipes-bsp/u-boot/files/0001-...),
+# so a RAUC bundle carries its own kernel and an update can change it. Only Image
+# and the DTB, not boot.img and zboot.img (two 16 MiB copies nothing here reads).
+# oe-core's kernel.bbclass leaves this RRECOMMENDS for machines to set; the
+# default would pull every KERNEL_IMAGETYPES.
+RRECOMMENDS:${KERNEL_PACKAGE_NAME}-base = "${KERNEL_PACKAGE_NAME}-image-image ${KERNEL_PACKAGE_NAME}-devicetree"

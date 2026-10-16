@@ -33,6 +33,7 @@ UNITS = {"s": 512, "S": 512, "K": 1024, "k": 1024, "M": 1 << 20, "G": 1 << 30}
 LAYER = WKS.parent.parent.parent
 ENV_CFG = LAYER / "recipes-bsp/u-boot/files/rauc-env.cfg"
 FW_ENV = LAYER / "recipes-bsp/u-boot/files/fw_env.config"
+BOOTCMD_PATCH = LAYER / "recipes-bsp/u-boot/files/0001-evb_rk3568-select-the-RAUC-slot-before-Rockchip-s-boot.patch"
 
 # Byte offsets that vendor code writes to WITHOUT reading the partition table, so
 # the partition carrying that name has to start exactly there. Not wic-checkable:
@@ -131,6 +132,22 @@ def main():
         if "uboot_env" in byname and byname["uboot_env"][1] != env_size:
             errors.append(f"uboot_env is {byname['uboot_env'][1]:#x} B, "
                           f"CONFIG_ENV_SIZE is {env_size:#x}")
+
+    # U-Boot's ext4load reaches each slot's /boot by GPT partition number (the boot
+    # script sets rauc_partnum; this tree has no `part number`). Entries are numbered
+    # in wks order from 1, the --no-table idblock excluded.
+    table = [n for n, _, _ in parts if n != "idblock"]
+    patch = BOOTCMD_PATCH.read_text()
+    nums = {"rootfs_a": re.search(r'setenv rauc_partnum (\d+); "', patch),
+            "rootfs_b": re.search(r'then setenv rauc_partnum (\d+); fi', patch)}
+    for name, m in nums.items():
+        if not m:
+            errors.append(f"{BOOTCMD_PATCH.name}: no rauc_partnum for {name}")
+        elif name not in table:
+            errors.append(f"{name}: missing, but the boot script loads its kernel")
+        elif table.index(name) + 1 != int(m.group(1)):
+            errors.append(f"{name} is GPT partition {table.index(name) + 1}, but the boot "
+                          f"script loads its kernel from partition {m.group(1)}")
 
     for name, want in FIXED.items():
         if name not in byname:

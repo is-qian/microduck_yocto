@@ -20,6 +20,35 @@ distro_bootcmd;`. Called `boot_a`, the card flashes perfectly, RKNS is at sector
 no wifi, no BLE, looks dead. `boot_b` is reserved at its offset for stage 2, which
 is where renaming the pair belongs — beside the `boot.scr` that can choose.
 
+## The kernel is in the slot (2026-10-16)
+
+Each rootfs carries `/boot/Image` and `/boot/microduck.dtb` (a symlink to the
+machine's DTB, so one bootcmd serves both boards). After picking the slot,
+U-Boot's script `ext4load`s both from that slot's partition and `booti`s them;
+only when they are missing does it fall through to Rockchip's chain and the
+`boot` partition, which stays as that fallback. So a bundle carries the kernel,
+DTB and modules together, and a kernel or toolchain change is an ordinary update
+instead of a reflash. Traps:
+
+- **By number, not label.** `ext4load` takes `mmc <dev>:<part>`, and this U-Boot
+  has no `part number`: rootfs_a is 6 and rootfs_b 7. `check-wks-layout.py`
+  compares those with the boot script, so a reordered wks fails in 0.1 s.
+- **The bundle hook checks the bootcmd U-Boot will run**, from `fw_printenv`, not
+  the U-Boot binary: a saved environment keeps its bootcmd, and a card that kept
+  an old environment would boot the `boot` partition's kernel against the slot's
+  new modules. It refuses with "reflash it".
+- **`booti` still gets Rockchip's DTB fix-ups and the `/chosen/bootargs` merge**:
+  they live in `image_setup_libfdt()`, the generic path, not in `bootrkp`. What
+  goes are the `androidboot.*` arguments, which nothing here reads. Check
+  `/proc/cmdline` on hardware anyway after touching this.
+- `scripts/test-uboot-bootcmd.sh` covers it with a real ext4 card image (symlinks
+  included) and a stubbed `booti`.
+
+**`uboot_env` is written at flash time** (#24): the wks rawcopies
+`u-boot-initial-env.bin` (oe-core's `UBOOT_INITIAL_ENV_BINARY`, 32 KiB) into it.
+It used to be a hole, which `bmaptool` never writes, so a reflashed card kept the
+previous card's environment: its `BOOT_ORDER`, and its saved bootcmd.
+
 `scripts/check-wks-layout.py` catches overlaps, unplaced partitions, line
 continuations and artifacts that no longer fit, in 0.1 s. Run it before any
 build that touches the wks. It is keyed by `--part-name`, so it moves with renames.
@@ -186,14 +215,13 @@ would then carry 2 GiB.
 
 ## What is not done
 
-- Kernel is not A/B. `boot_b` is reserved and empty.
+- `boot_b` is reserved and empty; the kernel's A/B is the slots' `/boot` (above).
 - **A fresh card is pinned to slot A** (since 2026-10-06, temporarily): U-Boot
   seeds `BOOT_ORDER="A"`, not `"A B"`, so B is only booted when a RAUC install
   puts it first. When A's attempts run out, both counters reset and the board
-  resets onto A. Bring-up kept landing on B after a few quick reboots. Only a
-  freshly flashed card gets it, since a saved environment keeps its order. To
-  pin a running board: `fw_setenv BOOT_ORDER A`. Undoing it is
-  pollen-robotics/microduck_yocto#24.
+  resets onto A. Bring-up kept landing on B after a few quick reboots. To pin a
+  running board: `fw_setenv BOOT_ORDER A`. Since `uboot_env` is written at flash
+  time (#24), every flashing tool now gives a fresh card the default order.
 - **A fresh card fills `rootfs_b` with the same rootfs as A** (since
   2026-10-06). Before that it was empty, and U-Boot's script still falls back
   to B once `BOOT_A_LEFT` reaches 0, booting the shared kernel onto nothing: a
