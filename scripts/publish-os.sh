@@ -32,7 +32,7 @@ CACHE=${HFJOB_BUCKET:-pollen-robotics/microduck-yocto-cache}
 PUBLIC=${OS_BUCKET:-pollen-robotics/microduck-os}
 HF=${HF:-hf}
 
-for v in "$JOB:[0-9a-f]{24}" "$MACHINE:[a-z0-9-]{1,40}" "$CHANNEL:[a-z0-9-]{1,20}"; do
+for v in "$JOB:[0-9a-f]{24}" "$MACHINE:[a-z0-9-]{1,40}" "$CHANNEL:[a-z0-9-]{1,40}"; do
 	printf '%s' "${v%:*}" | grep -Eqx -- "${v##*:}" || { echo "$0: bad argument '${v%:*}'" >&2; exit 1; }
 done
 

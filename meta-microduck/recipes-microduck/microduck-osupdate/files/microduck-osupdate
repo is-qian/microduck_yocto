@@ -148,7 +148,7 @@ switch_slot() {
 	from=$(booted_name)
 	rauc status mark-active other > "$STATE/rauc.log" 2>&1 || fail "rauc would not activate slot $(other_name)"
 	label=${1:-$(other_build)}
-	printf 'VERSION=%s\nBUILD=%s\nFROM=%s\n' "${label:-the flashed image}" "$(other_build)" "$from" > "$STATE/pending.env"
+	printf 'VERSION=%s\nBUILD=%s\nFROM=%s\nHOW=switched\n' "${label:-the flashed image}" "$(other_build)" "$from" > "$STATE/pending.env"
 	phase rebooting; say "booting slot $(other_name) (${label:-the flashed image})"
 	sync; sleep 3; systemctl reboot
 	exit 0
@@ -164,8 +164,9 @@ boot_report() {
 	p=$STATE/pending.env
 	[ -f "$p" ] || exit 0
 	build=$(field "$p" BUILD); version=$(field "$p" VERSION); from=$(field "$p" FROM)
+	how=$(field "$p" HOW); how=${how:-updated}
 	if [ "$(installed_build)" = "$build" ]; then
-		if booted_good; then r="updated to $version"; else r="booted $version, but it did not pass the health check"; fi
+		if booted_good; then r="$how to $version"; else r="booted $version, but it did not pass the health check"; fi
 	else
 		r="rolled back: $version did not come up, back on slot $(booted_name)"
 		[ "$(booted_name)" = "$from" ] || r="$r (was on $from)"
