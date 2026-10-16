@@ -51,6 +51,7 @@ IMAGE_INSTALL:append = " \
     rauc \
     u-boot-rockchip-env \
     microduck-data \
+    microduck-osupdate \
     packagegroup-microduck-media \
     alsa-utils-aplay \
     ldd \

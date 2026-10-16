@@ -1,0 +1,12 @@
+[Unit]
+Description=microduck OS update API and page (prototype), port 8090
+
+[Socket]
+# One short-lived microduck-osupdate@.service per connection, inetd-style: no
+# HTTP server package for one page and three endpoints.
+ListenStream=8090
+Accept=yes
+MaxConnections=8
+
+[Install]
+WantedBy=sockets.target

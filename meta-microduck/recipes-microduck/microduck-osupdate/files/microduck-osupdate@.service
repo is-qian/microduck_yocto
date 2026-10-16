@@ -1,0 +1,11 @@
+[Unit]
+Description=microduck OS update API request
+CollectMode=inactive-or-failed
+
+[Service]
+ExecStart=/usr/bin/microduck-osupdate http
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+# A request reads rauc status and, for /api/check, one small download.
+RuntimeMaxSec=60

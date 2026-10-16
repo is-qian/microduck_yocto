@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>microduck · OS update</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 34rem; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { font-size: 1.4rem; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; }
+  dt { color: #666; }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+  button { font: inherit; padding: .5rem 1rem; margin-right: .5rem; }
+  progress { width: 100%; height: 1rem; }
+  #msg { min-height: 1.5em; }
+  .note { color: #666; font-size: .9rem; }
+</style>
+</head>
+<body>
+<h1>OS update</h1>
+<dl>
+  <dt>Board</dt><dd id="machine">…</dd>
+  <dt>Channel</dt><dd id="channel">…</dd>
+  <dt>Running</dt><dd id="installed">…</dd>
+  <dt>Available</dt><dd id="available">…</dd>
+  <dt>State</dt><dd id="phase">…</dd>
+  <dt>Last update</dt><dd id="result">…</dd>
+</dl>
+<p><progress id="progress" max="100" value="0" hidden></progress></p>
+<p>
+  <button id="check">Check for updates</button>
+  <button id="install" disabled>Install</button>
+</p>
+<p id="msg" role="status" aria-live="polite"></p>
+<p class="note">Installing writes the other slot, reboots into it, and falls back to
+this one by itself if the new system does not come up healthy.</p>
+<script>
+const $ = (id) => document.getElementById(id);
+let last = null;
+
+async function call(method, path) {
+  const opts = { method, cache: "no-store" };
+  if (method === "POST") opts.headers = { "X-Microduck": "1" };
+  const r = await fetch(path, opts);
+  if (!r.ok && r.status !== 409) throw new Error(r.status + " " + r.statusText);
+  return r.json();
+}
+
+function show(s) {
+  last = s;
+  $("machine").textContent = s.machine || "?";
+  $("channel").textContent = s.channel;
+  $("installed").textContent = (s.installed_build || "flashed image") + " (slot " + s.slot + ")";
+  $("available").textContent = s.available ? s.available.version + " (" + s.available.build + ")" : "not checked";
+  $("phase").textContent = s.phase;
+  $("result").textContent = s.last_result || "—";
+  $("msg").textContent = s.message || "";
+  const busy = s.phase !== "idle";
+  $("progress").hidden = s.phase !== "downloading";
+  $("progress").value = s.progress;
+  const newer = s.available && s.available.build !== s.installed_build;
+  $("install").disabled = busy || !newer;
+  $("check").disabled = busy;
+}
+
+async function poll() {
+  try { show(await call("GET", "/api/status")); }
+  catch (e) {
+    // While it reboots the board is unreachable: keep trying until it is back.
+    $("msg").textContent = last && last.phase === "rebooting"
+      ? "Rebooting… this page reconnects by itself." : "Robot unreachable (" + e.message + ")";
+  }
+}
+
+$("check").onclick = async () => { $("msg").textContent = "Checking…"; show(await call("POST", "/api/check")); };
+$("install").onclick = async () => {
+  if (!confirm("Install " + last.available.version + " and reboot the robot?")) return;
+  show(await call("POST", "/api/apply"));
+};
+poll();
+setInterval(poll, 2000);
+</script>
+</body>
+</html>

@@ -1,0 +1,183 @@
+#!/bin/sh
+# OS updates from a published channel: the prototype of dashboard-driven OTA.
+#
+#   microduck-osupdate status        JSON: installed, available, phase, progress, result
+#   microduck-osupdate check         fetch the channel's manifest
+#   microduck-osupdate apply         download, verify, rauc install, reboot
+#   microduck-osupdate boot-report   after that reboot: did the new slot come up?
+#   microduck-osupdate http          one HTTP request on stdin/stdout (the .socket)
+#
+# A channel is os/<machine>/<channel>.env in the public bucket, written by
+# scripts/publish-os.sh: KEY=value lines. It is downloaded, so it is parsed key by
+# key and every value checked against a pattern -- never sourced. The bundle is
+# what RAUC verifies (X.509 signature, compatible, the install-check hook); the
+# manifest only says which bundle.
+# shortcut: the manifest is unsigned, so whoever can write the bucket can point a
+# robot at an older, validly signed bundle (a downgrade). Production: sign it and
+# refuse a build older than the installed one.
+set -eu
+
+BASE_URL=https://huggingface.co/buckets/pollen-robotics/microduck-os/resolve
+CHANNEL=dev
+# Root-owned local configuration, so sourcing it is fine (unlike the manifest).
+[ ! -r /etc/microduck-osupdate.conf ] || . /etc/microduck-osupdate.conf
+STATE=/var/lib/robot/osupdate
+mkdir -p "$STATE"
+
+say() { printf '%s\n' "$*" > "$STATE/message"; echo "$*" >&2; }
+phase() { printf '%s\n' "$1" > "$STATE/phase"; }
+fail() { say "$*"; phase idle; exit 1; }
+matches() { printf '%s' "$1" | grep -Eqx -- "$2"; }
+
+rauc_json() { rauc status --detailed --output-format=json 2>/dev/null; }
+machine() { rauc_json | grep -o '"compatible":"[^"]*"' | head -n 1 | cut -d'"' -f4; }
+# The booted slot's object, one per line after the split. "build" is the bundle's
+# RAUC_BUNDLE_BUILD, recorded by RAUC at install; a flashed slot has none.
+booted_slot_json() { rauc_json | sed 's/{"rootfs\./\n&/g' | grep '"state":"booted"' || true; }
+installed_build() { booted_slot_json | grep -o '"build":"[0-9]*"' | head -n 1 | cut -d'"' -f4; }
+booted_name() { booted_slot_json | grep -o '"bootname":"[^"]*"' | head -n 1 | cut -d'"' -f4; }
+booted_good() { booted_slot_json | grep -q '"boot_status":"good"'; }
+
+# field FILE KEY: the first KEY= line's value.
+field() { sed -n "s/^$2=//p" "$1" | head -n 1; }
+
+check() {
+	m=$(machine)
+	matches "$m" '[a-z0-9-]{1,40}' || fail "cannot tell this board's machine from rauc status"
+	tmp=$STATE/manifest.part
+	# -L: the bucket answers with a redirect to its CDN.
+	curl -fsSL --max-time 30 -o "$tmp" "$BASE_URL/os/$m/$CHANNEL.env" ||
+		fail "no manifest at $BASE_URL/os/$m/$CHANNEL.env"
+	version=$(field "$tmp" VERSION); build=$(field "$tmp" BUILD); url=$(field "$tmp" URL)
+	sha256=$(field "$tmp" SHA256); size=$(field "$tmp" SIZE); compat=$(field "$tmp" COMPATIBLE)
+	rm -f "$tmp"
+	matches "$version" '[0-9A-Za-z.+_-]{1,64}' || fail "manifest: bad VERSION"
+	matches "$build" '[0-9]{14}' || fail "manifest: bad BUILD"
+	matches "$sha256" '[0-9a-f]{64}' || fail "manifest: bad SHA256"
+	matches "$size" '[0-9]{1,12}' || fail "manifest: bad SIZE"
+	[ "$compat" = "$m" ] || fail "manifest is for '$compat', this board is '$m'"
+	case "$url" in "$BASE_URL/os/$m/"*) ;; *) fail "manifest: URL outside $BASE_URL/os/$m/" ;; esac
+	matches "$url" '[A-Za-z0-9:/._%+-]{1,300}' || fail "manifest: bad URL"
+	# Written from checked values only, in the same KEY=value shape.
+	printf 'VERSION=%s\nBUILD=%s\nURL=%s\nSHA256=%s\nSIZE=%s\n' \
+		"$version" "$build" "$url" "$sha256" "$size" > "$STATE/available.env"
+	say "checked $CHANNEL: $version (build $build)"
+}
+
+apply() {
+	exec 9> "$STATE/lock"
+	flock -n 9 || fail "an update is already running"
+	phase checking; check
+	a=$STATE/available.env
+	build=$(field "$a" BUILD); url=$(field "$a" URL); sha256=$(field "$a" SHA256)
+	size=$(field "$a" SIZE); version=$(field "$a" VERSION)
+	[ "$build" != "$(installed_build)" ] || fail "build $build is already running"
+
+	# On the data partition: 7 GiB free, where the 2 GiB rootfs has ~1.
+	phase downloading; say "downloading $version"
+	part=$STATE/bundle.raucb.part
+	[ ! -f "$part" ] || [ "$(cat "$STATE/bundle.build" 2>/dev/null)" = "$build" ] || rm -f "$part"
+	echo "$build" > "$STATE/bundle.build"
+	curl -fsSL --retry 5 --retry-delay 5 -C - -o "$part" "$url" || fail "download failed (it resumes on the next try)"
+	[ "$(wc -c < "$part")" = "$size" ] || { rm -f "$part"; fail "downloaded size is not $size"; }
+	[ "$(sha256sum "$part" | cut -d' ' -f1)" = "$sha256" ] || { rm -f "$part"; fail "sha256 mismatch"; }
+
+	phase installing; say "installing $version"
+	from=$(booted_name)
+	if ! rauc install "$part" > "$STATE/rauc.log" 2>&1; then
+		rm -f "$part"
+		fail "rauc refused it: $(grep -v '^ *[0-9]*% ' "$STATE/rauc.log" | tail -n 1)"
+	fi
+	rm -f "$part"
+	printf 'VERSION=%s\nBUILD=%s\nFROM=%s\n' "$version" "$build" "$from" > "$STATE/pending.env"
+
+	phase rebooting; say "installed $version; rebooting into it"
+	sync
+	sleep 3   # so a dashboard polling status sees "rebooting" before the link drops
+	systemctl reboot
+}
+
+boot_report() {
+	p=$STATE/pending.env
+	[ -f "$p" ] || exit 0
+	build=$(field "$p" BUILD); version=$(field "$p" VERSION); from=$(field "$p" FROM)
+	if [ "$(installed_build)" = "$build" ]; then
+		if booted_good; then r="updated to $version"; else r="booted $version, but it did not pass the health check"; fi
+	else
+		r="rolled back: $version did not come up, back on slot $(booted_name)"
+		[ "$(booted_name)" = "$from" ] || r="$r (was on $from)"
+	fi
+	printf '%s\n' "$r" > "$STATE/result"; say "$r"; phase idle; rm -f "$p"
+}
+
+jstr() { printf '"%s"' "$(printf '%s' "$1" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')"; }
+
+status() {
+	ph=$(cat "$STATE/phase" 2>/dev/null || echo idle)
+	progress=0
+	a=$STATE/available.env
+	if [ "$ph" = downloading ] && [ -f "$a" ] && [ -f "$STATE/bundle.raucb.part" ]; then
+		size=$(field "$a" SIZE); have=$(wc -c < "$STATE/bundle.raucb.part")
+		[ "${size:-0}" -gt 0 ] && progress=$((have * 100 / size))
+	fi
+	avail=null
+	if [ -f "$a" ]; then
+		avail="{\"version\":$(jstr "$(field "$a" VERSION)"),\"build\":$(jstr "$(field "$a" BUILD)"),\"size\":$(field "$a" SIZE)}"
+	fi
+	printf '{"machine":%s,"channel":%s,"slot":%s,"installed_build":%s,"available":%s,"phase":%s,"progress":%d,"message":%s,"last_result":%s}\n' \
+		"$(jstr "$(machine)")" "$(jstr "$CHANNEL")" "$(jstr "$(booted_name)")" \
+		"$(jstr "$(installed_build)")" "$avail" "$(jstr "$ph")" "$progress" \
+		"$(jstr "$(cat "$STATE/message" 2>/dev/null || true)")" \
+		"$(jstr "$(cat "$STATE/result" 2>/dev/null || true)")"
+}
+
+respond() {  # code reason content-type body
+	printf 'HTTP/1.0 %s %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n%s' \
+		"$1" "$2" "$3" "$(printf '%s' "$4" | wc -c)" "$4"
+}
+
+http() {
+	IFS=' ' read -r method path _ || exit 0
+	method=$(printf '%s' "$method" | tr -d '\r'); path=$(printf '%s' "$path" | tr -d '\r')
+	marked=0
+	while IFS= read -r line; do
+		line=$(printf '%s' "$line" | tr -d '\r')
+		[ -n "$line" ] || break
+		case "$line" in [Xx]-[Mm]icroduck:*) marked=1 ;; esac
+	done
+	# State-changing requests need the X-Microduck header: a page on another origin
+	# cannot add it without a CORS preflight, which this never answers, so a web
+	# page cannot drive a robot on the visitor's LAN into an update.
+	# shortcut: no authentication beyond that; anyone on the LAN can update the
+	# robot. Production: the HF-authenticated dashboard path, or a pairing PIN.
+	case "$method $path" in
+	"GET /" | "GET /index.html")
+		respond 200 OK "text/html; charset=utf-8" "$(cat /usr/share/microduck-osupdate/index.html)" ;;
+	"GET /api/status")
+		respond 200 OK application/json "$(status)" ;;
+	"POST /api/check" | "POST /api/apply")
+		if [ "$marked" != 1 ]; then respond 403 Forbidden text/plain "missing X-Microduck header"; exit 0; fi
+		if [ "$path" = /api/check ]; then
+			# A subshell: check's fail() exits, and that must not end this request
+			# before it is answered -- the failure is in status's message.
+			(check) > /dev/null 2>&1 || true
+			respond 200 OK application/json "$(status)"
+		elif systemctl is-active -q microduck-osupdate-apply.service; then
+			respond 409 Conflict application/json "$(status)"
+		else
+			systemd-run -q --unit=microduck-osupdate-apply --collect /usr/bin/microduck-osupdate apply
+			respond 202 Accepted application/json "$(status)"
+		fi ;;
+	*)
+		respond 404 "Not Found" text/plain "not found" ;;
+	esac
+}
+
+case "${1:-}" in
+status) status ;;
+check) check ;;
+apply) apply ;;
+boot-report) boot_report ;;
+http) http ;;
+*) echo "usage: $0 status|check|apply|boot-report|http" >&2; exit 2 ;;
+esac
