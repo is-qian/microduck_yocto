@@ -13,7 +13,7 @@ stock Debian one runs `clear_console -q` when `SHLVL=1` (which gosu guarantees),
 there is no tty so it fails, and `set -eu` promoted that to the shell's exit
 status. `bash -c` is the whole fix; `kas` resolves on the image's default PATH.
 
-Local reproductions all passed because lotus has `SHLVL=4`, so its own
+Local reproductions all passed because the laptop had `SHLVL=4`, so its own
 `.bash_logout` guard never fires. When a container-only failure will not
 reproduce locally, probe the container: a `cpu-basic` job costs cents and takes
 a minute.
@@ -108,6 +108,7 @@ blocked by the local shell allowlist, and the block is **not deterministic** —
 the same invocation has passed once and been refused the next time. Hand the
 command to the human rather than retrying:
 
-    KAS_BUILD_DIR=/mnt/data/fabien/yocto/build HFJOB_TARGET=microduck-bundle scripts/build-hfjob.sh
+    KAS_BUILD_DIR=<build dir> HFJOB_TARGET=microduck-bundle scripts/build-hfjob.sh
 
-`KAS_BUILD_DIR` is what `kas/lotus.env` sets; passing it inline avoids sourcing.
+`KAS_BUILD_DIR` is what `kas/local.env` sets (the signing keys live under it);
+passing it inline avoids sourcing.

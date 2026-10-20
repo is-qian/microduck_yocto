@@ -15,7 +15,7 @@ name: build-image
 #
 # HF_TOKEN launches the job AND reaches the bucket, because the bucket is mounted
 # into the job by the platform as the org. RAUC_DEV_KEY / RAUC_DEV_CERT (the PEM
-# files from README.md "Signing keys are not in this repo") are the one credential
+# files from README.md "Signing keys") are the one credential
 # that does enter the build: the bundle is signed inside the job. That is fine for
 # the DEV key, which robots in the field must never trust. A production key must
 # not take this path: sign releases with `rauc resign` in a separate job instead.
@@ -315,7 +315,7 @@ jobs:
       #
       # --namespace is load-bearing and was missing at first: `hf jobs cancel`
       # looks the job up under the *token owner's* namespace by default, so it
-      # returned 404 "Job Not Found for url: .../jobs/FabienDanieau/<id>" while
+      # returned 404 "Job Not Found for url: .../jobs/<user>/<id>" while
       # the job ran on happily under pollen-robotics. The `|| true` then hid that,
       # and the step reported success having cancelled nothing.
       #

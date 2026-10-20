@@ -6,6 +6,9 @@
 /meta-rockchip/
 /meta-rauc/
 
-# Build output. Real paths come from kas/host-*.yml; this catches a stray
+# Build output. Real paths come from kas/local.env; this catches a stray
 # default build dir.
 /build/
+
+# Per-machine build paths, sourced by scripts/build-local.sh.
+/kas/local.env

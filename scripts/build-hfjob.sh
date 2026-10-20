@@ -10,21 +10,20 @@
 #                                                            # + CVE scan (kas/cve.yml)
 #
 # The first argument is the kas command, defaulting to `build`, the same shape
-# build-coach.sh uses. `checkout` is worth knowing about: it clones the layers and
+# build-local.sh uses. `checkout` is worth knowing about: it clones the layers and
 # writes local.conf without compiling anything, so it validates this whole
 # pipeline on cpu-basic for a fraction of a cent before cpu-performance bills by
 # the minute.
 #
-# Why a job at all: coach's memory fault is only partly mitigated (../CONTEXT.md),
-# so nothing built there should be flashed. A job gets 32 cores and 247 GB with no
-# -j cap, which is why kas/limited-ram.yml is *not* composed in here.
+# Why a job at all: a cold image build is hours on a workstation, and a job gets
+# 32 cores and 247 GB with no -j cap.
 #
 # Billing is per minute of wall clock against the org balance, ~$1.90/h on
 # cpu-performance. Estimated 2.5-4 h cold, 15-35 min once the bucket is warm.
 # --timeout is a ceiling that stops the billing, not a reservation.
 #
 # The private microduck-daemon fetch needs a key, and there is no ssh-agent to
-# forward into a job the way build-coach.sh does. Pass one explicitly -- and
+# forward into a job the way build-local.sh does. Pass one explicitly -- and
 # prefer a read-only deploy key over your own, because it is held server-side
 # (encrypted) for the life of the job:
 #
@@ -67,7 +66,7 @@ daemon=$(scripts/daemon-release.sh "${HFJOB_DAEMON_VERSION:-latest}")
 
 # The RAUC signing pair, needed only when the target is the bundle.
 #
-# Defaulted from KAS_BUILD_DIR so a shell that has sourced kas/lotus.env -- which
+# Defaulted from KAS_BUILD_DIR so a shell that has sourced kas/local.env -- which
 # is what README.md tells you to do before generating them -- needs no extra
 # variable. Override either explicitly to sign with a different key.
 RAUC_KEYDIR=${HFJOB_RAUC_KEYDIR:-${KAS_BUILD_DIR:-}/rauc-keys}
@@ -84,15 +83,15 @@ case "$TARGET" in
 		# empty file that -r would wave through.
 		[ -s "$f" ] && [ -r "$f" ] && continue
 		echo "$0: target '$TARGET' needs a signing pair and $f is empty or not readable." >&2
-		echo "  Generate it once (README.md 'Signing keys are not in this repo')," >&2
+		echo "  Generate it once (README.md 'Signing keys')," >&2
 		echo "  or point HFJOB_RAUC_KEYDIR at an existing one." >&2
 		exit 1
 	done
 	;;
 esac
 
-# This repo is on no git host -- only coach's bare repo and local checkouts -- so
-# the build inputs travel as local-directory volumes: hf syncs them (incrementally)
+# The build inputs are the local checkout, uncommitted changes included, so they
+# travel as local-directory volumes: hf syncs them (incrementally)
 # to the org's private jobs-artifacts bucket and mounts them read-only. Needs
 # huggingface_hub >= 1.30.
 #
@@ -446,7 +445,7 @@ fi
 #
 #   INFO - Using /builder/work/kas as root for repository microduck_os
 #
-# git init is what makes this match the git checkout coach builds from.
+# git init is what makes this match a local git checkout.
 git init -q .
 git add -A
 git -c user.email=hfjob@pollen-robotics.com -c user.name=hfjob commit -q -m snapshot
@@ -469,19 +468,19 @@ if [ -n "${SSH_PRIVATE_KEY_B64:-}" ]; then
 
 	# known_hosts is not optional: ssh refuses before authenticating when it
 	# cannot verify the host, which surfaces as the misleading "Could not read
-	# from remote repository". Same host key coach already trusts.
+	# from remote repository".
 	ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
 
 	# An agent, not GIT_SSH_COMMAND. oe-core's BB_ENV_PASSTHROUGH_ADDITIONS carries
 	# SSH_AUTH_SOCK into bitbake but NOT GIT_SSH_COMMAND, so setting the latter
 	# looks load-bearing and reaches the fetcher never. This is the same mechanism
-	# build-coach.sh gets from kas-container --ssh-agent.
+	# build-local.sh gets from kas-container --ssh-agent.
 	eval "$(ssh-agent -s)" >/dev/null
 	ssh-add ~/.ssh/id_ed25519
 
 	# DO NOT expect this to work: SSH auth to GitHub does not succeed from a job.
 	# The same key, byte-identical (399 bytes, matching fingerprint), offered with
-	# IdentitiesOnly and no agent, authenticates from lotus and is refused here:
+	# IdentitiesOnly and no agent, authenticates from a laptop and is refused here:
 	#
 	#   Offering public key: /builder/.ssh/id_ed25519 ED25519 SHA256:2RTfYiDcEb...
 	#   git@github.com: Permission denied (publickey).
@@ -573,7 +572,7 @@ IN_CONTAINER
 # the status" rule to work around a cause nobody had found.
 #
 # Found by bisection with cpu-basic probes in the real image, once local
-# reproductions kept passing (lotus has SHLVL=4, so its .bash_logout guard never
+# reproductions kept passing (the laptop had SHLVL=4, so its .bash_logout guard never
 # fires): `bash -lc 'set -eu; exit 0'` -> ERROR; `bash -c 'set -eu; exit 0'` ->
 # COMPLETED, with kas resolving at /usr/local/bin on the image's default PATH. So
 # nothing here needs the login environment, and dropping -l is the whole fix.

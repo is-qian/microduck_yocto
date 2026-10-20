@@ -81,6 +81,9 @@ Topics too long for this file, each a list of things that bite:
 - `docs/agents/beta-board.md` — the custom PCB's first spin (`microduck-beta`):
   how it differs from the Zero 3W, flashing its eMMC over USB-C, the order to
   bring it up in, and why its DTS is a claim to check rather than a fact.
+- `docs/agents/zero3-board.md` — the Zero 3W stand-in: which wifi module it
+  has, its U-Boot, the AIC8800's Bluetooth (`hciattach`, rfkill twice) and the
+  gamepad-pairing workaround.
 - `docs/agents/gst-tracers.md` — measuring the media pipeline (dev image): why
   `mediad` needs `RUST_LOG=gst=debug` and a WebRTC consumer before tracers say
   anything, why the CSV tracers never write from inside it, and the measured
@@ -101,7 +104,7 @@ message.
 
 ```
 kas/microduck.yml         layer pins + build config. NO absolute paths.
-kas/<host>.env            per-host paths, as env vars (see below).
+kas/local.env             per-host paths, as env vars, git-ignored (see below).
 meta-microduck-distro/conf/distro/microduck.conf
                           what the robot runs: DISTRO_FEATURES, init, network
                           stack, default services, BBMASK. Not local_conf_header,
@@ -134,7 +137,7 @@ So does anything that needs a daemon's user or group, even when it names a
 board device (the face-LED, NFC and ToF udev rules): the BSP layer must not
 depend on the software layer, and `yocto-check-layer` fails it if it does.
 
-Paths are **environment variables in `kas/<host>.env`, not `local_conf_header`
+Paths are **environment variables in `kas/local.env`, not `local_conf_header`
 entries.** kas-container bind-mounts `KAS_BUILD_DIR`, `DL_DIR` and `SSTATE_DIR`;
 a path written into `local.conf` names a host directory the container cannot see,
 so the build fails or silently writes somewhere useless. `TMPDIR` needs no
@@ -145,7 +148,7 @@ custom PCB is now exactly that: `microduck-beta.conf` plus its own DTS,
 reusing `microduck-common.inc` — so put board-specific things in the
 machine conf and shared things in the include, not the other way round.
 
-Add a new `kas/<host>.env` rather than editing an existing one. Paths are the
+Never commit a host's `kas/local.env`. Paths are the
 only thing that may differ between hosts; anything else belongs in
 `microduck.yml` (build behaviour) or the distro conf (the rootfs).
 
@@ -174,7 +177,7 @@ only thing that may differ between hosts; anything else belongs in
   rfkill node for `hci0` once the adapter exists. `aic8800-bt-attach.service`
   does all of this; `bt_test` (dev image) is the vendor tool that talks to the
   chip directly when you need to tell hardware faults from stack faults. Full
-  writeup in README.md.
+  writeup in `docs/agents/zero3-board.md`.
 - **No RTC.** `updaterd`'s preflight check exists because a 1970 clock fails TLS
   with an opaque error. Anything that fetches over HTTPS depends on timesyncd
   working. Verify with `timedatectl`; do not assume.

@@ -36,8 +36,8 @@ local_conf_header:
     # (1342 -> 1439 tarballs) and never once got used. bitbake says this itself in
     # the build log and names this exact variable as the fix.
     #
-    # coach needs none of this: its build directory persists between builds, so
-    # the database survives. That is why it lives here and not in microduck.yml.
+    # A local build needs none of this: its build directory persists between
+    # builds, so the database survives. That is why it lives here and not in microduck.yml.
     BB_HASHSERVE_DB_DIR = "${SSTATE_DIR}"
   bucket-mirrors: |
     # Read downloads/ in the bucket (mounted at /cache) as a mirror, not copied in

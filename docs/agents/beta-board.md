@@ -126,7 +126,7 @@ anything to it is not known.
 ## Build
 
 ```sh
-kas build kas/microduck.yml:kas/beta.yml                 # local / coach
+kas build kas/microduck.yml:kas/beta.yml                 # local
 HFJOB_MACHINE=microduck-beta scripts/build-hfjob.sh      # HF Jobs
 ```
 
