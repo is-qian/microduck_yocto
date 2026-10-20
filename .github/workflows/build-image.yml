@@ -24,6 +24,10 @@ name: build-image
 # build wrote them. This publishes the hf:// URL instead. They are kept for
 # KEEP_DAYS (see the prune step), and the card image is the compressed
 # .wic.zst + .wic.bmap; the 13 GB plain .wic is not uploaded.
+#
+# Publishing a GitHub release builds both boards from its tag and attaches what
+# a person needs to flash or update one to the release itself (see the attach
+# step), so a tagged version never needs the bucket or a rebuild.
 
 on:
   workflow_dispatch:
@@ -51,6 +55,8 @@ on:
         type: choice
         options: [cpu-performance, cpu-basic]
         default: cpu-performance
+  release:
+    types: [published]
   push:
     branches: [main]
     # Only what can change the image. A README edit should not spend $1.60.
@@ -77,6 +83,16 @@ jobs:
     runs-on: ubuntu-latest
     # The build is ~50 min warm and hours cold; this is a backstop, not a target.
     timeout-minutes: 240
+    # contents: write is for attaching images to a release; nothing else writes.
+    permissions:
+      contents: write
+    # A release builds both boards; anything else builds the one it names. Not
+    # fail-fast: a red beta must not cancel a Zero 3W build that is fine (and a
+    # cancelled run leaves its HF job to the cancel step, not to luck).
+    strategy:
+      fail-fast: false
+      matrix:
+        machine: ${{ github.event_name == 'release' && fromJSON('["microduck-zero3","microduck-beta"]') || fromJSON(format('["{0}"]', inputs.machine || 'microduck-zero3')) }}
 
     # `shell: bash` runs every step as `bash --noprofile --norc -eo pipefail`,
     # and the pipefail is the point. GitHub's default is `bash -e`, under which a
@@ -106,8 +122,9 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HFJOB_TARGET: ${{ inputs.target || 'microduck-bundle' }}
           # A push builds the Zero 3W only; the beta board is built on demand
-          # until it is the board people flash, so a push does not cost two builds.
-          HFJOB_MACHINE: ${{ inputs.machine || 'microduck-zero3' }}
+          # (and on a release) until it is the board people flash, so a push does
+          # not cost two builds. The matrix above makes that choice.
+          HFJOB_MACHINE: ${{ matrix.machine }}
           HFJOB_FLAVOR: ${{ inputs.flavor || 'cpu-performance' }}
           # The newest daemon release unless the run names one, push included.
           # build-hfjob.sh resolves it to a commit and prints `daemon: ...`,
@@ -141,6 +158,8 @@ jobs:
           echo "job_id=$id" >> "$GITHUB_OUTPUT"
           echo "Launched https://huggingface.co/jobs/pollen-robotics/$id" >> "$GITHUB_STEP_SUMMARY"
           printf '%s\n' "$out" | grep -E '^daemon: ' >> "$GITHUB_STEP_SUMMARY" || true
+          # The resolved release (daemon-release.sh), for the release notes.
+          printf '%s\n' "$out" | grep -m1 -E '^daemon: [^ ]+ at ' | sed 's/^/daemon=/' >> "$GITHUB_OUTPUT" || true
 
       # Judges the build on its logs, never on its exit status -- see the long
       # explanation at the top of wait-hfjob.sh. Every green build of this image
@@ -170,6 +189,59 @@ jobs:
             >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "Artifacts: \`$prefix\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # A release carries its own images: the bucket's copies are pruned after
+      # KEEP_DAYS, a release's assets are not. The repository is private, so its
+      # assets are too. Names already say the machine, except the beta's loader,
+      # which goes up as microduck-beta-loader.bin: it is what `rkdeveloptool db`
+      # needs for a board in maskrom (docs/agents/beta-board.md). Only the beta's:
+      # the Zero 3W is flashed as a card.
+      - name: Attach the image to the release
+        if: success() && github.event_name == 'release'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          MACHINE: ${{ matrix.machine }}
+          DAEMON: ${{ steps.launch.outputs.daemon }}
+        run: |
+          set -eu
+          prefix="${{ steps.wait.outputs.artifacts }}"
+          test -n "$prefix" || { echo "no artifacts prefix from the wait step"; exit 1; }
+          mkdir "$RUNNER_TEMP/assets" && cd "$RUNNER_TEMP/assets"
+          hf buckets ls "$prefix/" | awk '{print $NF}' \
+            | grep -E 'rootfs-[0-9]+\.(wic\.zst|wic\.zst\.sha256sum|wic\.bmap|manifest)$|bundle-.*-[0-9]+\.raucb$|/loader\.bin-' \
+            | while read -r p; do
+                hf buckets cp "hf://buckets/pollen-robotics/microduck-yocto-cache/$p" "./${p##*/}"
+              done
+          if [ "$MACHINE" = microduck-beta ]; then
+            mv loader.bin-* microduck-beta-loader.bin
+          else
+            rm -f loader.bin-*
+          fi
+          # A missing .raucb or .bmap must not publish a release that looks complete.
+          want=5; [ "$MACHINE" = microduck-beta ] && want=6
+          [ "$(ls | wc -l)" -eq "$want" ] || { echo "expected $want assets, got:"; ls -l; exit 1; }
+          sha256sum -c *.wic.zst.sha256sum
+          gh release upload "$TAG" * --clobber -R "$GITHUB_REPOSITORY"
+          echo "Attached to release $TAG:" >> "$GITHUB_STEP_SUMMARY"
+          ls -l >> "$GITHUB_STEP_SUMMARY"
+          # A release build seeds the newest daemon, so the notes say which one.
+          # Both legs edit the same notes: re-read after writing, since a
+          # concurrent edit from the other leg can overwrite this line.
+          if [ -z "$DAEMON" ]; then
+            echo "::warning::no daemon line from the launch step; release notes not updated"
+            exit 0
+          fi
+          line="$MACHINE $DAEMON"
+          for _ in 1 2 3; do
+            notes=$(gh release view "$TAG" --json body -q .body -R "$GITHUB_REPOSITORY")
+            case "$notes" in *"$line"*) exit 0 ;; esac
+            gh release edit "$TAG" --notes "$notes"$'\n\n'"$line" -R "$GITHUB_REPOSITORY"
+            sleep $((RANDOM % 10 + 1))
+          done
+          gh release view "$TAG" --json body -q .body -R "$GITHUB_REPOSITORY" | grep -qF "$line" \
+            || echo "::warning::could not add '$line' to the release notes"
 
       # Retention. Nothing reads deploy/<job>/ except a person fetching a card
       # image or a bundle. A folder goes only if it is BOTH older than KEEP_DAYS
