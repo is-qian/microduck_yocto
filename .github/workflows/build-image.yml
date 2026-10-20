@@ -315,7 +315,7 @@ jobs:
       #
       # --namespace is load-bearing and was missing at first: `hf jobs cancel`
       # looks the job up under the *token owner's* namespace by default, so it
-      # returned 404 "Job Not Found for url: .../jobs/FabienDanieau/<id>" while
+      # returned 404 "Job Not Found for url: .../jobs/<user>/<id>" while
       # the job ran on happily under pollen-robotics. The `|| true` then hid that,
       # and the step reported success having cancelled nothing.
       #

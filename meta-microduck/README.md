@@ -10,3 +10,5 @@ Depends on: openembedded-core, meta-oe, meta-rockchip, meta-microduck-bsp.
 
 Part of https://github.com/pollen-robotics/microduck_yocto, built with
 `kas/microduck.yml`; see the repository's README.md and AGENTS.md.
+
+Licensed under Apache-2.0, like the rest of the repository (`LICENSE`).

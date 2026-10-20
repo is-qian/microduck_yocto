@@ -8,36 +8,36 @@ currently has to fight for control of one UART.
 
 ## Build
 
-Builds run on `coach` (see `~/.ssh/config`). `-A` matters: the daemon recipe
-fetches a private repo over SSH.
+The team builds on Hugging Face Jobs (`scripts/build-hfjob.sh`, below and in
+`docs/agents/hf-jobs.md`); CI does the same on every push to `main`. A local
+build needs [`kas-container`](https://kas.readthedocs.io/) on `PATH`, Docker,
+and a disk with a few hundred GB free. Put the paths in `kas/local.env`
+(git-ignored):
 
 ```sh
-ssh -A coach
-cd /data1/fabien/microduck/microduck_os_main
-scripts/build-coach.sh
+export KAS_BUILD_DIR=/srv/yocto/build
+export DL_DIR=/srv/yocto/downloads
+export SSTATE_DIR=/srv/yocto/sstate
 ```
 
-On the laptop, source `kas/lotus.env` instead — `/home` has ~28 GB free, which
-will not fit a rockchip build, so its paths point at `/mnt/data`. To reuse
-coach's output rather than repeating a multi-hour build, rsync its sstate
-straight into `SSTATE_DIR`; sstate is content-addressed, so merging the
-directories is all that sharing means:
+then
 
 ```sh
-rsync -a coach:/data1/fabien/yocto/sstate/ /mnt/data/fabien/yocto/sstate/
+scripts/build-local.sh
 ```
+
+The daemon recipe fetches a private repo over SSH, so the build needs an
+`ssh-agent` holding a key with access (`ssh -A` when building remotely).
 
 `kas/microduck.yml` holds every layer pin and no absolute paths, so it is
-identical on every host. Paths live in `kas/<host>.env` as **environment
-variables** rather than in `local_conf_header`, because kas-container
-bind-mounts `KAS_BUILD_DIR`, `DL_DIR` and `SSTATE_DIR` into the container — a
-path written into `local.conf` would name a host directory the container cannot
-see. `TMPDIR` needs no setting; it defaults to `$KAS_BUILD_DIR/tmp`.
+identical on every host. Paths are **environment variables** rather than
+`local_conf_header` entries, because kas-container bind-mounts `KAS_BUILD_DIR`,
+`DL_DIR` and `SSTATE_DIR` into the container — a path written into `local.conf`
+would name a host directory the container cannot see. `TMPDIR` needs no setting;
+it defaults to `$KAS_BUILD_DIR/tmp`.
 
-`kas` itself is not installed on coach and does not need to be: `kas-container`
-(in `~/bin`) is a shell wrapper around the `ghcr.io/siemens/kas/kas` image, which
-also sidesteps coach being Ubuntu 22.04 — older than wrynose's supported host
-distros.
+`kas-container` is a shell wrapper around the `ghcr.io/siemens/kas/kas` image,
+which also sidesteps a host older than wrynose's supported distros.
 
 ### Which daemon the image seeds
 
@@ -47,7 +47,7 @@ and prints its version and `source_revision`, and the build scripts pass both
 in and regenerate the crate list for it.
 
 ```sh
-DAEMON_VERSION=0.16.1 scripts/build-coach.sh
+DAEMON_VERSION=0.16.1 scripts/build-local.sh
 ```
 
 The same choice is `HFJOB_DAEMON_VERSION` for `scripts/build-hfjob.sh` and the
@@ -187,7 +187,7 @@ Three tiers, and it matters which one can see what.
 A container shares the host kernel, so this can never test boot, U-Boot, the DTB,
 the AIC8800 driver, SDIO or `/dev/ttyS2`. It *can* test that binaries link and
 run, that glibc is right, and that config files are where they should be. Needs
-only `qemu-aarch64` binfmt, which both `coach` and `lotus` already have.
+only `qemu-aarch64` binfmt.
 
 ```sh
 zstd -dc microduck-image-microduck-zero3.rootfs.tar.zst | docker import - microduck-rootfs
@@ -205,8 +205,7 @@ its glibc-2.31 floor check.
 Without it you get a silent hang: radxa's defconfig has no PL011, which is the
 UART QEMU's virt machine provides.
 
-Needs `qemu-system-aarch64` (`sudo apt install qemu-system-arm` — not installed on
-lotus yet):
+Needs `qemu-system-aarch64` (`sudo apt install qemu-system-arm`):
 
 ```sh
 qemu-system-aarch64 -M virt -cpu max -smp 4 -m 2048 -nographic \
@@ -239,7 +238,7 @@ You do not need a Yocto tree on your laptop. Use the lowest tier that works:
    daemon already cross-compiles standalone: `cargo board` (a `cargo-zigbuild`
    alias in its `.cargo/config.toml`), then rsync to the board.
 2. **Anything linking native libraries** (i.e. `mediad` against GStreamer/MPP) —
-   `bitbake microduck-image -c populate_sdk` on `coach`, copy the installer to
+   `bitbake microduck-image -c populate_sdk` on a build host, copy the installer to
    the laptop, then `source .../environment-setup-aarch64-poky-linux`. That sets
    `CC`, `PKG_CONFIG_PATH` and the sysroot so local cargo/meson/cmake link
    against the real target libraries. `cargo zigbuild` cannot do this — zig
@@ -441,16 +440,13 @@ daemon names is the case that breaks.
 
 ### Before flashing
 
-1. **Built on hardware with a known memory fault** — see `../CONTEXT.md`. Do not
-   flash this image. Rebuild after `memtest=4` and after deleting
-   `/data1/fabien/yocto/{downloads,sstate}`.
-2. **The kernel config is radxa's family-wide defconfig alone.**
+1. **The kernel config is radxa's family-wide defconfig alone.**
    `linux-rockchip.inc` cats `${RK_SOC_FAMILY}_linux.config` onto it with
    `|| true`, and radxa's tree has no `rk3568_linux.config` — so every
    SoC-specific override is silently missing. Mali CSF was the one symptom loud
    enough to break the build; audit `${B}/.config` (particularly the SDIO/MMC
    symbols the aic8800ds2 DTS relies on) before blaming the driver for anything.
-3. **Nothing has booted.** A clean compile of a vendor driver against a vendor
+2. **Nothing has booted.** A clean compile of a vendor driver against a vendor
    kernel is the first hurdle, not evidence the radio associates.
 
 ## A/B OS updates (RAUC)
@@ -523,7 +519,7 @@ The private key is never in this repo or the image. Generate it once, into the
 build directory (bind-mounted by kas-container, and already in `.gitignore`):
 
 ```sh
-. kas/lotus.env                        # or coach.env -- this sets KAS_BUILD_DIR
+. kas/local.env                        # sets KAS_BUILD_DIR
 mkdir -p "$KAS_BUILD_DIR/rauc-keys" && cd "$KAS_BUILD_DIR/rauc-keys"
 curl -sfLO https://raw.githubusercontent.com/rauc/meta-rauc/wrynose/scripts/openssl-ca.sh
 chmod +x openssl-ca.sh && ./openssl-ca.sh                # edit ORG=/CA= at the top first
@@ -551,7 +547,8 @@ the manifest and, for the beta, `microduck-beta-loader.bin`. Fetch them with
 
 ```sh
 # The bundle target builds the matching .wic as well.
-KAS_BUILD_DIR=/mnt/data/fabien/yocto/build HFJOB_TARGET=microduck-bundle scripts/build-hfjob.sh
+. kas/local.env    # the signing keys are found under KAS_BUILD_DIR
+HFJOB_TARGET=microduck-bundle scripts/build-hfjob.sh
 
 # A fresh card: flash it, writing only the blocks in use (needs bmap-tools).
 # The .bmap covers the uncompressed image; bmaptool decompresses .zst itself.
@@ -582,3 +579,10 @@ daemon's install hooks currently drop into `/usr/local/lib` and
 `/opt/robot/daemon`. A daemon fix should not cost a reboot (~20 s symlink swap and
 a 13 MB payload today, versus a reboot and ~200 MB), and a developer should not
 wait on a 50-minute image build to try one.
+
+## License
+
+The metadata in this repository (recipes, configuration, scripts, docs) is
+licensed under Apache-2.0, like `microduck_daemon`; see `LICENSE`. Patches under
+`files/` carry the licence of the project they patch. The software the recipes
+build keeps its own licence, which each recipe declares in `LICENSE`.

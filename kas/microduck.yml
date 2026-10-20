@@ -1,10 +1,10 @@
 # microduck OS -- portable build definition.
 #
 # Deliberately contains NO absolute paths, so it is identical on every build
-# host. Per-host paths live in kas/host-*.yml and are composed on the command
-# line:
+# host. Per-host paths are environment variables (kas/local.env, see README.md
+# "Build"):
 #
-#   kas-container build kas/microduck.yml:kas/host-coach.yml
+#   scripts/build-local.sh
 #
 # Note there is no `poky` repo here. The combined poky repo has no wrynose
 # branch (it stops at walnascar), so we use the three repos meta-rockchip's

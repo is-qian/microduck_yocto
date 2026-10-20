@@ -281,4 +281,4 @@ do_package[postfuncs] += "microduck_report_buildpaths"
 
 # Cargo.lock has 1139 crates, so crates.inc is large and the first fetch is long.
 # Regenerate after a SRCREV bump with:
-#   ./scripts/build-coach.sh shell -c "bitbake -c update_crates gstreamer1.0-plugins-rs"
+#   ./scripts/build-local.sh shell -c "bitbake -c update_crates gstreamer1.0-plugins-rs"

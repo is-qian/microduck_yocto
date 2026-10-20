@@ -101,7 +101,7 @@ message.
 
 ```
 kas/microduck.yml         layer pins + build config. NO absolute paths.
-kas/<host>.env            per-host paths, as env vars (see below).
+kas/local.env             per-host paths, as env vars, git-ignored (see below).
 meta-microduck-distro/conf/distro/microduck.conf
                           what the robot runs: DISTRO_FEATURES, init, network
                           stack, default services, BBMASK. Not local_conf_header,
@@ -134,7 +134,7 @@ So does anything that needs a daemon's user or group, even when it names a
 board device (the face-LED, NFC and ToF udev rules): the BSP layer must not
 depend on the software layer, and `yocto-check-layer` fails it if it does.
 
-Paths are **environment variables in `kas/<host>.env`, not `local_conf_header`
+Paths are **environment variables in `kas/local.env`, not `local_conf_header`
 entries.** kas-container bind-mounts `KAS_BUILD_DIR`, `DL_DIR` and `SSTATE_DIR`;
 a path written into `local.conf` names a host directory the container cannot see,
 so the build fails or silently writes somewhere useless. `TMPDIR` needs no
@@ -145,7 +145,7 @@ custom PCB is now exactly that: `microduck-beta.conf` plus its own DTS,
 reusing `microduck-common.inc` — so put board-specific things in the
 machine conf and shared things in the include, not the other way round.
 
-Add a new `kas/<host>.env` rather than editing an existing one. Paths are the
+Never commit a host's `kas/local.env`. Paths are the
 only thing that may differ between hosts; anything else belongs in
 `microduck.yml` (build behaviour) or the distro conf (the rootfs).
 

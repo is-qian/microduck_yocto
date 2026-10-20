@@ -53,7 +53,7 @@ python __anonymous() {
     if not d.getVar("MICRODUCK_DAEMON_VERSION") or not d.getVar("MICRODUCK_DAEMON_SRCREV"):
         raise bb.parse.SkipRecipe("no daemon release chosen: MICRODUCK_DAEMON_VERSION and "
                                   "MICRODUCK_DAEMON_SRCREV are unset. Build through "
-                                  "scripts/build-hfjob.sh or scripts/build-coach.sh, or see "
+                                  "scripts/build-hfjob.sh or scripts/build-local.sh, or see "
                                   "README.md 'Which daemon the image seeds'.")
 }
 
