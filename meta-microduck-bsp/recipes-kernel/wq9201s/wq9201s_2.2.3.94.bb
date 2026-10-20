@@ -2,25 +2,27 @@ SUMMARY = "WuQi WQ9201S SDIO wifi driver (wq_wlan) and its Bluetooth attach"
 DESCRIPTION = "Out-of-tree wq_wlan kernel module for the WuQi WQ9201S wifi/BT \
 combo inside the beta board's WL6201S module, plus the unit that attaches its \
 Bluetooth controller on UART1. Firmware is wq9201s-firmware."
-# The driver declares MODULE_LICENSE("Dual BSD/GPL") and its Makefile
-# "SPDX-License-Identifier: GPL-2.0"; the tarball carries no licence file, so the
-# checksum is oe-core's GPL-2.0-only text.
-LICENSE = "GPL-2.0-only"
-LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/GPL-2.0-only;md5=801f80980d171dd6425610833a22dbe6"
+# Seeed's debian/copyright: src/* is GPL-2 (or later), copyright WuQi Micro. The
+# whole file is checksummed, so a change to their terms fails the build here.
+LICENSE = "GPL-2.0-or-later"
+LIC_FILES_CHKSUM = "file://debian/copyright;md5=3727876b7206ead678f0a134cddb542b"
 
 inherit module systemd
 
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
-# WuQi's wq9201s-wifi-bt-dkms 2.2.3.94, as installed on Seeed's factory image for
-# this board (/usr/src/wq9201s-wifi-bt-dkms-2.2.3.94), repacked with a top
-# directory of wq9201s-2.2.3.94 so the default S applies. It has no public home;
-# docs/agents/beta-board.md says where it came from.
+# WuQi's WQ9201S SDK v2.2.3.94 as Seeed packages it, wq9201s-wifi-bt-dkms on the
+# deb_source branch of their public seeed_armbian_extension -- the same 183 source
+# files their factory image installs in /usr/src (compared blob for blob,
+# 2026-10-20). Fetched, not committed. wq9201s-bt-attach and its unit are ours,
+# reworked from Seeed's bt/ (GPL-2 there too).
 SRC_URI = " \
-    file://wq9201s-${PV}.tar.gz \
+    git://github.com/Seeed-Studio/seeed_armbian_extension.git;protocol=https;branch=deb_source \
     file://wq9201s-bt-attach \
     file://wq9201s-bt.service \
 "
+SRCREV = "1f4bd1cbf6e844291a54ca55816c1ac827b6bd02"
+S = "${UNPACKDIR}/${BP}/wq9201s-wifi-bt-dkms"
 
 # Same shape as aic8800_5.0.bb: build in the driver's directory through kbuild.
 # The driver Makefile's own default target only wraps this with KERNELDIR and O=,
