@@ -71,9 +71,10 @@ gadget (`2207:0019`) with:
 Things on that image worth having before it is overwritten, because they are
 what our image is missing:
 
-- `/usr/src/wq9201s-wifi-bt-dkms-2.2.3.94`: the radio driver source (Dual
-  BSD/GPL according to `modinfo`).
-- `/lib/firmware/wq9201_*.bin` and `wq_wlan_settings.ini`: its firmware.
+- `/usr/src/wq9201s-wifi-bt-dkms-2.2.3.94` and `/lib/firmware/wq9201_*.bin`:
+  the radio driver and firmware. No need to copy them: Seeed publishes the same
+  files (`deb_source` branch of Seeed-Studio/seeed_armbian_extension), which is
+  where `recipes-kernel/wq9201s` fetches them from.
 - `/usr/bin/wq9201s-bt-attach` and `wq9201s-bt.service`: the Bluetooth attach.
 - `/usr/bin/usbdevice` and `usbdevice.service`: the USB gadget above, which our
   image should copy for bring-up, since it has no radio yet.
@@ -280,14 +281,15 @@ release's `Cargo.lock` files before every build.
   `wq_dbg_lv=3` in the settings ini) and the controller answers at 1500000 on
   UART1. `force_reset=1` on the
   module reloads the firmware without a power cycle but wedged SDIO after a few
-  tries; reboot to recover. The recipe packages WuQi's driver 2.2.3.94 and the firmware, both
-  taken from Seeed's factory image (`/usr/src/wq9201s-wifi-bt-dkms-2.2.3.94`,
-  `/lib/firmware/wq9201_*`). Its `-Werror` is stripped because wrynose's GCC 15
+  tries; reboot to recover. The recipe packages WuQi's driver 2.2.3.94 and the firmware,
+  fetched from Seeed's public seeed_armbian_extension (`deb_source` branch,
+  `wq9201s-wifi-bt-dkms/`, pinned commit): the same files as their factory image,
+  blob for blob. Its `-Werror` is stripped because wrynose's GCC 15
   is newer than the GCC 12 it was built with. Bluetooth attaches as
   `btattach -B /dev/ttyS1 -N -P h4 -S 1500000` once wlan0 exists; never run
-  `hciattach 3wire` in the same boot. **The firmware's redistribution terms are
-  unknown** (`LICENSE = "CLOSED"`): settle them with Seeed or WuQi before an
-  image leaves the team. The AIC8800 pairing workaround
+  `hciattach 3wire` in the same boot. **Licences, per Seeed's `debian/copyright`:**
+  the driver is GPL-2; the firmware is "proprietary … redistributed with vendor
+  permission for use with WQ9201S modules". The AIC8800 pairing workaround
   (`/var/lib/robot/weird-ble`, written by the daemon recipe on every machine)
   is to be re-measured on this radio.
 - **The camera on our image.** The DTS describes the GC2093 from Seeed's node,
