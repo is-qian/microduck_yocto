@@ -257,14 +257,11 @@ jobs:
       # production key in a job of its own, which does not exist yet -- robots in
       # the field must never follow a dev-signed dev image.
       #
-      # The Zero 3W only: the beta image carries vendor firmware, and is not
-      # published until its redistribution terms are settled. A release does not
-      # publish either; it attaches its images instead (the step above).
+      # A release does not publish; it attaches its images instead (the step above).
       - name: Publish for OS updates
         if: >-
           success() && (inputs.target || 'microduck-bundle') == 'microduck-bundle'
           && (inputs.kas_command || 'build') == 'build'
-          && matrix.machine == 'microduck-zero3'
           && (github.event_name == 'push' || inputs.publish)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
