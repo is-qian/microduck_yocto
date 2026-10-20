@@ -83,7 +83,7 @@ case "$TARGET" in
 		# empty file that -r would wave through.
 		[ -s "$f" ] && [ -r "$f" ] && continue
 		echo "$0: target '$TARGET' needs a signing pair and $f is empty or not readable." >&2
-		echo "  Generate it once (README.md 'Signing keys are not in this repo')," >&2
+		echo "  Generate it once (README.md 'Signing keys')," >&2
 		echo "  or point HFJOB_RAUC_KEYDIR at an existing one." >&2
 		exit 1
 	done

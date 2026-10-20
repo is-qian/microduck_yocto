@@ -81,6 +81,9 @@ Topics too long for this file, each a list of things that bite:
 - `docs/agents/beta-board.md` — the custom PCB's first spin (`microduck-beta`):
   how it differs from the Zero 3W, flashing its eMMC over USB-C, the order to
   bring it up in, and why its DTS is a claim to check rather than a fact.
+- `docs/agents/zero3-board.md` — the Zero 3W stand-in: which wifi module it
+  has, its U-Boot, the AIC8800's Bluetooth (`hciattach`, rfkill twice) and the
+  gamepad-pairing workaround.
 - `docs/agents/gst-tracers.md` — measuring the media pipeline (dev image): why
   `mediad` needs `RUST_LOG=gst=debug` and a WebRTC consumer before tracers say
   anything, why the CSV tracers never write from inside it, and the measured
@@ -174,7 +177,7 @@ only thing that may differ between hosts; anything else belongs in
   rfkill node for `hci0` once the adapter exists. `aic8800-bt-attach.service`
   does all of this; `bt_test` (dev image) is the vendor tool that talks to the
   chip directly when you need to tell hardware faults from stack faults. Full
-  writeup in README.md.
+  writeup in `docs/agents/zero3-board.md`.
 - **No RTC.** `updaterd`'s preflight check exists because a 1970 clock fails TLS
   with an opaque error. Anything that fetches over HTTPS depends on timesyncd
   working. Verify with `timedatectl`; do not assume.

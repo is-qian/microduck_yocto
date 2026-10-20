@@ -26,7 +26,7 @@ for attempt in 1 2 3; do
 	mac=$(hciconfig hci0 2>/dev/null | grep -oE '([0-9A-F]{2}:){5}[0-9A-F]{2}' | head -n1)
 	if [ -n "$mac" ] && [ "$mac" != "00:00:00:00:00:00" ]; then
 		# BlueZ adds a second rfkill node for hci0 itself, born blocked; the
-		# AIC8800 notes in README.md have the story.
+		# AIC8800 notes in docs/agents/zero3-board.md have the story.
 		rfkill unblock bluetooth 2>/dev/null || true
 		hciconfig hci0 up
 		echo "WQ9201S Bluetooth up (H4), address $mac"

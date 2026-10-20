@@ -5,6 +5,7 @@
 #   scripts/build-local.sh shell -c 'bitbake microduck-daemon'
 #   scripts/build-local.sh shell -c 'bitbake -c update_crates microduck-daemon'
 #   DAEMON_VERSION=0.16.1 scripts/build-local.sh              # not the newest daemon
+#   KAS_FILES=kas/microduck.yml:kas/beta.yml scripts/build-local.sh   # the beta board
 #
 # Paths come from kas/local.env if it exists (git-ignored; README.md "Build"
 # has the three lines it needs), else from the environment.
@@ -23,6 +24,7 @@ cd "$(dirname "$0")/.."
 [ -f kas/local.env ] && . kas/local.env
 
 CMD=${1:-build}
+KAS_FILES=${KAS_FILES:-kas/microduck.yml}
 [ $# -gt 0 ] && shift
 
 # The daemon release (README.md, "Which daemon the image seeds"), passed as -e
@@ -43,6 +45,6 @@ kas() {
 # tracked microduck-daemon-crates.inc in this checkout; that diff is the
 # release's, not a mistake.
 if [ "$CMD" = build ]; then
-	kas shell kas/microduck.yml -c "bitbake -c update_crates microduck-daemon"
+	kas shell "$KAS_FILES" -c "bitbake -c update_crates microduck-daemon"
 fi
-kas "$CMD" kas/microduck.yml "$@"
+kas "$CMD" "$KAS_FILES" "$@"

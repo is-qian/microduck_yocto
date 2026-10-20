@@ -1,10 +1,22 @@
 # A/B updates with RAUC — what an agent needs to know
 
-Stage 1 is verified on hardware (2026-09-18): signed bundles build on HF, the
-signature verifies on the board against the CA in
-`recipes-core/rauc/files/ca.cert.pem`, and `rauc install` writes `rootfs_b`.
-Stage 2 — actually booting slot B — is not started. `README.md` has the full
-narrative; this is the list of things that will bite you.
+Where it stands; `README.md` has the overview, and this is the list of things
+that will bite you.
+
+| stage | what | state |
+|---|---|---|
+| 1 | RAUC userspace, signed verity bundles, install to the inactive slot | verified on hardware 2026-09-18 |
+| — | `data` partition at `/var/lib/robot`, wifi profiles on it | verified on hardware 2026-09-21 / 2026-09-29 |
+| 2a | writable U-Boot environment, `fw_setenv` from Linux | verified on hardware 2026-09-25 |
+| — | first 16 MiB moved to Rockchip's layout | verified on hardware 2026-09-25 |
+| 2b | U-Boot picks the slot, `bootloader=uboot` | verified on hardware 2026-09-29: A→B, boot B, rollback to A |
+| — | kernel and DTB in the slot | verified on hardware (Zero 3W): kernel update and rollback |
+| — | OS updates from a published channel (`microduck-osupdate`) | verified on hardware (Zero 3W): install from the list, switch back |
+| 3 | move the daemon hooks' OS work into the image; `updaterd` keeps the daemon binaries | not started |
+
+The bundle wraps the dev image (`RAUC_SLOT_rootfs` in
+`recipes-core/bundles/microduck-bundle.bb`); switch it to `microduck-image`
+before shipping. U-Boot itself is not in a slot.
 
 ## The partition table is load-bearing, and one name is not ours
 
