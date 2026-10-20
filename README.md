@@ -538,7 +538,9 @@ Then commit the **public** CA so the image trusts bundles signed by that key:
 cp openssl-ca/dev/ca.cert.pem <repo>/meta-microduck/recipes-core/rauc/files/
 ```
 
-CI builds the card image only; bundles are built where the key is.
+CI signs its bundles with the dev pair, from the `RAUC_DEV_KEY` /
+`RAUC_DEV_CERT` secrets; a bundle signed with any other key is built where that
+key is.
 
 ### Building, flashing and updating
 

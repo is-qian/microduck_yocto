@@ -158,6 +158,8 @@ jobs:
           echo "job_id=$id" >> "$GITHUB_OUTPUT"
           echo "Launched https://huggingface.co/jobs/pollen-robotics/$id" >> "$GITHUB_STEP_SUMMARY"
           printf '%s\n' "$out" | grep -E '^daemon: ' >> "$GITHUB_STEP_SUMMARY" || true
+          # The resolved release (daemon-release.sh), for the release notes.
+          printf '%s\n' "$out" | grep -m1 -E '^daemon: [^ ]+ at ' | sed 's/^/daemon=/' >> "$GITHUB_OUTPUT" || true
 
       # Judges the build on its logs, never on its exit status -- see the long
       # explanation at the top of wait-hfjob.sh. Every green build of this image
@@ -201,6 +203,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
           MACHINE: ${{ matrix.machine }}
+          DAEMON: ${{ steps.launch.outputs.daemon }}
         run: |
           set -eu
           prefix="${{ steps.wait.outputs.artifacts }}"
@@ -216,10 +219,29 @@ jobs:
           else
             rm -f loader.bin-*
           fi
+          # A missing .raucb or .bmap must not publish a release that looks complete.
+          want=5; [ "$MACHINE" = microduck-beta ] && want=6
+          [ "$(ls | wc -l)" -eq "$want" ] || { echo "expected $want assets, got:"; ls -l; exit 1; }
           sha256sum -c *.wic.zst.sha256sum
           gh release upload "$TAG" * --clobber -R "$GITHUB_REPOSITORY"
           echo "Attached to release $TAG:" >> "$GITHUB_STEP_SUMMARY"
           ls -l >> "$GITHUB_STEP_SUMMARY"
+          # A release build seeds the newest daemon, so the notes say which one.
+          # Both legs edit the same notes: re-read after writing, since a
+          # concurrent edit from the other leg can overwrite this line.
+          if [ -z "$DAEMON" ]; then
+            echo "::warning::no daemon line from the launch step; release notes not updated"
+            exit 0
+          fi
+          line="$MACHINE $DAEMON"
+          for _ in 1 2 3; do
+            notes=$(gh release view "$TAG" --json body -q .body -R "$GITHUB_REPOSITORY")
+            case "$notes" in *"$line"*) exit 0 ;; esac
+            gh release edit "$TAG" --notes "$notes"$'\n\n'"$line" -R "$GITHUB_REPOSITORY"
+            sleep $((RANDOM % 10 + 1))
+          done
+          gh release view "$TAG" --json body -q .body -R "$GITHUB_REPOSITORY" | grep -qF "$line" \
+            || echo "::warning::could not add '$line' to the release notes"
 
       # Retention. Nothing reads deploy/<job>/ except a person fetching a card
       # image or a bundle. A folder goes only if it is BOTH older than KEEP_DAYS
