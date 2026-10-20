@@ -219,7 +219,7 @@ do_configure[postfuncs] += "microduck_cargo_git_patch_paths"
 PACKAGE_BEFORE_PN += "${PN}-tracers"
 FILES:${PN}-tracers = "${libdir}/gstreamer-1.0/libgstrstracers.so"
 FILES:${PN} += "${libdir}/gstreamer-1.0/*.so"
-FILES:${PN}-dev += "${libdir}/gstreamer-1.0/*.a ${libdir}/pkgconfig"
+FILES:${PN}-dev += "${libdir}/gstreamer-1.0/*.a"
 INSANE_SKIP:${PN} += "dev-so"
 INSANE_SKIP:${PN}-tracers += "dev-so"
 

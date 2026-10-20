@@ -238,10 +238,19 @@ is how `updaterd` decides there is nothing to do.
 Per the workspace convention, no `Co-Authored-By:`. Use a single
 `Assisted-by: Claude:<model-id>` trailer.
 
-There is no linter here. The checks that matter before pushing: bitbake parses,
-the target still builds, and — if the wks changed — `scripts/check-wks-layout.py`
-says `layout ok`. That last one runs in 0.1 s and has caught two mistakes a
-build would have taken 50 minutes to report.
+The checks that matter before pushing: bitbake parses, the target still builds,
+and — if the wks changed — `scripts/check-wks-layout.py` says `layout ok`. That
+last one runs in 0.1 s and has caught two mistakes a build would have taken 50
+minutes to report.
+
+oelint-adv must be clean too; CI runs it on every push and PR
+(`.github/workflows/oelint.yml`), in seconds:
+
+    uvx oelint-adv==9.11.2 $(git ls-files 'meta-microduck*' | grep -E '\.(bb|bbappend|bbclass|inc|conf)$')
+
+It runs only the rules in `.oelint-rules.json`; `.oelint.cfg` says why. A
+finding that is intended gets `# nooelint: <rule id>` on the line above it and a
+comment saying why, as in `microduck-image-dev.bb`.
 
 Anything that changes the partition layout or the bootloader goes on a branch in
 its own worktree, never straight to `main`: `main` is what a colleague flashes,

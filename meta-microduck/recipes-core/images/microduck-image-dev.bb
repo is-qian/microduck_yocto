@@ -16,6 +16,8 @@ require recipes-core/images/microduck-image.bb
 # configuration afterwards. The dev key and allow_dev_keys can (see below), but a
 # login cannot: you need one before you can configure anything, and with no
 # package manager on the robot there is no way to add one later either.
+# oelint-adv flags these in any image; this is the one place they are allowed.
+# nooelint: oelint.var.badimagefeature
 IMAGE_FEATURES += "allow-empty-password allow-root-login empty-root-password"
 
 IMAGE_INSTALL:append = " \

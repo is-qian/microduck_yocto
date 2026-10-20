@@ -1,0 +1,27 @@
+name: oelint
+
+# Lints the layers' metadata with oelint-adv, using the rules in
+# .oelint-rules.json (.oelint.cfg says which and why). Seconds on a hosted runner, no Yocto checkout.
+# Same command as AGENTS.md "Commits", so a local run predicts this one.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  oelint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Pinned: a new release adds rules, and a new rule must not fail main on
+      # its own. Bump it on purpose, and fix or suppress what it finds.
+      - run: pip install oelint-adv==9.11.2
+
+      - run: oelint-adv $(git ls-files 'meta-microduck*' | grep -E '\.(bb|bbappend|bbclass|inc|conf)$')
