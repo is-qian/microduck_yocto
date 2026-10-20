@@ -55,6 +55,10 @@ on:
         type: choice
         options: [cpu-performance, cpu-basic]
         default: cpu-performance
+      publish:
+        description: "publish the bundle for OS updates: to dev from main, to dev-<branch> from a branch"
+        type: boolean
+        default: false
   release:
     types: [published]
   push:
@@ -242,6 +246,35 @@ jobs:
           done
           gh release view "$TAG" --json body -q .body -R "$GITHUB_REPOSITORY" | grep -qF "$line" \
             || echo "::warning::could not add '$line' to the release notes"
+
+      # OS updates: the bundle into the public pollen-robotics/microduck-os bucket,
+      # where microduck-osupdate on a robot finds it (scripts/publish-os.sh says
+      # what goes where). Every push to main publishes to `dev`; a manual run with
+      # `publish` goes to `dev` from main and `dev-<branch>` from a branch.
+      #
+      # The channel is derived, never typed: nothing here can write `stable`. That
+      # channel is for tagged releases of the shipping image re-signed with the
+      # production key in a job of its own, which does not exist yet -- robots in
+      # the field must never follow a dev-signed dev image.
+      #
+      # A release does not publish; it attaches its images instead (the step above).
+      - name: Publish for OS updates
+        if: >-
+          success() && (inputs.target || 'microduck-bundle') == 'microduck-bundle'
+          && (inputs.kas_command || 'build') == 'build'
+          && (github.event_name == 'push' || inputs.publish)
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -eu
+          if [ "$GITHUB_REF_NAME" = main ]; then
+            channel=dev
+          else
+            # dev-<branch>, in the bucket's [a-z0-9-] alphabet, 40 characters at most.
+            channel=dev-$(printf '%s' "$GITHUB_REF_NAME" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9-]/-/g' | cut -c1-36)
+          fi
+          scripts/publish-os.sh "${{ steps.launch.outputs.job_id }}" "${{ matrix.machine }}" "$channel" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Retention. Nothing reads deploy/<job>/ except a person fetching a card
       # image or a bundle. A folder goes only if it is BOTH older than KEEP_DAYS

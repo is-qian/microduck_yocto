@@ -1,0 +1,19 @@
+[Unit]
+Description=Report the outcome of the last OS update
+# After the health gate has had its say, ordering only: if slot-health fails,
+# boot-complete is never reached, and this must still run to say so.
+After=microduck-slot-health.service rauc-mark-good.service
+# No default dependencies, as rauc-mark-good.service: with them, WantedBy=
+# multi-user.target makes multi-user.target wait for this unit, while slot-health
+# runs After=multi-user.target -- an ordering cycle, which systemd broke on the
+# board by dropping the slot-health job, so no slot was ever marked good.
+DefaultDependencies=no
+Requires=sysinit.target
+After=sysinit.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/microduck-osupdate boot-report
+
+[Install]
+WantedBy=multi-user.target
