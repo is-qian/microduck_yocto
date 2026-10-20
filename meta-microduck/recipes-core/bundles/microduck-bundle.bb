@@ -16,33 +16,19 @@ EXCLUDE_FROM_WORLD = "1"
 RAUC_BUNDLE_COMPATIBLE = "${MACHINE}"
 RAUC_BUNDLE_FORMAT = "verity"
 
-# Rootfs only. The kernel and DTB live in the shared `boot` partition, which RAUC
-# does not update: a kernel or device-tree change still needs a reflash.
+# Rootfs only, and that is the whole OS: the kernel and DTB are in each slot's
+# /boot, where U-Boot loads them from (recipes-bsp/u-boot/), so a bundle carries
+# its own kernel and an update can change it.
 RAUC_BUNDLE_SLOTS = "rootfs"
 
-# ...and the hook enforces that: it refuses to install unless the card's `boot`
-# holds the exact boot.img this bundle was built with. See the hook for why a
-# `uname -r` match is not enough.
+# The hook refuses a card whose U-Boot still boots the `boot` partition: there a
+# new kernel in the slot would never run, against its own modules. See the hook.
 SRC_URI = "file://microduck-bundle-hook"
 # Fetching anything makes do_populate_lic demand a checksum; bundle.bbclass only
 # sets LICENSE ?= "MIT". Same line as microduck-data.bb.
 LIC_FILES_CHKSUM = "file://${COREBASE}/meta/COPYING.MIT;md5=3da9cfbcb788c80a0384361b4de20420"
 RAUC_BUNDLE_HOOKS[file] = "microduck-bundle-hook"
 RAUC_BUNDLE_HOOKS[hooks] = "install-check"
-
-# [meta.boot] size= and sha256= of that boot.img, which the hook reads as
-# RAUC_META_BOOT_SIZE / RAUC_META_BOOT_SHA256. Filled in at build time, because
-# boot.img exists only once the kernel has deployed it.
-RAUC_META_SECTIONS = "boot"
-do_configure[depends] += "virtual/kernel:do_deploy"
-do_configure[prefuncs] += "microduck_boot_fingerprint"
-python microduck_boot_fingerprint() {
-    import hashlib
-    with open(d.expand("${DEPLOY_DIR_IMAGE}/boot.img"), "rb") as f:
-        img = f.read()
-    d.setVarFlag("RAUC_META_boot", "size", str(len(img)))
-    d.setVarFlag("RAUC_META_boot", "sha256", hashlib.sha256(img).hexdigest())
-}
 
 # The dev image, so the card built alongside and every updated slot keep a
 # password-less root to test with. Switch to microduck-image before shipping.

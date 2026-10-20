@@ -122,3 +122,12 @@ microduck_check_kernel_fragments() {
 	done
 }
 do_configure[postfuncs] += "microduck_check_kernel_fragments"
+
+# U-Boot boots /boot/microduck.dtb from the slot it picked (recipes-bsp/u-boot/), one
+# name for every machine, so the same bootcmd serves both boards. A symlink to the
+# DTB kernel-devicetree installs; its FILES glob (**/*.dtb) packages it too.
+do_install:append() {
+	dtb=$(basename "${@d.getVar('KERNEL_DEVICETREE').split()[0]}")
+	[ -f "${D}/${KERNEL_DTBDEST}/$dtb" ] || bbfatal "$dtb is not in /${KERNEL_DTBDEST}: U-Boot would fall back to the boot partition"
+	ln -sf "$dtb" "${D}/${KERNEL_DTBDEST}/microduck.dtb"
+}

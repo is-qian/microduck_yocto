@@ -1,17 +1,15 @@
 #!/bin/sh
 # RAUC hooks for the microduck bundle: install-check, then slot-post-install.
 #
-# install-check: refuse a bundle built for a different kernel or DTB.
+# install-check: refuse a card whose U-Boot does not boot the slot's own kernel.
 #
-# A bundle carries the rootfs, and so /lib/modules, but the kernel and DTB stay in
-# the shared `boot` partition. Installing a bundle built after a kernel change onto
-# a card with the old kernel gives a slot whose modules do not match what runs --
-# the AIC8800 wifi driver among them, so the robot comes up unreachable.
-#
-# `uname -r` cannot catch that: it is 6.1.84-rockchip-standard whatever config,
-# DTS or patch the kernel was built with, and those are the changes this repo makes.
-# So the bundle names the exact boot.img it was built with (the [meta.boot] section,
-# written by microduck-bundle.bb), and this compares it with the card's `boot`.
+# A bundle carries the kernel and DTB in the slot's /boot, next to /lib/modules.
+# That only holds together if U-Boot boots them; a card from before (its bootcmd
+# runs Rockchip's chain on the `boot` partition) would boot the old kernel against
+# the new modules -- the AIC8800 wifi driver among them, so the robot comes up
+# unreachable. What U-Boot runs is the bootcmd saved in its environment, so that is
+# what is checked, not the U-Boot binary: a card reflashed with bmaptool before #24
+# kept its old environment, and with it the old bootcmd, under a new U-Boot.
 #
 # This hook REPLACES RAUC's own compatible check, so that check is redone here.
 # Exit >= 10 rejects the bundle; RAUC shows the last stderr line as the reason.
@@ -21,11 +19,13 @@ install_check() {
 		exit 10
 	fi
 
-	have=$(head -c "$RAUC_META_BOOT_SIZE" /dev/disk/by-partlabel/boot | sha256sum | cut -d' ' -f1)
-	if [ "$have" != "$RAUC_META_BOOT_SHA256" ]; then
-		echo "bundle was built for another kernel/DTB (boot.img $RAUC_META_BOOT_SHA256, card has $have): reflash the card instead" >&2
+	case "$(fw_printenv -n bootcmd 2>/dev/null)" in
+	*/boot/microduck.dtb*) ;;
+	*)
+		echo "this card's U-Boot boots the kernel in the boot partition, not the slot's: reflash it" >&2
 		exit 10
-	fi
+		;;
+	esac
 }
 
 # slot-post-install: carry this slot's /etc/machine-id into the one just written.

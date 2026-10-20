@@ -22,6 +22,13 @@ SRC_URI += " \
 # first fw_setenv saves only one variable, and U-Boot then loses bootcmd.
 UBOOT_INITIAL_ENV = "u-boot-initial-env"
 
+# And as a binary environment image (CRC + variables, CONFIG_ENV_SIZE long), which
+# the wks writes into uboot_env. Real data, so the .bmap maps it and bmaptool writes
+# it: a reflashed card starts from the default environment -- this bootcmd, fresh
+# counters -- instead of keeping the old card's (pollen-robotics/microduck_yocto#24).
+UBOOT_INITIAL_ENV_BINARY = "1"
+UBOOT_INITIAL_ENV_BINARY_SIZE = "0x8000"
+
 # Fail the build, not the board, if the fragment did not take effect: every line of
 # rauc-env.cfg must appear verbatim in the merged .config. Without it the env
 # silently reverts to ENV_IS_NOWHERE.
