@@ -20,6 +20,8 @@ SRC_URI += " \
 
 # The name libubootenv falls back to on a blank environment. Without that file the
 # first fw_setenv saves only one variable, and U-Boot then loses bootcmd.
+# oelint-adv does not know this oe-core variable (u-boot.inc).
+# nooelint: oelint.vars.mispell
 UBOOT_INITIAL_ENV = "u-boot-initial-env"
 
 # And as a binary environment image (CRC + variables, CONFIG_ENV_SIZE long), which
