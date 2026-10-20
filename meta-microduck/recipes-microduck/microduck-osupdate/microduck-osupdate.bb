@@ -29,7 +29,7 @@ do_install() {
 	done
 }
 
-FILES:${PN} += "${datadir}/microduck-osupdate ${systemd_system_unitdir}/microduck-osupdate@.service"
+FILES:${PN} += "${systemd_system_unitdir}/microduck-osupdate@.service"
 # rauc to install, curl to fetch (with resume), flock/sha256sum from util-linux and
 # coreutils or busybox, systemd-run for the detached apply.
 RDEPENDS:${PN} = "rauc curl systemd util-linux-flock"
