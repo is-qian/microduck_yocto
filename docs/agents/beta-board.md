@@ -98,8 +98,11 @@ detect at install time. The two places it is visible afterwards:
 - **`/proc/device-tree/compatible`** starts with `pollen,microduck-beta` (the
   Zero 3W says `radxa,zero3w-aic8800ds2`, Seeed's factory image
   `seeed,microduck`). This is what software on the robot should switch on.
+  With the V1.0 face board it starts with `pollen,microduck-face-board-v1` and
+  still lists `pollen,microduck-beta`; robotd-params matches the
+  `pollen,microduck` prefix, so both read as `beta`.
 - **RAUC** `compatible=` is `${MACHINE}`, so a Zero 3W bundle refuses to install
-  on a beta board and vice versa.
+  on a beta board and vice versa -- and a beta bundle on a face-board-v1 robot.
 
 The daemon has its own word for the board: `[board] version` in
 `/etc/robot/robotd.toml` (`"zero3"` or `"beta"`, microduck_daemon#357), which the
@@ -267,6 +270,29 @@ needs 0.16.0 or later. Every release from 0.15.3 builds on wrynose's Rust 1.94.1
 releases on its own, because `updaterd` installs CI's prebuilt binaries rather
 than this recipe's build. `microduck-daemon-crates.inc` is regenerated from the
 release's `Cargo.lock` files before every build.
+
+## The V1.0 face board (`microduck-face-board-v1`)
+
+The same main board with Face Board V1.0, which replaces the PCA9535 and its
+NPN switches with an AW21009 (9 channels, 0x20) and an AW2023 (RGB, 0x45) on
+I2C3; the AW2023's INTN takes GPIO4_C7, and a button takes GPIO4_D0. The
+AW21009 sits at the PCA9535's address, so one DTB cannot describe both faces:
+it is its own machine (`MACHINEOVERRIDES =. "microduck-beta:"`, so every beta
+override still applies), and `rk3566-microduck-face-board-v1.dts` includes
+the beta DTS and swaps the face block.
+
+```sh
+kas build kas/microduck.yml:kas/face-board-v1.yml
+HFJOB_MACHINE=microduck-face-board-v1 scripts/build-hfjob.sh
+```
+
+**Not run on a board yet.** The LEDs are named after driver channels
+(`face:led1`..`face:led9` = AW21009 pins LED1..LED9, `face:rgb:0..2` = AW2023
+LED0..2), not after what they light: rename them once checked on a board, and
+until then `robotctl led`'s face names do not exist on this machine. The
+AW21009 driver (patch 0006) is ours and minimal: one LED per channel, 8-bit PWM,
+full scale set by the board's ISET resistor. Seeed's AW210xx port exposes the
+chip as one LED with vendor sysfs files instead and is not used.
 
 ## Open items, each blocking something specific
 

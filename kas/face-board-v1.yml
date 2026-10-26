@@ -1,0 +1,10 @@
+# The beta main board with the V1.0 face board (microduck-face-board-v1).
+#
+#   kas build kas/microduck.yml:kas/face-board-v1.yml
+#
+# Composed last, like kas/beta.yml. For a job build,
+# `HFJOB_MACHINE=microduck-face-board-v1 scripts/build-hfjob.sh`.
+header:
+  version: 14
+
+machine: microduck-face-board-v1

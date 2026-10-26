@@ -93,18 +93,22 @@ SRC_URI:append:microduck-zero3 = " file://0003-rk3566-radxa-zero-3w-radxa-camera
 # and a readable .dts diffs better than a patch of one. Empty for the Zero 3W,
 # whose device tree is radxa's own plus the patches above.
 #
+# A list, because a board variant's DTS can #include another one
+# (microduck-face-board-v1 includes the beta's): every file is copied and built,
+# KERNEL_DEVICETREE picks the one deployed.
+#
 # A shell postfunc, not do_patch:append -- do_patch is a Python task (AGENTS.md).
 MICRODUCK_BOARD_DTS ??= ""
-SRC_URI += "${@'file://' + d.getVar('MICRODUCK_BOARD_DTS') if d.getVar('MICRODUCK_BOARD_DTS') else ''}"
+SRC_URI += "${@' '.join('file://' + f for f in d.getVar('MICRODUCK_BOARD_DTS').split())}"
 
 microduck_install_board_dts() {
-	dts="${MICRODUCK_BOARD_DTS}"
-	[ -n "$dts" ] || return 0
 	dir="${S}/arch/${ARCH}/boot/dts/rockchip"
-	install -m 0644 "${UNPACKDIR}/$dts" "$dir/"
-	dtb="${dts%.dts}.dtb"
-	grep -qF "$dtb" "$dir/Makefile" || echo "dtb-\$(CONFIG_ARCH_ROCKCHIP) += $dtb" >> "$dir/Makefile"
-	grep -qF "$dtb" "$dir/Makefile" || bbfatal "$dtb did not make it into $dir/Makefile"
+	for dts in ${MICRODUCK_BOARD_DTS}; do
+		install -m 0644 "${UNPACKDIR}/$dts" "$dir/"
+		dtb="${dts%.dts}.dtb"
+		grep -qF "$dtb" "$dir/Makefile" || echo "dtb-\$(CONFIG_ARCH_ROCKCHIP) += $dtb" >> "$dir/Makefile"
+		grep -qF "$dtb" "$dir/Makefile" || bbfatal "$dtb did not make it into $dir/Makefile"
+	done
 }
 do_patch[postfuncs] += "microduck_install_board_dts"
 
@@ -113,6 +117,17 @@ do_patch[postfuncs] += "microduck_install_board_dts"
 # silently dropped by merge_config, and the first symptom would be a face board
 # with no LEDs on a board that otherwise boots fine.
 SRC_URI:append:microduck-beta = " file://microduck-beta.cfg"
+
+# The V1.0 face board's LED drivers. The AW2023 one is Seeed's (is-qian/
+# rockchip-kernel 813bdd4), made to build on 6.1; the AW21009 one is ours, one
+# LED per channel so each keeps a face:* name. Seeed's AW210xx port exposes the
+# chip as a single LED with vendor sysfs files instead. Only on this machine, so
+# the other boards' kernels (and boot.img) stay byte-identical.
+SRC_URI:append:microduck-face-board-v1 = " \
+    file://0005-leds-add-Awinic-AW2023-LED-driver.patch \
+    file://0006-leds-add-Awinic-AW21009-LED-driver.patch \
+    file://microduck-face-board-v1.cfg \
+"
 
 microduck_check_kernel_fragments() {
 	for frag in ${@' '.join(u.split('://')[1].split(';')[0] for u in d.getVar('SRC_URI').split() if u.startswith('file://microduck-') and u.endswith('.cfg'))}; do
