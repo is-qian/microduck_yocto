@@ -311,6 +311,21 @@ do_install:append() {
 	install -m 0644 ${UNPACKDIR}/robotctl.bash_completion \
 		${D}${datadir}/bash-completion/completions/robotctl
 
+	# The robot's name in the shell prompt, `microduck@microduck-beta (sky-gtc):~$`,
+	# from the snippet scripts/setup-login.sh writes to /etc/profile.d. On a board
+	# that has taken an update the postinstall hook has written it already; on a
+	# fresh image nothing has run setup-login.sh, so every duck flashed from one
+	# image showed the same bare hostname until its first update. Cut out of the
+	# script rather than copied into files/, so there is one snippet and it cannot
+	# drift; the first update then rewrites this same path with the same text.
+	install -d ${D}${sysconfdir}/profile.d
+	sed -n "/<<'PROMPT'\$/,/^PROMPT\$/p" ${S}/scripts/setup-login.sh | sed '1d;$d' \
+		> ${D}${sysconfdir}/profile.d/robot-name-prompt.sh
+	if ! grep -q _robot_name_inject ${D}${sysconfdir}/profile.d/robot-name-prompt.sh; then
+		bbfatal "scripts/setup-login.sh in this daemon release has no PROMPT heredoc to cut the name prompt from; update the extraction above"
+	fi
+	chmod 0644 ${D}${sysconfdir}/profile.d/robot-name-prompt.sh
+
 	# Units, verbatim: their ExecStart already points into current/.
 	install -d ${D}${systemd_system_unitdir}
 	install -m 0644 ${S}/robotd/systemd/robotd.service ${D}${systemd_system_unitdir}/
@@ -448,6 +463,13 @@ FILES:${PN} += " \
 PACKAGES =+ "${PN}-bash-completion"
 FILES:${PN}-bash-completion = "${datadir}/bash-completion"
 RDEPENDS:${PN}-bash-completion += "${PN} bash-completion"
+
+# The name in the prompt, for the same reason as the Tab key: only an image somebody
+# logs into wants it. Bash syntax behind a $BASH_VERSION guard, and bash is already in
+# both images.
+PACKAGES =+ "${PN}-login-prompt"
+FILES:${PN}-login-prompt = "${sysconfdir}/profile.d/robot-name-prompt.sh"
+RDEPENDS:${PN}-login-prompt += "${PN} bash"
 
 # The dev-board trust anchor, as its own package so it can only reach an image
 # that asks for it by name. microduck-image-dev installs it; microduck-image

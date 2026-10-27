@@ -24,6 +24,7 @@ IMAGE_INSTALL:append = " \
     microduck-daemon-padd \
     microduck-daemon-devkey \
     microduck-daemon-bash-completion \
+    microduck-daemon-login-prompt \
     ${MICRODUCK_RADIO_DEV_PACKAGES} \
     coreutils \
     util-linux \
@@ -68,6 +69,8 @@ IMAGE_INSTALL:append = " \
 # into microduck-image, so nothing there should pay for a Tab key. It pulls in
 # bash-completion, which is the piece that was actually missing -- bash itself is
 # already in both images. The daemon recipe's package block has the chain.
+# microduck-daemon-login-prompt is the duck's name beside the hostname in the prompt,
+# here for the same reason.
 #
 # MICRODUCK_RADIO_DEV_PACKAGES is aic8800-bt-test on the Zero 3W: AICSemi's own
 # bt_test, which talks to the chip directly, so it tells a hardware fault from a
