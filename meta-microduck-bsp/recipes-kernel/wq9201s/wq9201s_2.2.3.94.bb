@@ -16,8 +16,15 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 # files their factory image installs in /usr/src (compared blob for blob,
 # 2026-10-20). Fetched, not committed. wq9201s-bt-attach and its unit are ours,
 # reworked from Seeed's bt/ (GPL-2 there too).
+#
+# 0001: a failed roam within the ESS (wpa_supplicant reassociating to another
+# AP of the same SSID, the AP answering status 30) left cfg80211 believing it
+# was still connected, and wlan0 never reassociated until the module was
+# reloaded. Found on a beta board on 2026-10-27, reproduced on demand with
+# wpa_supplicant's D-Bus Roam(); the patch says why. Applies in ${S}.
 SRC_URI = " \
     git://github.com/Seeed-Studio/seeed_armbian_extension.git;protocol=https;branch=deb_source \
+    file://0001-wq_wlan-report-the-disconnection-on-a-failed-roam.patch \
     file://wq9201s-bt-attach \
     file://wq9201s-bt.service \
 "
