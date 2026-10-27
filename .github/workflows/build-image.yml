@@ -90,13 +90,13 @@ jobs:
     # contents: write is for attaching images to a release; nothing else writes.
     permissions:
       contents: write
-    # A release builds both boards; anything else builds the one it names. Not
-    # fail-fast: a red beta must not cancel a Zero 3W build that is fine (and a
-    # cancelled run leaves its HF job to the cancel step, not to luck).
+    # A push or a release builds both boards; a manual run builds the one it
+    # names. Not fail-fast: a red beta must not cancel a Zero 3W build that is
+    # fine (and a cancelled run leaves its HF job to the cancel step, not to luck).
     strategy:
       fail-fast: false
       matrix:
-        machine: ${{ github.event_name == 'release' && fromJSON('["microduck-zero3","microduck-beta"]') || fromJSON(format('["{0}"]', inputs.machine || 'microduck-zero3')) }}
+        machine: ${{ github.event_name != 'workflow_dispatch' && fromJSON('["microduck-zero3","microduck-beta"]') || fromJSON(format('["{0}"]', inputs.machine)) }}
 
     # `shell: bash` runs every step as `bash --noprofile --norc -eo pipefail`,
     # and the pipefail is the point. GitHub's default is `bash -e`, under which a
@@ -125,9 +125,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HFJOB_TARGET: ${{ inputs.target || 'microduck-bundle' }}
-          # A push builds the Zero 3W only; the beta board is built on demand
-          # (and on a release) until it is the board people flash, so a push does
-          # not cost two builds. The matrix above makes that choice.
+          # The matrix above picks the board: both on a push or a release.
           HFJOB_MACHINE: ${{ matrix.machine }}
           HFJOB_FLAVOR: ${{ inputs.flavor || 'cpu-performance' }}
           # The newest daemon release unless the run names one, push included.
