@@ -1,0 +1,48 @@
+From: Antoine Pirrone <antoine.pirrone@pollen-robotics.com>
+Subject: [PATCH] wq_wlan: report the disconnection on a failed roam
+
+rwnx_rx_sm_disconnect_ind() skips cfg80211_disconnected() when the firmware
+leaves the old AP as part of a reassociation. If that reassociation then
+fails, rwnx_rx_sm_connect_ind() reports only the failed connect result, which
+cfg80211 takes to mean "still on the old AP": wdev->connected stays true while
+ssid_len is cleared. From then on every NL80211_CMD_CONNECT gets -EALREADY and
+cfg80211_disconnect() never reaches the driver (it only calls it when
+ssid_len is set), so the link is gone until the module is reloaded.
+
+Seen on the microduck beta board against a multi-AP Livebox: wpa_supplicant
+roams within the ESS, the AP answers status 30, and wlan0 never reassociates.
+Reproduced on demand with wpa_supplicant's D-Bus Roam() method.
+
+Upstream-Status: Pending
+Signed-off-by: Antoine Pirrone <antoine.pirrone@pollen-robotics.com>
+---
+diff --git a/src/wifi/rwnx_drv/rwnx_msg_rx.c b/src/wifi/rwnx_drv/rwnx_msg_rx.c
+index 2dc1956..bc54b28 100644
+--- a/src/wifi/rwnx_drv/rwnx_msg_rx.c
++++ b/src/wifi/rwnx_drv/rwnx_msg_rx.c
+@@ -1493,6 +1493,25 @@ static inline int rwnx_rx_sm_connect_ind(struct rwnx_hw *rwnx_hw,
+ 						req_ie, ind->assoc_req_ie_len,
+ 						rsp_ie, ind->assoc_rsp_ie_len,
+ 						ind->status_code, GFP_ATOMIC);
++			/*
++			 * A failed roam: rwnx_rx_sm_disconnect_ind() does not
++			 * report the old AP's disconnection when it is part of a
++			 * reassociation, so cfg80211 still holds that link. A
++			 * failed reassociation leaves cfg80211 believing it is
++			 * still connected, with ssid_len cleared, and from then
++			 * on every connect gets -EALREADY and every disconnect
++			 * is a no-op, until the module is reloaded. The firmware
++			 * has left the old AP: say so.
++			 */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
++			if (wdev->connected)
++#else
++			if (wdev->current_bss)
++#endif
++				cfg80211_disconnected(dev,
++						      WLAN_REASON_UNSPECIFIED,
++						      NULL, 0, true,
++						      GFP_ATOMIC);
+ 		}
+ 		rwnx_hw->connect_req_ts = 0;
+ 	}
