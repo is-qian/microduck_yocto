@@ -81,7 +81,12 @@ rauc status mark-bad booted && reboot    # roll back to the other slot
 ```
 
 A slot is marked good only once `microduck-slot-health.service` passes: the core
-daemons must be up and not crash-looping 180 s after boot. An unhealthy slot is
+daemons must be up and not crash-looping 180 s after boot, the running kernel must
+be the slot's own (its modules are there), and the OS must not have lost a radio
+the previous OS had (wifi, Bluetooth). Missing hardware does not fail a boot on its
+own: a radio that disappears under the *same* OS is logged and forgiven, so a board
+with a dead or not-yet-working chip can still update. `scripts/test-slot-health.sh`
+runs every case. An unhealthy slot is
 left unmarked rather than rebooted; each later reboot into it uses up one of its
 attempts, and when they run out U-Boot boots the other slot.
 
