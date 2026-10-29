@@ -1,7 +1,7 @@
 # Pin JeffyCN/mirrors `gstreamer-rockchip` past the two mpph264enc commits we
 # sent upstream as JeffyCN/mirrors#83 (merged as df71354 and bd16b2b,
 # patch-identical to the pollen-robotics/gstreamer_rockship fork we built from
-# before). meta-rockchip 54f31b3 still pins c37e7cf, which has neither.
+# before). meta-rockchip f2fa9fd still pins c37e7cf, which has neither.
 #
 # The first lets mpph264enc say `constrained-baseline`, without which webrtcsink's
 # discovery pass finds no codec at all and every session dies on not-negotiated.
@@ -25,7 +25,7 @@
 # sysroot -- disable it outright rather than let the plugin change silently.
 #
 # Replacing SRC_URI wholesale is safe here -- unlike u-boot-rockchip -- because
-# the base recipe (meta-rockchip 54f31b3) has exactly one entry, this git URL.
+# the base recipe (meta-rockchip f2fa9fd) has exactly one entry, this git URL.
 # Recheck that when bumping meta-rockchip, and drop this file once its SRCREV
 # reaches ebc758a.
 #
