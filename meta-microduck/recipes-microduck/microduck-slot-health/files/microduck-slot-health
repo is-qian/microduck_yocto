@@ -28,9 +28,11 @@
 #    it too. Not "is there a radio": the beta board's has been unreliable, and a board
 #    with a dead chip would then fail every boot of every slot and bounce between
 #    them. Instead, each boot that passes records which radios it had and which OS it
-#    was (the slot, and when RAUC wrote it). A *different* OS must have at least those.
-#    The *same* OS without one is the hardware or its environment, not an update: it
-#    is logged, the record follows it down, and the boot passes.
+#    was (the slot, and when RAUC wrote it), one line per slot. A *new* OS must have
+#    at least the radios of the latest OS that passed. An OS that already passed here
+#    -- the same boot again, or a rollback to the other slot -- is held only to its own
+#    line: a radio it lost since is the hardware or its environment, not an update, so
+#    it is logged, its line follows it down, and the boot passes.
 #
 # Paths can be pointed elsewhere for scripts/test-slot-health.sh.
 set -eu
@@ -68,20 +70,24 @@ for dev in "$SYS"/class/net/wlan*; do [ -e "$dev" ] && { radios="wifi"; break; }
 for dev in "$SYS"/class/bluetooth/hci*; do [ -e "$dev" ] && { radios="${radios:+$radios }bluetooth"; break; }; done
 
 # Which OS this is: the booted slot, and when RAUC last wrote it -- empty for a slot
-# that was flashed, so a card's two flashed slots are one OS until either is updated.
-# Parsed as microduck-osupdate parses it.
+# that was flashed, so a card's two flashed slots are A@ and B@. Parsed as
+# microduck-osupdate parses it.
 booted=$(rauc status --detailed --output-format=json 2>/dev/null |
 	sed 's/{"rootfs\./\n&/g' | grep '"state":"booted"' || true)
-os="$(printf '%s' "$booted" | grep -o '"bootname":"[^"]*"' | head -n 1 | cut -d'"' -f4)"
-os="$os@$(printf '%s' "$booted" | grep -o '"installed":{"timestamp":"[^"]*"' | head -n 1 | cut -d'"' -f6)"
+slot="$(printf '%s' "$booted" | grep -o '"bootname":"[^"]*"' | head -n 1 | cut -d'"' -f4)"
+os="$slot@$(printf '%s' "$booted" | grep -o '"installed":{"timestamp":"[^"]*"' | head -n 1 | cut -d'"' -f6)"
 
-if [ -r "$RECORD" ]; then
-	was_os=$(sed -n 's/^os=//p' "$RECORD")
-	was_radios=$(sed -n 's/^radios=//p' "$RECORD")
-	for radio in $was_radios; do
+# Without a slot name every boot would look like a new OS, so compare nothing.
+if [ -z "$slot" ]; then
+	echo "warning: rauc status named no booted slot, so radios are neither compared nor recorded"
+elif [ -s "$RECORD" ]; then
+	# Lines are "<os> <radios>": this OS's own if it passed before, else the latest.
+	was=$(grep "^$os " "$RECORD" || tail -n 1 "$RECORD")
+	was_os=${was%% *}
+	for radio in ${was#* }; do
 		case " $radios " in *" $radio "*) continue ;; esac
 		if [ "$os" != "$was_os" ]; then
-			bad="$bad $radio(present under the previous OS, $was_os, and missing under this one)"
+			bad="$bad $radio(present under $was_os, the latest OS that passed, and missing under this one)"
 		else
 			echo "warning: $radio was present on an earlier boot of this same OS and is missing now;" \
 				"that is the hardware or its surroundings, not an update, so it does not fail the slot"
@@ -94,13 +100,11 @@ if [ -n "$bad" ]; then
 	exit 1
 fi
 
-# Only a boot that passed sets what the next OS is held to. A failure to write it
-# must not fail the slot: it only loses the comparison for the next update.
-if mkdir -p "$(dirname "$RECORD")" 2>/dev/null &&
-	printf 'os=%s\nradios=%s\n' "$os" "$radios" > "$RECORD.new" 2>/dev/null &&
-	mv "$RECORD.new" "$RECORD" 2>/dev/null; then
-	:
-else
+# Only a boot that passed sets what the next OS is held to. This slot's line replaces
+# its old one and goes last; only the OS each slot holds now can boot again. A failure
+# to write must not fail the slot: it only loses the comparison for the next update.
+[ -z "$slot" ] || { mkdir -p "$(dirname "$RECORD")" &&
+	{ grep -v "^$slot@" "$RECORD"; printf '%s %s\n' "$os" "$radios"; } > "$RECORD.new" &&
+	mv "$RECORD.new" "$RECORD"; } 2>/dev/null ||
 	echo "warning: could not record this boot's radios in $RECORD"
-fi
 echo "every daemon came up, the kernel is the slot's own, radios: ${radios:-none}; the slot can be marked good"

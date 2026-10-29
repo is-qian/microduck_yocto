@@ -34,11 +34,10 @@ cat > "$work/bin/uname" <<'EOF'
 #!/bin/sh
 cat "$STUB/kernel"
 EOF
-# Only the booted slot's object: the script splits RAUC's JSON one slot per line with
-# GNU sed, which the board has; emitting one object keeps this test portable.
+# A missing $STUB/rauc is a rauc that fails.
 cat > "$work/bin/rauc" <<'EOF'
 #!/bin/sh
-cat "$STUB/rauc"
+cat "$STUB/rauc" 2>/dev/null
 EOF
 chmod +x "$work/bin/"*
 
@@ -71,9 +70,14 @@ fresh() {
 	slot A ""
 	radios wifi bluetooth
 }
-slot() {  # bootname, RAUC install timestamp ("" for a flashed slot)
-	if [ -n "$2" ]; then installed=",\"installed\":{\"timestamp\":\"$2\"}"; else installed=; fi
-	printf '{"rootfs.0":{"bootname":"%s","state":"booted"%s}}\n' "$1" "$installed" > "$STUB/rauc"
+# bootname, RAUC install timestamp ("" for a flashed slot). Shaped like rauc status
+# on the board: the other slot first, with a timestamp of its own, so the script has
+# to split the slots to pick the booted one.
+slot() {
+	if [ -n "$2" ]; then installed=",\"installed\":{\"timestamp\":\"$2\",\"count\":1}"; else installed=; fi
+	other=B; [ "$1" = A ] || other=A
+	printf '{"booted":"%s","slots":[{"rootfs.1":{"bootname":"%s","state":"inactive","slot_status":{"installed":{"timestamp":"1999-01-01T00:00:00Z","count":1}}}},{"rootfs.0":{"bootname":"%s","state":"booted","slot_status":{"bundle":{"build":"1"}%s}}}]}\n' \
+		"$1" "$other" "$1" "$installed" > "$STUB/rauc"
 }
 radios() {
 	rm -rf "$SYSROOT/class/net/"* "$SYSROOT/class/bluetooth/"*
@@ -88,7 +92,7 @@ radios() {
 
 fresh first-boot
 run "first boot with no record passes" 0
-grep -qx 'radios=wifi bluetooth' "$RECORD" && grep -qx 'os=A@' "$RECORD" ||
+grep -qx 'A@ wifi bluetooth' "$RECORD" ||
 	{ fail=$((fail + 1)); echo "FAIL first boot records its OS and radios"; }
 
 fresh no-radios-ever
@@ -112,15 +116,15 @@ fresh update-keeps-radios
 run "flashed A passes" 0
 slot B "2026-10-28T10:00:00Z"
 run "an update to B with both radios passes" 0
-grep -qx 'os=B@2026-10-28T10:00:00Z' "$RECORD" ||
-	{ fail=$((fail + 1)); echo "FAIL a passing update becomes the record"; }
+[ "$(tail -n 1 "$RECORD")" = 'B@2026-10-28T10:00:00Z wifi bluetooth' ] ||
+	{ fail=$((fail + 1)); echo "FAIL a passing update becomes the latest line"; }
 
 fresh update-loses-wifi
 run "flashed A passes" 0
 slot B "2026-10-28T10:00:00Z"; radios bluetooth
 run "an update to B that lost wifi fails" 1
-case $last in *"wifi(present under the previous OS"*) ;; *) fail=$((fail + 1)); echo "FAIL the wifi failure says why";; esac
-grep -qx 'os=A@' "$RECORD" ||
+case $last in *"wifi(present under A@, the latest OS that passed"*) ;; *) fail=$((fail + 1)); echo "FAIL the wifi failure says why";; esac
+[ "$(cat "$RECORD")" = 'A@ wifi bluetooth' ] ||
 	{ fail=$((fail + 1)); echo "FAIL a failed boot leaves the record alone"; }
 slot A ""; radios wifi bluetooth
 run "the rollback to A passes" 0
@@ -135,7 +139,7 @@ run "flashed A passes" 0
 radios bluetooth
 run "the same OS losing wifi passes: hardware, not an update" 0
 case $last in *"warning: wifi"*) ;; *) fail=$((fail + 1)); echo "FAIL the same-OS loss is logged";; esac
-grep -qx 'radios=bluetooth' "$RECORD" ||
+grep -qx 'A@ bluetooth' "$RECORD" ||
 	{ fail=$((fail + 1)); echo "FAIL the record follows the hardware down"; }
 slot B "2026-10-28T10:00:00Z"
 run "so the next update is not blocked by the dead chip" 0
@@ -151,8 +155,21 @@ radios wifi
 run "A with wifi only passes" 0
 slot B "2026-10-28T10:00:00Z"; radios wifi bluetooth
 run "an update that brings Bluetooth up passes" 0
-grep -qx 'radios=wifi bluetooth' "$RECORD" ||
+grep -qx 'B@2026-10-28T10:00:00Z wifi bluetooth' "$RECORD" ||
 	{ fail=$((fail + 1)); echo "FAIL a gained radio raises the record"; }
+slot A ""; radios wifi
+run "a rollback to A, which passed without Bluetooth, passes" 0
+slot B "2026-10-29T09:00:00Z"; radios
+run "and the next update is held to A's radios, the latest that passed" 1
+
+fresh rauc-fails
+radios wifi
+run "A with wifi only passes" 0
+rm "$STUB/rauc"; radios
+run "a boot where rauc status fails is not compared" 0
+case $last in *"neither compared nor recorded"*) ;; *) fail=$((fail + 1)); echo "FAIL the skipped comparison is logged";; esac
+[ "$(cat "$RECORD")" = 'A@ wifi' ] ||
+	{ fail=$((fail + 1)); echo "FAIL a boot with no slot name leaves the record alone"; }
 
 fresh reinstall
 run "flashed A passes" 0
