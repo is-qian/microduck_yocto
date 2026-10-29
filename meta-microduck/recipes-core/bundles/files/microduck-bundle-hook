@@ -45,6 +45,32 @@ slot_post_install() {
 	# The slot was just written from the bundle, so this replaces oe-core's empty
 	# file: systemd then skips first-boot presets, which do_rootfs already applied.
 	echo "$id" > "$RAUC_SLOT_MOUNT_POINT/etc/machine-id"
+
+	carry_robot_config
+}
+
+# Leave this slot's per-robot files on the data partition, where the daemon looks.
+#
+# The new slot's /etc/robot is the image's. Since daemon PR #483 the owner's edits
+# live in /var/lib/robot/robotd.toml and the HF sign-in in /var/lib/robot/hf-token,
+# but a robot whose daemon predates that still keeps both in /etc. Copied only
+# while the new path is empty, so this does nothing once the daemon has moved
+# them: robotd.toml goes to a side file the daemon adopts edits from and deletes;
+# the token goes straight to its new path, group and mode kept (`cp -p`). A
+# temporary name and `mv`, so a power cut never leaves half a file.
+carry_robot_config() {
+	data=/var/lib/robot
+	mountpoint -q "$data" || { echo "$data is not mounted; robot config not carried" >&2; return 0; }
+	if [ -f /etc/robot/robotd.toml ] && [ ! -e "$data/robotd.toml" ]; then
+		cp -p /etc/robot/robotd.toml "$data/robotd.toml.from-slot.tmp" &&
+			mv "$data/robotd.toml.from-slot.tmp" "$data/robotd.toml.from-slot"
+	fi
+	# -L: a symlink is the daemon's own link back to the new path, not a token.
+	if [ -f /etc/robot/hf-token ] && [ ! -L /etc/robot/hf-token ] && [ ! -e "$data/hf-token" ]; then
+		cp -p /etc/robot/hf-token "$data/hf-token.tmp" &&
+			mv "$data/hf-token.tmp" "$data/hf-token"
+	fi
+	return 0
 }
 
 case "$1" in

@@ -185,10 +185,11 @@ CARGO_BUILD_FLAGS += "--workspace --exclude xtask --exclude test-support --exclu
 # group="bluetooth" rule, only `user="root"` and a permissive `context="default"`.
 # The group exists to satisfy systemd, not to carry a permission.
 #
-# robot-account is the opposite case: its whole purpose is the permission. It owns
-# /etc/robot/hf-token, the owner's Hugging Face bearer token, so that only mediad
+# robot-account is the opposite case: its whole purpose is the permission. It is to
+# own /var/lib/robot/hf-token (/etc/robot/hf-token before daemon PR #483, which moved
+# it off the slot), the owner's Hugging Face bearer token, so that only mediad
 # reads it rather than everything in `robot` (btd, padd, tofd, every operator
-# shell) -- microduck#230. mediad reaches it through its unit's
+# shell) -- microduck#230. The daemon still gives it group `robot` today. mediad reaches it through its unit's
 # SupplementaryGroups=, like `robot`, so no membership is needed; updaterd writes
 # the file as root and only needs the name to resolve. Upstream creates it in
 # updater/systemd/sysusers.d/robot.conf, which is not installed here, so without
@@ -360,7 +361,10 @@ do_install:append() {
 	install -m 0644 ${UNPACKDIR}/60-robot-i2c.rules \
 		${D}${nonarch_base_libdir}/udev/rules.d/
 
-	# Per-robot config. Never overwritten by an update upstream, so mark as conffiles.
+	# The base config. CONFFILES only protects it across a package upgrade: a RAUC update
+	# rewrites the whole slot, /etc with it, so per-robot edits live in
+	# /var/lib/robot/robotd.toml, layered over this file (daemon PR #483). updater.toml has
+	# no such layer yet, and an OS update resets it.
 	install -d ${D}${sysconfdir}/robot
 	install -m 0644 ${S}/deploy/robotd.toml ${D}${sysconfdir}/robot/
 	install -m 0644 ${S}/deploy/updater.toml ${D}${sysconfdir}/robot/
