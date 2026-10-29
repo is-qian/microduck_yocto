@@ -117,7 +117,7 @@ set -- \
 	--namespace pollen-robotics \
 	--flavor "$FLAVOR" \
 	--timeout "$TIMEOUT" \
-	--name "microduck-${MACHINE#microduck-}-${TARGET:-image}-$KAS_CMD" \
+	--name "microduck-${MACHINE#microduck-}-$(printf '%s' "${TARGET:-image}" | tr -s ' ' '+')-$KAS_CMD" \
 	--detach
 for d in $inputs; do
 	set -- "$@" -v "$stage/$d:/src/$d"
