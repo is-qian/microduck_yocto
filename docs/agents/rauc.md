@@ -240,6 +240,23 @@ Traps:
    "Stable OS build <build> for" in the notes: keep it when editing them.
    GitHub releases made by hand (`build-image.yml`'s `release` path) carry the
    dev image and dev bundle only.
+4. The release's notes are drafted by OpenCode (`scripts/release_notes/`, skill
+   `.opencode/skills/microduck-os-release-notes/`, ported from reachy_mini): the
+   PRs merged since the board's previous `microduck-os-v*` release (the newest
+   other release for the first one) up to the build's commit. A validator checks the
+   draft names exactly those PRs and loops the model on the difference. If the
+   model fails, or is not configured, the release gets plain notes; it never holds
+   a promotion back. Edit the notes on GitHub afterwards; a re-run keeps them.
+   Setup, the same as reachy_mini's: secret `RELEASE_NOTES_HF_TOKEN` (an HF token
+   with Inference Providers), variables `RELEASE_NOTES_MODEL`
+   (`huggingface/zai-org/GLM-5.3`) and `OPENCODE_VERSION` (`1.19.4`). Preview locally:
+   `GITHUB_TOKEN=$(gh auth token) RELEASE_NOTES_MODEL=... python -m
+   scripts.release_notes.generate_release_notes --since v0.1.0 --head main
+   --version microduck-os-preview-zero3 --title "microduck OS preview (microduck-zero3)"`
+   (needs `pip install PyGithub` and opencode logged in to huggingface).
+   Only PRs count: a commit pushed straight to main is not in the notes, and a
+   `#<number>` that is not one of the release's PRs (an issue) gets its line
+   removed by the validator. Link issues by full URL.
 
 To move a board flashed before the two CAs straight to a release, install that
 build from `candidate` *before* promoting it: afterwards its list entry points

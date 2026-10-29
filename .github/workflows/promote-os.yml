@@ -16,7 +16,8 @@ name: promote-os
 # same job: what a factory flashes, and what a robot with no network can
 # `rauc install`. The card comes from the cache bucket's deploy/<job>/, which
 # build-image.yml prunes after 14 days, so release a build within 14 days of
-# building it, or rebuild.
+# building it, or rebuild. Its notes are drafted by OpenCode from the PRs since
+# the previous release (docs/agents/rauc.md, step 4).
 #
 # Builds nothing, so a hosted runner is enough: a download, a re-sign, an upload.
 # That is also why it is the right place for the production key. It lives in the
@@ -165,7 +166,14 @@ jobs:
             version=$major.$minor.$patch
             echo "v${prev:-none} + $BUMP = v$version"
           fi
-          { echo "version=$version"; echo "tag=microduck-os-v$version-$board"; } >> "$GITHUB_OUTPUT"
+          # The notes start after the previous release; the first one after the
+          # newest release that is not an OS release (v0.1.0, the first card).
+          if [ -n "$prev" ] && [ "$prev" != "$version" ]; then
+            since=microduck-os-v$prev-$board
+          else
+            since=$(printf '%s\n' "$tags" | grep -Ev '^microduck-os-' | head -n 1 || true)
+          fi
+          { echo "version=$version"; echo "tag=microduck-os-v$version-$board"; echo "since=$since"; } >> "$GITHUB_OUTPUT"
           echo "Releasing build $BUILD as **microduck-os-v$version-$board**" >> "$GITHUB_STEP_SUMMARY"
 
       # --keyring: the input must be a genuine CI build, signed under the dev CA.
@@ -197,6 +205,52 @@ jobs:
           printf '%s\n' "$info" | grep -qx "RAUC_MF_BUILD='\?$BUILD'\?" \
             || { echo "re-signed bundle is not build $BUILD"; exit 1; }
 
+      # AI-drafted notes for the release, from the PRs merged since the previous
+      # release up to the build's commit. scripts/release_notes/ says how they are
+      # checked. Best effort: a model outage, or the notes not matching the PR
+      # list, falls back to plain notes; it never holds a release back. Skipped
+      # on a re-run, whose release already has notes someone may have edited.
+      - name: Draft release notes with OpenCode
+        continue-on-error: true
+        timeout-minutes: 30
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN_RELEASE_NOTES: ${{ github.token }}
+          HF_TOKEN: ${{ secrets.RELEASE_NOTES_HF_TOKEN }}
+          RELEASE_NOTES_MODEL: ${{ vars.RELEASE_NOTES_MODEL }}
+          OPENCODE_VERSION: ${{ vars.OPENCODE_VERSION }}
+          MACHINE: ${{ inputs.machine }}
+          COMMIT: ${{ steps.fetch.outputs.commit }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          SINCE: ${{ steps.version.outputs.since }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "release $TAG exists; keeping its notes"; exit 0
+          fi
+          if [ -z "$HF_TOKEN" ] || [ -z "$RELEASE_NOTES_MODEL" ] || [ -z "$OPENCODE_VERSION" ]; then
+            echo "::warning::RELEASE_NOTES_HF_TOKEN, RELEASE_NOTES_MODEL or OPENCODE_VERSION is not set; plain release notes"
+            exit 0
+          fi
+          [ -n "$SINCE" ] || { echo "::warning::no previous release to start the notes from"; exit 1; }
+          echo "notes: PRs in $SINCE..$COMMIT"
+
+          pip install --quiet PyGithub
+          curl -fsSL https://opencode.ai/install | bash -s -- --version "$OPENCODE_VERSION"
+          export PATH="$HOME/.opencode/bin:$PATH"
+          # OpenCode reads the provider key from its auth store, not from HF_TOKEN, and
+          # would otherwise wait for a login. Inference is billed to the org.
+          mkdir -p "$HOME/.local/share/opencode" "$HOME/.config/opencode"
+          jq -n --arg k "$HF_TOKEN" '{huggingface:{type:"api",key:$k}}' > "$HOME/.local/share/opencode/auth.json"
+          jq -n '{provider:{huggingface:{options:{headers:{"X-HF-Bill-To":"pollen-robotics"}}}}}' \
+            > "$HOME/.config/opencode/opencode.json"
+
+          # A failed run can leave a draft that misses PRs; the release must not use it.
+          python -m scripts.release_notes.generate_release_notes \
+            --since "$SINCE" --head "$COMMIT" --version "$TAG" --machine "$MACHINE" \
+            --title "microduck OS v$VERSION ($MACHINE)" || { rm -rf .release-notes; exit 1; }
+
       # Before stable moves, so a robot never follows a build that has no release.
       # Re-runnable: an existing release gets its assets replaced. Created with
       # GITHUB_TOKEN, which does not trigger build-image.yml's `release` event --
@@ -212,13 +266,27 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
         run: |
           set -eu
+          drafted=$GITHUB_WORKSPACE/.release-notes/RELEASE_NOTES_$TAG.md
           cd "$RUNNER_TEMP"
           cp stable.raucb "assets/$TAG.raucb"
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             gh release upload "$TAG" assets/* --clobber -R "$GITHUB_REPOSITORY"
           else
+            # The drafted notes when the step above produced them (title on their
+            # first line), and in every case the files section.
             title="microduck OS v$VERSION ($MACHINE)"
             : > notes.md
+            if [ -s "$drafted" ]; then
+              case $(head -n 1 "$drafted") in
+              "# $title"*)
+                title=$(head -n 1 "$drafted" | sed 's/^# //')
+                { tail -n +2 "$drafted"; echo; } > notes.md ;;
+              *)
+                { cat "$drafted"; echo; } > notes.md ;;
+              esac
+            else
+              echo "::warning::no drafted release notes; using plain ones"
+            fi
             # "Stable OS build <build> for" is what a re-run looks for (the version
             # step): keep that sentence when editing the notes.
             printf '%s\n' \
