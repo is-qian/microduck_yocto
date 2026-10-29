@@ -40,10 +40,21 @@ def extract_pr_number(commit_message: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+# Per file. The notes use a doc diff to pick the file to link and, now and then, a
+# command; the whole patch is not needed. Uncapped, v1.0.0's 39 PRs came to 201 KB,
+# half of it doc patches (#58 alone 58 KB), and the model read them all and then
+# stopped without writing the notes.
+DOC_PATCH_MAX = 2000
+
+
 def fetch_doc_diffs(pr) -> list[dict]:
     """The diffs of the Markdown files a PR changed: README, AGENTS.md, docs/agents/."""
     return [
-        {"filename": f.filename, "status": f.status, "patch": f.patch}
+        {
+            "filename": f.filename,
+            "status": f.status,
+            "patch": f.patch if len(f.patch) <= DOC_PATCH_MAX else f.patch[:DOC_PATCH_MAX] + "\n[... truncated]",
+        }
         for f in pr.get_files()
         if f.filename.endswith(".md") and f.patch
     ]

@@ -41,7 +41,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Check release notes against manifest.json")
-    parser.add_argument("--version", required=True, help="e.g. microduck-os-v1.0.0-zero3")
+    parser.add_argument("--version", required=True, help="e.g. microduck-os-v1.0.0")
     parser.add_argument("--json", action="store_true", help="output as JSON")
     args = parser.parse_args()
 

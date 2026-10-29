@@ -1,4 +1,4 @@
-# microduck OS v1.0.0 (microduck-zero3): <Tagline>
+# v1.0.0: <Tagline>
 
 ## <Emoji> <Highlight title>
 

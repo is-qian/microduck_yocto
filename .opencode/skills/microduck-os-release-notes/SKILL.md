@@ -12,8 +12,9 @@ robot (RK3566), updated over the air with RAUC. Readers are the people who flash
 update robots, so lead with what changes on a robot, not with how the build changed.
 
 **Output directory:** the prompt gives it as `<output_dir>`. All paths below use it.
-The prompt also gives the release tag, the board (`microduck-zero3`, the Radxa Zero 3W
-stand-in, or `microduck-beta`, the custom PCB), and the commit it was built from.
+The prompt also gives the release tag, the boards it covers (one release carries every
+board: `microduck-zero3`, the Radxa Zero 3W stand-in, and the custom PCB's
+`microduck-beta` and `microduck-face-board-v1`), and the commit they were built from.
 
 ## Workflow
 
