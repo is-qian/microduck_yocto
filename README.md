@@ -169,8 +169,10 @@ trusts. There are two CAs in `meta-microduck/recipes-core/rauc/files/`:
 `ca-dev.cert.pem`, trusted by the dev image only, and `ca-prod.cert.pem`,
 trusted by both. The private keys are never in this repository or the image. CI
 signs every build with the development pair from its `RAUC_DEV_KEY` /
-`RAUC_DEV_CERT` secrets (`docs/agents/rauc.md`, "Two CAs"). To sign your own dev
-builds, make a CA and key once, into the build directory:
+`RAUC_DEV_CERT` secrets; only the `promote-os` workflow holds the production
+pair, and it re-signs a tested `candidate` build for `stable`
+(`docs/agents/rauc.md`, "Two CAs"). To sign your own dev builds, make a CA and
+key once, into the build directory:
 
 ```sh
 . kas/local.env

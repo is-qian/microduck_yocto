@@ -222,12 +222,38 @@ Traps:
    shipping image, so it trusts the production CA only** and follows `stable`:
    from there it takes no dev or candidate build. Go back with `switch` (the
    other slot), not with a download.
+3. `promote-os.yml` (Actions → promote-os → Run workflow, `production`
+   environment) releases one candidate: board, a `patch`/`minor`/`major` bump,
+   and a build id (empty = the newest candidate). There are no release
+   candidates; candidate builds tested on dev boards play that part. It re-signs
+   the bundle with the production key and publishes it to `stable`. `rauc resign`
+   changes the signature only, so the build id and payload are the tested ones.
+   The version is the board's highest `microduck-os-v<X.Y.Z>-<board>` release
+   bumped (each board numbered on its own, from 0.0.0), and it is what robots show
+   ("updated to 1.0.0"). The bundle's own RAUC version (`PV` in
+   `microduck-bundle.bb`, seen only by `rauc info`) stays 0.1.0: it is fixed at
+   build time. The GitHub release `microduck-os-v<X.Y.Z>-<board>` is tagged at the
+   build's commit and carries the re-signed bundle plus the shipping card
+   (`.wic.zst`, `.bmap`) from the same job. That card comes from `deploy/<job>/`,
+   pruned after 14 days, so a build older than that has to be rebuilt first.
+   A re-run after a failure reuses its release's version, found by the sentence
+   "Stable OS build <build> for" in the notes: keep it when editing them.
+   GitHub releases made by hand (`build-image.yml`'s `release` path) carry the
+   dev image and dev bundle only.
+
+To move a board flashed before the two CAs straight to a release, install that
+build from `candidate` *before* promoting it: afterwards its list entry points
+at the production-signed bundle, which the old keyring refuses.
 
 Traps:
 
 - **The two bundles of one run share `DATETIME`.** `microduck-bundle-shipping.bb`
   takes `DATETIME` + 1 s as its build id; everything that keys on build ids
   (osupdate's "already running", `builds/<build>.env`) would collide otherwise.
+- **The signing certificate expires in 2031.** After that, stable's bundle stops
+  verifying. Before then, issue `prod-signing-2` from the CA (kept offline),
+  replace `RAUC_PROD_KEY`/`RAUC_PROD_CERT`, and re-promote the current stable build.
+- `production` allows `main` only, so `promote-os.yml` can only run once merged.
 
 ## User data survives; know exactly what that means
 

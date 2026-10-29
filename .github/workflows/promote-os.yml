@@ -1,0 +1,249 @@
+name: promote-os
+
+# Releases one `candidate` build as a stable version: the shipping-image bundle CI
+# built and dev-signed (build-image.yml), re-signed here with the production key.
+# `rauc resign` replaces the signature and nothing else, so what reaches robots on
+# stable is byte for byte the payload that was tested from candidate, under the
+# same build id.
+#
+# The version is the board's previous release bumped by the `bump` input:
+# microduck-os-v<X.Y.Z>-<board>, each board numbered on its own, from 0.0.0 the
+# first time. No release candidates: candidate builds are the ones to test, on dev
+# boards, before choosing one here.
+#
+# It makes that GitHub release, tagged at the commit the build came from, carrying
+# the re-signed bundle and the shipping image's card (.wic.zst + .bmap) from the
+# same job: what a factory flashes, and what a robot with no network can
+# `rauc install`. The card comes from the cache bucket's deploy/<job>/, which
+# build-image.yml prunes after 14 days, so release a build within 14 days of
+# building it, or rebuild.
+#
+# Builds nothing, so a hosted runner is enough: a download, a re-sign, an upload.
+# That is also why it is the right place for the production key. It lives in the
+# `production` environment, and this is the only job that names it: the key
+# never reaches HF Jobs or a build, unlike the dev key (build-image.yml). The
+# environment's required reviewers are the release gate.
+#
+# Robots running microduck-image trust only the production CA, so this is the
+# only way an OS update reaches them. docs/agents/rauc.md, "Two CAs".
+
+on:
+  workflow_dispatch:
+    inputs:
+      machine:
+        description: "board"
+        type: choice
+        options: [microduck-zero3, microduck-beta]
+        default: microduck-zero3
+      bump:
+        description: "version bump from the board's previous release (the first release starts from 0.0.0)"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      build:
+        description: "candidate build id to release (14 digits); empty = the newest candidate"
+        type: string
+        default: ""
+
+# One at a time: publish-os.sh rewrites index.txt read-modify-write, and two runs
+# would compute the same next version.
+concurrency:
+  group: promote-os
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    # Pinned rather than ubuntu-latest: its rauc (1.11.3) is what this was written
+    # against, and a runner image bump should not change the signing tool.
+    runs-on: ubuntu-24.04
+    environment: production
+    timeout-minutes: 30
+    # contents: write is for the release; nothing else writes to the repository.
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the Hugging Face CLI and rauc
+        run: |
+          pip install --quiet "huggingface_hub[cli]>=1.30"
+          sudo apt-get update -qq && sudo apt-get install -y -qq rauc
+          rauc --version
+
+      # Everything is fetched and checked before anything is signed or published,
+      # so a pruned card or a wrong build fails here with nothing half done.
+      - name: Fetch the candidate and its card image
+        id: fetch
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          MACHINE: ${{ inputs.machine }}
+          BUILD: ${{ inputs.build }}
+        run: |
+          set -eu
+          os=hf://buckets/pollen-robotics/microduck-os/os/$MACHINE
+          cache=pollen-robotics/microduck-yocto-cache
+          cd "$RUNNER_TEMP"
+          field() { sed -n "s/^$1=//p" "$2" | head -n 1; }
+          if [ -z "$BUILD" ]; then
+            hf buckets cp "$os/candidate.env" candidate.env > /dev/null \
+              || { echo "no candidate channel for $MACHINE yet"; exit 1; }
+            BUILD=$(field BUILD candidate.env)
+            echo "newest candidate: $BUILD"
+          fi
+          [[ "$BUILD" =~ ^[0-9]{14}$ ]] || { echo "build must be 14 digits, got '$BUILD'"; exit 1; }
+          hf buckets cp "$os/builds/$BUILD.env" manifest.env > /dev/null \
+            || { echo "no published build $BUILD for $MACHINE"; exit 1; }
+          # From `candidate` only: main's shipping builds. A branch's candidate-*
+          # has not been merged, and stable already is.
+          [ "$(field CHANNEL manifest.env)" = candidate ] \
+            || { echo "build $BUILD is on '$(field CHANNEL manifest.env)', not candidate"; exit 1; }
+          [ "$(field COMPATIBLE manifest.env)" = "$MACHINE" ] \
+            || { echo "manifest is for '$(field COMPATIBLE manifest.env)'"; exit 1; }
+          job=$(field JOB manifest.env) commit=$(field COMMIT manifest.env)
+          [[ "$job" =~ ^[0-9a-f]{24}$ ]] || { echo "manifest has no JOB"; exit 1; }
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || { echo "manifest has no COMMIT to tag the release at"; exit 1; }
+
+          hf buckets cp "$os/$BUILD/candidate.raucb" candidate.raucb > /dev/null
+          [ "$(wc -c < candidate.raucb)" = "$(field SIZE manifest.env)" ] || { echo "size mismatch"; exit 1; }
+          echo "$(field SHA256 manifest.env)  candidate.raucb" | sha256sum -c -
+
+          # The shipping card from the same job: microduck-image-<machine>, not
+          # microduck-image-dev-<machine>. The beta's loader too, as build-image.yml
+          # attaches it: what `rkdeveloptool db` needs for a board in maskrom.
+          mkdir assets
+          hf buckets ls "$cache/deploy/$job/" | awk '{print $NF}' \
+            | grep -E "/microduck-image-$MACHINE\.rootfs-[0-9]{14}\.(wic\.zst|wic\.zst\.sha256sum|wic\.bmap)\$|/loader\.bin-" \
+            | while read -r p; do
+                hf buckets cp "hf://buckets/$cache/$p" "assets/${p##*/}" > /dev/null
+              done
+          if [ "$MACHINE" = microduck-beta ]; then
+            mv assets/loader.bin-* assets/microduck-beta-loader.bin
+          else
+            rm -f assets/loader.bin-*
+          fi
+          want=3; [ "$MACHINE" = microduck-beta ] && want=4
+          [ "$(ls assets | wc -l)" -eq "$want" ] || {
+            echo "expected $want card files in deploy/$job (pruned after 14 days?), got:"; ls -l assets; exit 1; }
+          (cd assets && sha256sum -c *.wic.zst.sha256sum)
+          { echo "build=$BUILD"; echo "job=$job"; echo "commit=$commit"; } >> "$GITHUB_OUTPUT"
+
+      # microduck-os-v<X.Y.Z>-<board>: the board's highest release bumped. A re-run
+      # after a failure further down finds its own release already made (its notes
+      # name the build) and reuses that version rather than bumping again.
+      - name: Choose the version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MACHINE: ${{ inputs.machine }}
+          BUMP: ${{ inputs.bump }}
+          BUILD: ${{ steps.fetch.outputs.build }}
+        run: |
+          set -euo pipefail
+          board=${MACHINE#microduck-}
+          tags=$(gh release list -L 200 --json tagName -q '.[].tagName' -R "$GITHUB_REPOSITORY")
+          prev=$(printf '%s\n' "$tags" | sed -n "s/^microduck-os-v\([0-9]*\.[0-9]*\.[0-9]*\)-$board\$/\1/p" \
+            | sort -V | tail -n 1)
+          if [ -n "$prev" ] && gh release view "microduck-os-v$prev-$board" --json body -q .body \
+               -R "$GITHUB_REPOSITORY" | grep -qF "Stable OS build $BUILD for"; then
+            version=$prev
+            echo "build $BUILD is already released as v$version; re-running that release"
+          else
+            IFS=. read -r major minor patch <<< "${prev:-0.0.0}"
+            case "$BUMP" in
+            major) major=$((major + 1)) minor=0 patch=0 ;;
+            minor) minor=$((minor + 1)) patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+            esac
+            version=$major.$minor.$patch
+            echo "v${prev:-none} + $BUMP = v$version"
+          fi
+          { echo "version=$version"; echo "tag=microduck-os-v$version-$board"; } >> "$GITHUB_OUTPUT"
+          echo "Releasing build $BUILD as **microduck-os-v$version-$board**" >> "$GITHUB_STEP_SUMMARY"
+
+      # --keyring: the input must be a genuine CI build, signed under the dev CA.
+      # --signing-keyring: the output must verify under the production CA, which
+      # is what a shipping robot will check.
+      - name: Re-sign with the production key
+        env:
+          RAUC_PROD_KEY: ${{ secrets.RAUC_PROD_KEY }}
+          RAUC_PROD_CERT: ${{ secrets.RAUC_PROD_CERT }}
+          MACHINE: ${{ inputs.machine }}
+          BUILD: ${{ steps.fetch.outputs.build }}
+        run: |
+          set -eu
+          ca=$GITHUB_WORKSPACE/meta-microduck/recipes-core/rauc/files
+          cd "$RUNNER_TEMP"
+          umask 077
+          # sed '$a\' restores a final newline a pasted PEM may have lost.
+          printf '%s' "$RAUC_PROD_KEY" | sed '$a\' > prod.key.pem
+          printf '%s' "$RAUC_PROD_CERT" | sed '$a\' > prod.cert.pem
+          [ -s prod.key.pem ] && [ -s prod.cert.pem ] \
+            || { echo "RAUC_PROD_KEY / RAUC_PROD_CERT are not set in the production environment"; exit 1; }
+          rauc resign --keyring="$ca/ca-dev.cert.pem" --signing-keyring="$ca/ca-prod.cert.pem" \
+            --cert=prod.cert.pem --key=prod.key.pem candidate.raucb stable.raucb
+          rm -f prod.key.pem
+          info=$(rauc info --keyring="$ca/ca-prod.cert.pem" --output-format=shell stable.raucb)
+          printf '%s\n' "$info"
+          printf '%s\n' "$info" | grep -qx "RAUC_MF_COMPATIBLE='\?$MACHINE'\?" \
+            || { echo "re-signed bundle is not for $MACHINE"; exit 1; }
+          printf '%s\n' "$info" | grep -qx "RAUC_MF_BUILD='\?$BUILD'\?" \
+            || { echo "re-signed bundle is not build $BUILD"; exit 1; }
+
+      # Before stable moves, so a robot never follows a build that has no release.
+      # Re-runnable: an existing release gets its assets replaced. Created with
+      # GITHUB_TOKEN, which does not trigger build-image.yml's `release` event --
+      # it must not, or every release would rebuild both boards from its tag.
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MACHINE: ${{ inputs.machine }}
+          BUILD: ${{ steps.fetch.outputs.build }}
+          JOB: ${{ steps.fetch.outputs.job }}
+          COMMIT: ${{ steps.fetch.outputs.commit }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP"
+          cp stable.raucb "assets/$TAG.raucb"
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" assets/* --clobber -R "$GITHUB_REPOSITORY"
+          else
+            title="microduck OS v$VERSION ($MACHINE)"
+            : > notes.md
+            # "Stable OS build <build> for" is what a re-run looks for (the version
+            # step): keep that sentence when editing the notes.
+            printf '%s\n' \
+              "## 📦 Files" \
+              "" \
+              "Stable OS build $BUILD for \`$MACHINE\`, released by $GITHUB_ACTOR." \
+              "" \
+              "- \`$TAG.raucb\`: the update, signed with the production key. Robots on \`stable\` get it by themselves; \`rauc install\` it on one without network." \
+              "- \`microduck-image-$MACHINE.rootfs-*.wic.zst\` + \`.wic.bmap\`: the shipping image's card, from the same build. Flash it with \`bmaptool copy\`." \
+              "" \
+              "Built by HF job \`$JOB\`." >> notes.md
+            gh release create "$TAG" assets/* --target "$COMMIT" -R "$GITHUB_REPOSITORY" \
+              --title "$title" --notes-file notes.md
+          fi
+          echo "Released https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"
+
+      # VERSION is what robots show: the update page says "updated to 1.0.0".
+      - name: Publish to stable
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          BUILD: ${{ steps.fetch.outputs.build }}
+          JOB: ${{ steps.fetch.outputs.job }}
+          COMMIT: ${{ steps.fetch.outputs.commit }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -eu
+          scripts/publish-os.sh "$RUNNER_TEMP/stable.raucb" "${{ inputs.machine }}" stable \
+            | tee -a "$GITHUB_STEP_SUMMARY"
