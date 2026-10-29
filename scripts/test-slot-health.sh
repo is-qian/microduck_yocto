@@ -5,7 +5,9 @@
 # board with a flaky radio rejects every OS update; too loose and a kernel that lost
 # its wifi driver is kept on a robot nobody can reach. Both are cheap to get wrong and
 # expensive to find on hardware, so each case the script distinguishes is run here
-# against a fake /sys, /lib/modules and record, with systemctl, uname and rauc stubbed.
+# against a fake /sys, /lib/modules and record, with robot-boot-check, uname, rauc and
+# sleep stubbed. The sleep stub moves the fake uptime on instead of waiting, so the
+# radio wait runs to its end without taking any time.
 #
 # Runs anywhere with bash, in well under a second. TEST_SH picks the shell the script
 # under test runs in; dash is the stricter POSIX check:
@@ -22,13 +24,21 @@ trap 'rm -rf "$work"' EXIT
 
 # The stubs read what each case sets in these files.
 mkdir -p "$work/bin"
-cat > "$work/bin/systemctl" <<'EOF'
+# The daemon's verdict is its exit status, and only --dry-run may be asked: anything
+# else would let the OS's gate hand a release to robot-rescue.
+cat > "$work/bin/robot-boot-check" <<'EOF'
 #!/bin/sh
-# systemctl show -p <prop> --value <unit>
-case "$3" in
-ActiveState) cat "$STUB/state" ;;
-NRestarts) cat "$STUB/restarts" ;;
-esac
+[ "$*" = --dry-run ] || { echo "robot-boot-check called as: $*"; exit 99; }
+echo "robot-boot-check: stub verdict $(cat "$STUB/bootcheck")"
+exit "$(cat "$STUB/bootcheck")"
+EOF
+# Advances the fake uptime by its argument, and brings wifi up once the uptime
+# reaches $STUB/wifi-at, when a case sets one.
+cat > "$work/bin/sleep" <<'EOF'
+#!/bin/sh
+up=$(( $(cut -d. -f1 "$STUB/uptime") + $1 ))
+echo "$up.00" > "$STUB/uptime"
+[ ! -f "$STUB/wifi-at" ] || [ "$up" -lt "$(cat "$STUB/wifi-at")" ] || mkdir -p "$SYSROOT/class/net/wlan0"
 EOF
 cat > "$work/bin/uname" <<'EOF'
 #!/bin/sh
@@ -46,8 +56,9 @@ pass=0; fail=0
 # run NAME EXPECT(0|1) -- with the case's state already in $STUB, $SYSROOT, $MODS, $RECORD
 run() {
 	name=$1; want=$2
-	out=$(PATH="$work/bin:$PATH" STUB=$STUB SLOT_HEALTH_UPTIME=$STUB/uptime \
+	out=$(PATH="$work/bin:$PATH" STUB=$STUB SYSROOT=$SYSROOT SLOT_HEALTH_UPTIME=$STUB/uptime \
 		SLOT_HEALTH_SYS=$SYSROOT SLOT_HEALTH_MODULES=$MODS SLOT_HEALTH_RECORD=$RECORD \
+		SLOT_HEALTH_BOOT_CHECK=$BOOT_CHECK \
 		${TEST_SH:-sh} "$script" 2>&1)
 	got=$?
 	if [ "$got" = "$want" ]; then
@@ -65,7 +76,7 @@ fresh() {
 	STUB=$case_dir/stub SYSROOT=$case_dir/sys MODS=$case_dir/modules RECORD=$case_dir/data/radios
 	mkdir -p "$STUB" "$SYSROOT/class/net" "$SYSROOT/class/bluetooth" "$MODS/6.1.99"
 	echo 999.00 > "$STUB/uptime"
-	echo active > "$STUB/state"; echo 0 > "$STUB/restarts"
+	echo 0 > "$STUB/bootcheck"; BOOT_CHECK=$work/bin/robot-boot-check
 	echo 6.1.99 > "$STUB/kernel"
 	slot A ""
 	radios wifi bluetooth
@@ -100,12 +111,18 @@ radios
 run "a board that never had a radio passes (nothing to lose)" 0
 
 fresh daemon
-echo failed > "$STUB/state"
-run "a failed daemon fails the slot" 1
+echo 3 > "$STUB/bootcheck"
+run "a release the boot check says did not come up fails the slot" 1
+case $last in *"robot-boot-check --dry-run exited 3"*) ;; *) fail=$((fail + 1)); echo "FAIL the daemon failure says why";; esac
+case $last in *"stub verdict 3"*) ;; *) fail=$((fail + 1)); echo "FAIL the boot check's own words reach the journal";; esac
 
-fresh loop
-echo 3 > "$STUB/restarts"
-run "a crash-looping daemon fails the slot" 1
+fresh check-errors
+echo 1 > "$STUB/bootcheck"
+run "a boot check that could not answer fails the slot" 1
+
+fresh no-check
+BOOT_CHECK=$work/nowhere/robot-boot-check
+run "no boot check to ask fails the slot" 1
 
 fresh kernel
 rm -rf "$MODS/6.1.99"; mkdir -p "$MODS/6.1.120"
@@ -177,6 +194,27 @@ slot B "2026-10-28T10:00:00Z"
 run "update to B passes" 0
 slot B "2026-10-29T09:00:00Z"; radios bluetooth
 run "a second update into the same slot that lost wifi still fails" 1
+
+fresh late-wifi
+run "flashed A passes" 0
+slot B "2026-10-28T10:00:00Z"; radios bluetooth
+echo 20.00 > "$STUB/uptime"; echo 40 > "$STUB/wifi-at"
+run "an update whose wifi comes up at 40 s is waited for, and passes" 0
+case $(cut -d. -f1 "$STUB/uptime") in 40) ;; *) fail=$((fail + 1)); echo "FAIL the wait stops once the radio is up (uptime $(cat "$STUB/uptime"))";; esac
+
+fresh never-wifi
+run "flashed A passes" 0
+slot B "2026-10-28T10:00:00Z"; radios bluetooth
+echo 20.00 > "$STUB/uptime"
+run "an update whose wifi never comes up fails at 180 s" 1
+case $(cut -d. -f1 "$STUB/uptime") in 180) ;; *) fail=$((fail + 1)); echo "FAIL the wait ends at the deadline (uptime $(cat "$STUB/uptime"))";; esac
+
+fresh same-os-waits-for-nothing
+run "flashed A passes" 0
+radios bluetooth
+echo 20.00 > "$STUB/uptime"
+run "the same OS missing wifi early passes without waiting" 0
+case $(cut -d. -f1 "$STUB/uptime") in 20) ;; *) fail=$((fail + 1)); echo "FAIL a radio this OS is not held to is not waited for";; esac
 
 fresh unwritable
 mkdir -p "$(dirname "$RECORD")"; chmod 0555 "$(dirname "$RECORD")"

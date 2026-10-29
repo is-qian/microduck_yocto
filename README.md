@@ -81,7 +81,8 @@ rauc status mark-bad booted && reboot    # roll back to the other slot
 ```
 
 A slot is marked good only once `microduck-slot-health.service` passes: the core
-daemons must be up and not crash-looping 180 s after boot, the running kernel must
+daemons must have come up, as the daemon's own `robot-boot-check --dry-run` judges
+it (about 25 s after boot on a healthy one), the running kernel must
 be the slot's own (its modules are there), and a new OS must not have lost a radio
 the latest OS that passed had (wifi, Bluetooth). Missing hardware does not fail a
 boot on its own: a radio that disappears under an OS that already passed here (the

@@ -4,18 +4,23 @@
 # Run by microduck-slot-health.service, which boot-complete.target requires. RAUC's
 # rauc-mark-good.service in turn requires boot-complete.target, so a non-zero exit
 # here means the slot is never marked good. The daemon's robot-boot-check gets the
-# same verdict on the daemons at the same moment; its robot-rescue reboots only when
-# a non-golden daemon release is at fault. Otherwise nothing reboots, the slot stays
-# unmarked, and every later reboot counts against it until U-Boot falls back on its
-# own.
+# same verdict on the daemons, because this asks it; its robot-rescue reboots only
+# when a non-golden daemon release is at fault. Otherwise nothing reboots, the slot
+# stays unmarked, and every later reboot counts against it until U-Boot falls back on
+# its own.
 #
-# Three questions, the first copied from robot-boot-check and the other two about the
-# OS alone, which no daemon rollback could fix:
+# Three questions, the first the daemon's own and the other two about the OS alone,
+# which no daemon rollback could fix:
 #
-# 1. Did the daemons come up? The same members, the same restart threshold and the
-#    same 180 s deadline as robot-boot-check, so the two never disagree about a
-#    daemon. ponytail: the list is copied from the daemon's scripts/robot-boot-check;
-#    replace this with its exit status once it reports one (stage 3, daemon side).
+# 1. Did the daemons come up? `robot-boot-check --dry-run` answers: it watches until
+#    every member has run steadily for 10 s, one has failed or crash-looped, or its
+#    deadline (`[update_gate] boot_deadline_s`, 60 s) passes, and exits 0 for a release
+#    that came up. Asked rather than copied, so the two never disagree about a daemon
+#    and a healthy boot is decided in seconds -- about 25 s on the beta board, where
+#    the copy slept until 180 s. Any other exit fails the slot: 3 is a release that did
+#    not come up, and a check that could not answer has not said it did.
+#    Needs a daemon release whose --dry-run reports its verdict (microduck#494); an
+#    older one exits 0 either way.
 #
 # 2. Does the running kernel have its modules? A bundle carries kernel and modules
 #    together in the slot, and U-Boot falls back to the kernel in the `boot` partition
@@ -33,31 +38,36 @@
 #    -- the same boot again, or a rollback to the other slot -- is held only to its own
 #    line: a radio it lost since is the hardware or its environment, not an update, so
 #    it is logged, its line follows it down, and the boot passes.
+#    A radio still coming up is waited for, until RADIO_DEADLINE: question 1 can now
+#    finish before a slow driver has loaded its firmware, and the radios this OS is
+#    held to are the ones worth waiting for. On the beta board both are up by 12 s.
 #
 # Paths can be pointed elsewhere for scripts/test-slot-health.sh.
 set -eu
 
-MEMBERS="updaterd.service robotd.service configd.service btd.service"
-MAX_RESTARTS=3
-DEADLINE=180
+# What the gate waited until before it asked the daemon, so a radio that took that
+# long still passes as it did.
+RADIO_DEADLINE=180
 
 UPTIME=${SLOT_HEALTH_UPTIME:-/proc/uptime}
 SYS=${SLOT_HEALTH_SYS:-/sys}
 MODULES=${SLOT_HEALTH_MODULES:-/lib/modules}
+# Where microduck-daemon installs it: outside the release tree, like its units say.
+BOOT_CHECK=${SLOT_HEALTH_BOOT_CHECK:-/usr/local/sbin/robot-boot-check}
 # On the data partition, so it survives the slot it describes being rewritten.
 RECORD=${SLOT_HEALTH_RECORD:-/var/lib/robot/slot-health/radios}
 
-up=$(cut -d. -f1 "$UPTIME")
-[ "$up" -ge "$DEADLINE" ] || sleep $((DEADLINE - up))
+uptime_secs() { cut -d. -f1 "$UPTIME"; }
 
 bad=""
-for unit in $MEMBERS; do
-	state=$(systemctl show -p ActiveState --value "$unit")
-	restarts=$(systemctl show -p NRestarts --value "$unit")
-	if [ "$state" = failed ] || [ "$restarts" -ge "$MAX_RESTARTS" ]; then
-		bad="$bad $unit($state,${restarts} restarts)"
-	fi
-done
+if [ ! -x "$BOOT_CHECK" ]; then
+	bad="$bad daemons(no $BOOT_CHECK to ask)"
+else
+	code=0
+	verdict=$("$BOOT_CHECK" --dry-run 2>&1) || code=$?
+	printf '%s\n' "$verdict"
+	[ "$code" = 0 ] || bad="$bad daemons(robot-boot-check --dry-run exited $code)"
+fi
 
 kernel=$(uname -r)
 [ -d "$MODULES/$kernel" ] || bad="$bad kernel($kernel has no $MODULES/$kernel: not the slot's own kernel)"
@@ -65,9 +75,12 @@ kernel=$(uname -r)
 # The radios the kernel has brought up: a wifi interface once the driver has loaded its
 # firmware, an HCI device once Bluetooth is attached. Whether they are associated or
 # powered is the network's business, not the OS's.
-radios=""
-for dev in "$SYS"/class/net/wlan*; do [ -e "$dev" ] && { radios="wifi"; break; }; done
-for dev in "$SYS"/class/bluetooth/hci*; do [ -e "$dev" ] && { radios="${radios:+$radios }bluetooth"; break; }; done
+scan_radios() {
+	radios=""
+	for dev in "$SYS"/class/net/wlan*; do [ -e "$dev" ] && { radios="wifi"; break; }; done
+	for dev in "$SYS"/class/bluetooth/hci*; do [ -e "$dev" ] && { radios="${radios:+$radios }bluetooth"; break; }; done
+	return 0
+}
 
 # Which OS this is: the booted slot, and when RAUC last wrote it -- empty for a slot
 # that was flashed, so a card's two flashed slots are A@ and B@. Parsed as
@@ -77,13 +90,31 @@ booted=$(rauc status --detailed --output-format=json 2>/dev/null |
 slot="$(printf '%s' "$booted" | grep -o '"bootname":"[^"]*"' | head -n 1 | cut -d'"' -f4)"
 os="$slot@$(printf '%s' "$booted" | grep -o '"installed":{"timestamp":"[^"]*"' | head -n 1 | cut -d'"' -f6)"
 
+# Lines are "<os> <radios>": this OS's own if it passed before, else the latest. Only a
+# new OS is held to them; the same OS is compared but not failed, below.
+was=""; was_os=""; held=""
+if [ -n "$slot" ] && [ -s "$RECORD" ]; then
+	was=$(grep "^$os " "$RECORD" || tail -n 1 "$RECORD")
+	was_os=${was%% *}
+	[ "$os" = "$was_os" ] || held=${was#* }
+fi
+
+# missing: the radios this OS is held to that are not up, or nothing.
+missing() {
+	for radio in $held; do
+		case " $radios " in *" $radio "*) ;; *) echo "$radio" ;; esac
+	done
+}
+scan_radios
+while [ -n "$(missing)" ] && [ "$(uptime_secs)" -lt "$RADIO_DEADLINE" ]; do
+	sleep 2
+	scan_radios
+done
+
 # Without a slot name every boot would look like a new OS, so compare nothing.
 if [ -z "$slot" ]; then
 	echo "warning: rauc status named no booted slot, so radios are neither compared nor recorded"
-elif [ -s "$RECORD" ]; then
-	# Lines are "<os> <radios>": this OS's own if it passed before, else the latest.
-	was=$(grep "^$os " "$RECORD" || tail -n 1 "$RECORD")
-	was_os=${was%% *}
+elif [ -n "$was" ]; then
 	for radio in ${was#* }; do
 		case " $radios " in *" $radio "*) continue ;; esac
 		if [ "$os" != "$was_os" ]; then

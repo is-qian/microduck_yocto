@@ -5,8 +5,8 @@ LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
 # OS policy, not daemon code: its own recipe, so changing it does not rebuild the
-# daemon. microduck-daemon RDEPENDS on it -- the script checks the daemon's units
-# and fails without them, which would leave every slot unmarked.
+# daemon. microduck-daemon RDEPENDS on it -- the script asks the daemon's
+# robot-boot-check and fails without it, which would leave every slot unmarked.
 SRC_URI = " \
     file://microduck-slot-health \
     file://microduck-slot-health.service \
