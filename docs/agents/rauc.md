@@ -213,6 +213,22 @@ Traps:
   production-signed bundle. One dev-signed bundle from after it moves the board
   over: the slot it writes carries the new keyring.
 
+## Promoting a build to stable
+
+1. Every CI build makes two bundles in one job: `microduck-bundle` (dev image) to
+   `dev` and `microduck-bundle-shipping` (shipping image) to `candidate`; from a
+   branch, `dev-<branch>` and `candidate-<branch>`. Both are dev-signed.
+2. A dev board installs a candidate to test it. **The slot it lands in runs the
+   shipping image, so it trusts the production CA only** and follows `stable`:
+   from there it takes no dev or candidate build. Go back with `switch` (the
+   other slot), not with a download.
+
+Traps:
+
+- **The two bundles of one run share `DATETIME`.** `microduck-bundle-shipping.bb`
+  takes `DATETIME` + 1 s as its build id; everything that keys on build ids
+  (osupdate's "already running", `builds/<build>.env`) would collide otherwise.
+
 ## User data survives; know exactly what that means
 
 `data` is ext4, 8 GiB, mounted at `/var/lib/robot` by `recipes-core/microduck-data/`.
