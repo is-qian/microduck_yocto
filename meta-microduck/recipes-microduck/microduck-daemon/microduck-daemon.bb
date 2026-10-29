@@ -311,6 +311,24 @@ do_install:append() {
 	install -m 0644 ${UNPACKDIR}/robotctl.bash_completion \
 		${D}${datadir}/bash-completion/completions/robotctl
 
+	# The robot's name in the shell prompt, `microduck@microduck-beta (sky-gtc):~$`,
+	# from the snippet scripts/setup-login.sh writes to /etc/profile.d. On a board
+	# that has taken an update the postinstall hook has written it already; on a
+	# fresh image nothing has run setup-login.sh, so every duck flashed from one
+	# image showed the same bare hostname until its first update. Cut out of the
+	# script rather than copied into files/, so there is one snippet and it cannot
+	# drift; the first update then rewrites this same path with the same text.
+	# In ${PN}, not a dev-only package: the hook writes it on every board, shipping
+	# ones included, so leaving it out would only make a fresh robot differ from an
+	# updated one. Bash syntax behind a $BASH_VERSION guard; bash is in both images.
+	install -d ${D}${sysconfdir}/profile.d
+	sed -n "/<<'PROMPT'\$/,/^PROMPT\$/p" ${S}/scripts/setup-login.sh | sed '1d;$d' \
+		> ${D}${sysconfdir}/profile.d/robot-name-prompt.sh
+	if ! grep -q _robot_name_inject ${D}${sysconfdir}/profile.d/robot-name-prompt.sh; then
+		bbfatal "scripts/setup-login.sh in this daemon release has no PROMPT heredoc to cut the name prompt from; update the extraction above"
+	fi
+	chmod 0644 ${D}${sysconfdir}/profile.d/robot-name-prompt.sh
+
 	# Units, verbatim: their ExecStart already points into current/.
 	install -d ${D}${systemd_system_unitdir}
 	install -m 0644 ${S}/robotd/systemd/robotd.service ${D}${systemd_system_unitdir}/
@@ -418,6 +436,7 @@ FILES:${PN} += " \
     ${prefix}/local/sbin/robot-rescue \
     ${nonarch_base_libdir}/udev/rules.d/60-robot-i2c.rules \
     ${sysconfdir}/robot \
+    ${sysconfdir}/profile.d/robot-name-prompt.sh \
     ${sysconfdir}/systemd/journald.conf.d/10-robot.conf \
     ${localstatedir}/lib/robot \
 "
@@ -428,8 +447,8 @@ FILES:${PN} += " \
 # It is not the 300 bytes, it is the RDEPENDS: bash-completion brings a 132 KB
 # dispatcher, its profile snippet and an empty directory -- the megabyte of
 # completion scripts is oe-core's separate bash-completion-extra package, which
-# nothing here asks for. Small, then, but microduck-image has no login at all --
-# nobody is typing on a shipping robot, so nothing there should pay for a Tab key.
+# nothing here asks for. Small, then, but a shipping robot is not where anyone
+# types commands, so nothing there should pay for a Tab key.
 # microduck-image-dev installs it; microduck-image cannot get it by accident.
 #
 # That RDEPENDS is also what makes this work rather than merely exist:

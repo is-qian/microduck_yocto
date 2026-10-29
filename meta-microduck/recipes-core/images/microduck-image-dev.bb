@@ -64,8 +64,8 @@ IMAGE_INSTALL:append = " \
 # still skips prereleases, so branch installs stay an explicit act.
 
 # microduck-daemon-bash-completion is `robotctl<TAB>`, and it is here rather than in
-# the shipping image for the same reason as everything else on this list: nobody logs
-# into microduck-image, so nothing there should pay for a Tab key. It pulls in
+# the shipping image for the same reason as everything else on this list: nobody types
+# commands on a shipping robot, so nothing there should pay for a Tab key. It pulls in
 # bash-completion, which is the piece that was actually missing -- bash itself is
 # already in both images. The daemon recipe's package block has the chain.
 #
