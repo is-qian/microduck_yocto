@@ -49,14 +49,14 @@ repos:
   openembedded-core:
     url: https://git.openembedded.org/openembedded-core
     branch: wrynose
-    commit: 0f03c732a0a2d0506b41b1abe60b3f368b2300dc
+    commit: ae5a301091f5b0574ea7444aab40b309b6d9f3f2
     layers:
       meta:
 
   bitbake:
     url: https://git.openembedded.org/bitbake
     branch: "2.18"
-    commit: 51fd94a67fa17650a9ff623492005972bbc7d26f
+    commit: 6e260eb6ab1631607ea414d9ff8ede1155faa5d9
     layers:
       # Not a layer -- oe-core requires bitbake >= 2.18.0 and locates it by path.
       .: disabled
@@ -64,7 +64,7 @@ repos:
   meta-yocto:
     url: https://git.yoctoproject.org/meta-yocto
     branch: wrynose
-    commit: 7c25b11156553145fa6b241a2d4f65d94438f804
+    commit: 79b6d87030178bed0088ad3b00aa6dfbabac37c4
     layers:
       meta-poky:
       meta-yocto-bsp: disabled
@@ -82,7 +82,7 @@ repos:
   meta-rockchip:
     url: https://github.com/JeffyCN/meta-rockchip.git
     branch: wrynose
-    commit: 54f31b3987948afc07d2e83cb0ecd981d7476de3
+    commit: f2fa9fd14571b855bb59a51da11616904a65f36d
 
   # A/B OS updates. LAYERDEPENDS is "core" alone, already satisfied, and the
   # layer root is the layer (no `layers:` key needed).
