@@ -173,15 +173,104 @@ the first entry of `IMAGE_FSTYPES`, which is oe-core's `tar.zst` here.
 
 Lives at `$KAS_BUILD_DIR/rauc-keys/development-1.{key,cert}.pem`, generated once
 with meta-rauc's `scripts/openssl-ca.sh` (README.md has the commands). **Never in
-this repo, never in the image.** Only `ca.cert.pem` — the public CA — is committed.
+this repo, never in the image.** Only the public CAs (`ca-dev.cert.pem`,
+`ca-prod.cert.pem`) are committed.
 
 `scripts/build-hfjob.sh` sends the pair to the job **only for a bundle target**,
 the key as `-s` (secret), the cert as `-e`. It refuses locally in 0.1 s if either
 is unreadable, because `bundle.bbclass` only checks the key in `do_bundle` —
 task 7561 of 7568 — so without the guard a missing key costs a full image build.
 
-That key has been on HF's compute. It is a development key forever; a production
-key must be a different key with its own CA added to the image keyring.
+That key has been on HF's compute. It is a development key forever; the production
+key is a different key under its own CA (below).
+
+## Two CAs
+
+| CA | Signs | Trusted by |
+|---|---|---|
+| `ca-dev.cert.pem` (meta-rauc's script, valid from 1970) | every CI bundle, in the HF job | the dev image only (`rauc-conf-dev-ca`) |
+| `ca-prod.cert.pem` (2026-10-29 to 2046) | released builds only, never in a build job | both images |
+
+RAUC reads one keyring file, `/usr/lib/rauc/keyring.pem`. `rauc-conf` installs the
+production CA there; `rauc-conf-dev-ca`, in `microduck-image-dev` alone, appends
+the dev CA in its postinst at `do_rootfs`. So a robot running `microduck-image`
+refuses every dev-signed bundle in RAUC itself, whatever a channel file says.
+The CA's private key is kept offline; only a signing certificate it issued
+(`prod-signing-1`, to 2031) is ever used.
+
+`microduck-osupdate` picks its channel from the keyring: `dev` if
+`/usr/lib/rauc/ca-dev.cert.pem` exists, `stable` if not. On such a production
+board it also refuses a build older than the installed one, because the channel
+manifests are unsigned; going back there is `switch`, to the other slot.
+
+Traps:
+
+- **The production certificates start on 2026-10-29**, unlike the dev CA's 1970.
+  RAUC checks validity against the clock, and the board has no RTC: an install
+  before time sync fails as "not yet valid". osupdate fetches over HTTPS, which
+  already needs the time; an offline `rauc install` from a USB stick does not.
+- **A board flashed before this keyring trusts the dev CA only**, so it refuses a
+  production-signed bundle. One dev-signed bundle from after it moves the board
+  over: the slot it writes carries the new keyring.
+
+## Promoting a build to stable
+
+1. Every CI build makes two bundles in one job: `microduck-bundle` (dev image) to
+   `dev` and `microduck-bundle-shipping` (shipping image) to `candidate`; from a
+   branch, `dev-<branch>` and `candidate-<branch>`. Both are dev-signed.
+2. A dev board installs a candidate to test it. **The slot it lands in runs the
+   shipping image, so it trusts the production CA only** and follows `stable`:
+   from there it takes no dev or candidate build. Go back with `switch` (the
+   other slot), not with a download.
+3. `promote-os.yml` (Actions → promote-os → Run workflow, `production`
+   environment) releases one candidate: board, a `patch`/`minor`/`major` bump,
+   and a build id (empty = the newest candidate). There are no release
+   candidates; candidate builds tested on dev boards play that part. It re-signs
+   the bundle with the production key and publishes it to `stable`. `rauc resign`
+   changes the signature only, so the build id and payload are the tested ones.
+   The version is the board's highest `microduck-os-v<X.Y.Z>-<board>` release
+   bumped (each board numbered on its own, from 0.0.0), and it is what robots show
+   ("updated to 1.0.0"). The bundle's own RAUC version (`PV` in
+   `microduck-bundle.bb`, seen only by `rauc info`) stays 0.1.0: it is fixed at
+   build time. The GitHub release `microduck-os-v<X.Y.Z>-<board>` is tagged at the
+   build's commit and carries the re-signed bundle plus the shipping card
+   (`.wic.zst`, `.bmap`) from the same job. That card comes from `deploy/<job>/`,
+   pruned after 14 days, so a build older than that has to be rebuilt first.
+   A re-run after a failure reuses its release's version, found by the sentence
+   "Stable OS build <build> for" in the notes: keep it when editing them.
+   GitHub releases made by hand (`build-image.yml`'s `release` path) carry the
+   dev image and dev bundle only.
+4. The release's notes are drafted by OpenCode (`scripts/release_notes/`, skill
+   `.opencode/skills/microduck-os-release-notes/`, ported from reachy_mini): the
+   PRs merged since the board's previous `microduck-os-v*` release (the newest
+   other release for the first one) up to the build's commit. A validator checks the
+   draft names exactly those PRs and loops the model on the difference. If the
+   model fails, or is not configured, the release gets plain notes; it never holds
+   a promotion back. Edit the notes on GitHub afterwards; a re-run keeps them.
+   Setup, the same as reachy_mini's: secret `RELEASE_NOTES_HF_TOKEN` (an HF token
+   with Inference Providers), variables `RELEASE_NOTES_MODEL`
+   (`huggingface/zai-org/GLM-5.3`) and `OPENCODE_VERSION` (`1.19.4`). Preview locally:
+   `GITHUB_TOKEN=$(gh auth token) RELEASE_NOTES_MODEL=... python -m
+   scripts.release_notes.generate_release_notes --since v0.1.0 --head main
+   --version microduck-os-preview-zero3 --title "microduck OS preview (microduck-zero3)"`
+   (needs `pip install PyGithub` and opencode logged in to huggingface).
+   Only PRs count: a commit pushed straight to main is not in the notes, and a
+   `#<number>` that is not one of the release's PRs (an issue) gets its line
+   removed by the validator. Link issues by full URL.
+
+To move a board flashed before the two CAs straight to a release, install that
+build from `candidate` *before* promoting it: afterwards its list entry points
+at the production-signed bundle, which the old keyring refuses.
+
+Traps:
+
+- **The two bundles of one run share `DATETIME`.** `microduck-bundle-shipping.bb`
+  takes `DATETIME` + 1 s as its build id; everything that keys on build ids
+  (osupdate's "already running", `builds/<build>.env`) would collide otherwise.
+- **The signing certificate expires in 2031.** After that, stable's bundle stops
+  verifying. Before then, issue `prod-signing-2` from the CA (kept offline),
+  replace `RAUC_PROD_KEY`/`RAUC_PROD_CERT`, and re-promote the current stable build.
+- `production` allows `main` only, so `promote-os.yml` can only run once merged.
 
 ## User data survives; know exactly what that means
 

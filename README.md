@@ -41,9 +41,9 @@ Two images are built from the same recipes:
 ## Get an image
 
 Each [release](https://github.com/pollen-robotics/microduck_yocto/releases) is
-built from its tag for both boards and carries the card image (`.wic.zst`, its
+built from its tag for every board and carries the card image (`.wic.zst`, its
 `.bmap` and checksum), the update bundle (`.raucb`), the package manifest, and
-for the beta board `microduck-beta-loader.bin`, which `rkdeveloptool` needs.
+for the beta main boards `<machine>-loader.bin`, which `rkdeveloptool` needs.
 `gh release download <tag>` fetches them. Every push to `main` also builds the
 Zero 3W and publishes its bundle to the `dev` update channel.
 
@@ -165,10 +165,14 @@ itself and the image does not build.
 ### Signing keys
 
 Bundles are signed, and a robot installs only bundles signed by a key its CA
-trusts (`meta-microduck/recipes-core/rauc/files/ca.cert.pem`). The private key
-is never in this repository or the image. CI signs with the development pair
-from its `RAUC_DEV_KEY` / `RAUC_DEV_CERT` secrets. To sign your own builds, make
-a CA and key once, into the build directory:
+trusts. There are two CAs in `meta-microduck/recipes-core/rauc/files/`:
+`ca-dev.cert.pem`, trusted by the dev image only, and `ca-prod.cert.pem`,
+trusted by both. The private keys are never in this repository or the image. CI
+signs every build with the development pair from its `RAUC_DEV_KEY` /
+`RAUC_DEV_CERT` secrets; only the `promote-os` workflow holds the production
+pair, and it re-signs a tested `candidate` build for `stable`
+(`docs/agents/rauc.md`, "Two CAs"). To sign your own dev builds, make a CA and
+key once, into the build directory:
 
 ```sh
 . kas/local.env
@@ -180,8 +184,8 @@ cp openssl-ca/dev/private/development-1.key.pem .
 chmod 600 development-1.key.pem
 ```
 
-and replace `ca.cert.pem` with `openssl-ca/dev/ca.cert.pem`. A robot flashed with
-one CA refuses bundles signed under another.
+and replace `ca-dev.cert.pem` with `openssl-ca/dev/ca.cert.pem`. A robot flashed
+with one CA refuses bundles signed under another.
 
 ## Repository layout
 

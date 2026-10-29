@@ -23,6 +23,7 @@ IMAGE_FEATURES += "allow-empty-password allow-root-login empty-root-password"
 IMAGE_INSTALL:append = " \
     microduck-daemon-padd \
     microduck-daemon-devkey \
+    rauc-conf-dev-ca \
     microduck-daemon-bash-completion \
     ${MICRODUCK_RADIO_DEV_PACKAGES} \
     coreutils \
@@ -62,6 +63,12 @@ IMAGE_INSTALL:append = " \
 #
 # Note it does NOT make this board auto-track main: updaterd's periodic check
 # still skips prereleases, so branch installs stay an explicit act.
+#
+# rauc-conf-dev-ca is the same thing one level down, for OS bundles: it adds the
+# development CA to RAUC's keyring, which otherwise trusts the production CA only.
+# Every CI bundle is dev-signed, so without it this board would take nothing but
+# production-signed builds. microduck-osupdate follows `dev` on a board that has
+# it and `stable` on one that does not.
 
 # microduck-daemon-bash-completion is `robotctl<TAB>`, and it is here rather than in
 # the shipping image for the same reason as everything else on this list: nobody types

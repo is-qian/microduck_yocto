@@ -11,7 +11,9 @@ name: build-image
 #
 # By default it builds microduck-bundle: the dev-signed RAUC bundle, plus, since
 # the bundle depends on the image's do_image_complete, the dev image's .wic. So
-# every merge yields both a card to flash and an update to `rauc install`.
+# every merge yields both a card to flash and an update to `rauc install`. It
+# also builds microduck-bundle-shipping, the shipping image in a bundle, also
+# dev-signed: the release candidate that promote-os.yml can re-sign for stable.
 #
 # HF_TOKEN launches the job AND reaches the bucket, because the bucket is mounted
 # into the job by the platform as the org. RAUC_DEV_KEY / RAUC_DEV_CERT (the PEM
@@ -25,7 +27,7 @@ name: build-image
 # KEEP_DAYS (see the prune step), and the card image is the compressed
 # .wic.zst + .wic.bmap; the 13 GB plain .wic is not uploaded.
 #
-# Publishing a GitHub release builds both boards from its tag and attaches what
+# Publishing a GitHub release builds every board from its tag and attaches what
 # a person needs to flash or update one to the release itself (see the attach
 # step), so a tagged version never needs the bucket or a rebuild.
 
@@ -38,7 +40,7 @@ on:
         options: [build, checkout]
         default: build
       target:
-        description: "recipe to build, e.g. linux-rockchip (empty = microduck-bundle: dev image .wic + signed bundle)"
+        description: "recipe to build, e.g. linux-rockchip (empty = dev image .wic + dev and shipping bundles)"
         type: string
         default: ""
       machine:
@@ -90,13 +92,13 @@ jobs:
     # contents: write is for attaching images to a release; nothing else writes.
     permissions:
       contents: write
-    # A push or a release builds both boards; a manual run builds the one it
+    # A push or a release builds every board; a manual run builds the one it
     # names. Not fail-fast: a red beta must not cancel a Zero 3W build that is
     # fine (and a cancelled run leaves its HF job to the cancel step, not to luck).
     strategy:
       fail-fast: false
       matrix:
-        machine: ${{ github.event_name != 'workflow_dispatch' && fromJSON('["microduck-zero3","microduck-beta"]') || fromJSON(format('["{0}"]', inputs.machine)) }}
+        machine: ${{ github.event_name != 'workflow_dispatch' && fromJSON('["microduck-zero3","microduck-beta","microduck-face-board-v1"]') || fromJSON(format('["{0}"]', inputs.machine)) }}
 
     # `shell: bash` runs every step as `bash --noprofile --norc -eo pipefail`,
     # and the pipefail is the point. GitHub's default is `bash -e`, under which a
@@ -124,7 +126,7 @@ jobs:
         id: launch
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HFJOB_TARGET: ${{ inputs.target || 'microduck-bundle' }}
+          HFJOB_TARGET: ${{ inputs.target || 'microduck-bundle microduck-bundle-shipping' }}
           # The matrix above picks the board: both on a push or a release.
           HFJOB_MACHINE: ${{ matrix.machine }}
           HFJOB_FLAVOR: ${{ inputs.flavor || 'cpu-performance' }}
@@ -194,10 +196,10 @@ jobs:
 
       # A release carries its own images: the bucket's copies are pruned after
       # KEEP_DAYS, a release's assets are not. The repository is private, so its
-      # assets are too. Names already say the machine, except the beta's loader,
-      # which goes up as microduck-beta-loader.bin: it is what `rkdeveloptool db`
-      # needs for a board in maskrom (docs/agents/beta-board.md). Only the beta's:
-      # the Zero 3W is flashed as a card.
+      # assets are too. Names already say the machine, except the loader, which
+      # goes up as <machine>-loader.bin: it is what `rkdeveloptool db` needs for a
+      # beta main board in maskrom (docs/agents/beta-board.md), face board V1.0
+      # included. Not the Zero 3W's: that one is flashed as a card.
       - name: Attach the image to the release
         if: success() && github.event_name == 'release'
         env:
@@ -211,18 +213,21 @@ jobs:
           prefix="${{ steps.wait.outputs.artifacts }}"
           test -n "$prefix" || { echo "no artifacts prefix from the wait step"; exit 1; }
           mkdir "$RUNNER_TEMP/assets" && cd "$RUNNER_TEMP/assets"
+          # The dev image and the dev bundle only. The job also built the shipping
+          # image and its bundle, but those reach a release through promote-os.yml,
+          # production-signed, as microduck-os-v<X.Y.Z>-<board>.
           hf buckets ls "$prefix/" | awk '{print $NF}' \
-            | grep -E 'rootfs-[0-9]+\.(wic\.zst|wic\.zst\.sha256sum|wic\.bmap|manifest)$|bundle-.*-[0-9]+\.raucb$|/loader\.bin-' \
+            | grep -E "/microduck-image-dev-$MACHINE\.rootfs-[0-9]+\.(wic\.zst|wic\.zst\.sha256sum|wic\.bmap|manifest)\$|/microduck-bundle-$MACHINE-[0-9]+\.raucb\$|/loader\.bin-" \
             | while read -r p; do
                 hf buckets cp "hf://buckets/pollen-robotics/microduck-yocto-cache/$p" "./${p##*/}"
               done
-          if [ "$MACHINE" = microduck-beta ]; then
-            mv loader.bin-* microduck-beta-loader.bin
-          else
+          if [ "$MACHINE" = microduck-zero3 ]; then
             rm -f loader.bin-*
+          else
+            mv loader.bin-* "$MACHINE-loader.bin"
           fi
           # A missing .raucb or .bmap must not publish a release that looks complete.
-          want=5; [ "$MACHINE" = microduck-beta ] && want=6
+          want=6; [ "$MACHINE" = microduck-zero3 ] && want=5
           [ "$(ls | wc -l)" -eq "$want" ] || { echo "expected $want assets, got:"; ls -l; exit 1; }
           sha256sum -c *.wic.zst.sha256sum
           gh release upload "$TAG" * --clobber -R "$GITHUB_REPOSITORY"
@@ -245,20 +250,21 @@ jobs:
           gh release view "$TAG" --json body -q .body -R "$GITHUB_REPOSITORY" | grep -qF "$line" \
             || echo "::warning::could not add '$line' to the release notes"
 
-      # OS updates: the bundle into the public pollen-robotics/microduck-os bucket,
-      # where microduck-osupdate on a robot finds it (scripts/publish-os.sh says
-      # what goes where). Every push to main publishes to `dev`; a manual run with
-      # `publish` goes to `dev` from main and `dev-<branch>` from a branch.
+      # OS updates: both bundles into the public pollen-robotics/microduck-os
+      # bucket, where microduck-osupdate on a robot finds them (scripts/publish-os.sh
+      # says what goes where). Every push to main publishes the dev bundle to `dev`
+      # and the shipping one to `candidate`; a manual run with `publish` does the
+      # same from main, and `dev-<branch>` / `candidate-<branch>` from a branch.
       #
-      # The channel is derived, never typed: nothing here can write `stable`. That
-      # channel is for tagged releases of the shipping image re-signed with the
-      # production key in a job of its own, which does not exist yet -- robots in
-      # the field must never follow a dev-signed dev image.
+      # The channel is derived, never typed: nothing here can write `stable`. Only
+      # promote-os.yml does, with a `candidate` build it re-signs with the
+      # production key -- robots in the field must never follow a dev-signed image.
+      # Both bundles here are dev-signed, so a production board refuses either.
       #
       # A release does not publish; it attaches its images instead (the step above).
       - name: Publish for OS updates
         if: >-
-          success() && (inputs.target || 'microduck-bundle') == 'microduck-bundle'
+          success() && !inputs.target
           && (inputs.kas_command || 'build') == 'build'
           && (github.event_name == 'push' || inputs.publish)
         env:
@@ -266,12 +272,16 @@ jobs:
         run: |
           set -eu
           if [ "$GITHUB_REF_NAME" = main ]; then
-            channel=dev
+            dev=dev candidate=candidate
           else
-            # dev-<branch>, in the bucket's [a-z0-9-] alphabet, 40 characters at most.
-            channel=dev-$(printf '%s' "$GITHUB_REF_NAME" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9-]/-/g' | cut -c1-36)
+            # <channel>-<branch>, in the bucket's [a-z0-9-] alphabet, 40 characters at most.
+            slug=$(printf '%s' "$GITHUB_REF_NAME" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9-]/-/g')
+            dev=dev-$(printf '%s' "$slug" | cut -c1-36)
+            candidate=candidate-$(printf '%s' "$slug" | cut -c1-30)
           fi
-          scripts/publish-os.sh "${{ steps.launch.outputs.job_id }}" "${{ matrix.machine }}" "$channel" \
+          job="${{ steps.launch.outputs.job_id }}" machine="${{ matrix.machine }}"
+          scripts/publish-os.sh "$job" "$machine" "$dev" | tee -a "$GITHUB_STEP_SUMMARY"
+          BUNDLE=microduck-bundle-shipping scripts/publish-os.sh "$job" "$machine" "$candidate" \
             | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Retention. Nothing reads deploy/<job>/ except a person fetching a card

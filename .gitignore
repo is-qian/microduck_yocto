@@ -12,3 +12,7 @@
 
 # Per-machine build paths, sourced by scripts/build-local.sh.
 /kas/local.env
+
+# Release-notes drafts and their PR cache (scripts/release_notes/).
+/.release-notes/
+__pycache__/
