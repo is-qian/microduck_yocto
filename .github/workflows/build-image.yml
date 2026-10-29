@@ -66,11 +66,15 @@ on:
   push:
     branches: [main]
     # Only what can change the image. A README edit should not spend $1.60.
+    # Markdown is excluded even inside the layers: their README.md and SECURITY.md
+    # are documentation, and no recipe installs a .md file. A push that also
+    # touches a recipe still builds.
     paths:
       - "meta-microduck*/**"
       - "kas/**"
       - "scripts/build-hfjob.sh"
       - ".github/workflows/build-image.yml"
+      - "!**/*.md"
 
 # Queue rather than cancel. Cancelling mid-build would leave the HF job running
 # and billing, and the cleanup step below only fires for jobs this run started.
