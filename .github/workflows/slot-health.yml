@@ -1,0 +1,20 @@
+name: slot-health
+
+# Runs scripts/test-slot-health.sh: every verdict microduck-slot-health can reach,
+# against a fake /sys and stubbed systemctl/uname/rauc. Under a second, no Yocto
+# checkout. Twice, because the script runs under the image's /bin/sh, and dash is the
+# strictest POSIX shell a hosted runner has.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/test-slot-health.sh
+      - run: TEST_SH=dash scripts/test-slot-health.sh

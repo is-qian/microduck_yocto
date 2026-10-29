@@ -4,21 +4,50 @@
 # Run by microduck-slot-health.service, which boot-complete.target requires. RAUC's
 # rauc-mark-good.service in turn requires boot-complete.target, so a non-zero exit
 # here means the slot is never marked good. The daemon's robot-boot-check gets the
-# same verdict at the same moment; its robot-rescue reboots only when a non-golden
-# daemon release is at fault. Otherwise nothing reboots, the slot stays unmarked,
-# and every later reboot counts against it until U-Boot falls back on its own.
+# same verdict on the daemons at the same moment; its robot-rescue reboots only when
+# a non-golden daemon release is at fault. Otherwise nothing reboots, the slot stays
+# unmarked, and every later reboot counts against it until U-Boot falls back on its
+# own.
 #
-# The verdict mirrors robot-boot-check's exactly -- the same members, the same
-# restart threshold, the same 180 s deadline -- so the two never disagree about a
-# boot. ponytail: the list is copied from the daemon's scripts/robot-boot-check;
-# replace this with its exit status once it reports one (stage 3, daemon side).
+# Three questions, the first copied from robot-boot-check and the other two about the
+# OS alone, which no daemon rollback could fix:
+#
+# 1. Did the daemons come up? The same members, the same restart threshold and the
+#    same 180 s deadline as robot-boot-check, so the two never disagree about a
+#    daemon. ponytail: the list is copied from the daemon's scripts/robot-boot-check;
+#    replace this with its exit status once it reports one (stage 3, daemon side).
+#
+# 2. Does the running kernel have its modules? A bundle carries kernel and modules
+#    together in the slot, and U-Boot falls back to the kernel in the `boot` partition
+#    when the slot's /boot/Image does not load -- an old kernel under the new slot's
+#    modules, which loads no wifi driver. The daemons wait for missing hardware by
+#    design, so question 1 passes that boot; this one does not.
+#
+# 3. Did this OS lose a radio the previous OS had? A kernel or driver regression that
+#    drops wifi or Bluetooth leaves a robot nobody can reach, and question 1 passes
+#    it too. Not "is there a radio": the beta board's has been unreliable, and a board
+#    with a dead chip would then fail every boot of every slot and bounce between
+#    them. Instead, each boot that passes records which radios it had and which OS it
+#    was (the slot, and when RAUC wrote it), one line per slot. A *new* OS must have
+#    at least the radios of the latest OS that passed. An OS that already passed here
+#    -- the same boot again, or a rollback to the other slot -- is held only to its own
+#    line: a radio it lost since is the hardware or its environment, not an update, so
+#    it is logged, its line follows it down, and the boot passes.
+#
+# Paths can be pointed elsewhere for scripts/test-slot-health.sh.
 set -eu
 
 MEMBERS="updaterd.service robotd.service configd.service btd.service"
 MAX_RESTARTS=3
 DEADLINE=180
 
-up=$(cut -d. -f1 /proc/uptime)
+UPTIME=${SLOT_HEALTH_UPTIME:-/proc/uptime}
+SYS=${SLOT_HEALTH_SYS:-/sys}
+MODULES=${SLOT_HEALTH_MODULES:-/lib/modules}
+# On the data partition, so it survives the slot it describes being rewritten.
+RECORD=${SLOT_HEALTH_RECORD:-/var/lib/robot/slot-health/radios}
+
+up=$(cut -d. -f1 "$UPTIME")
 [ "$up" -ge "$DEADLINE" ] || sleep $((DEADLINE - up))
 
 bad=""
@@ -30,8 +59,52 @@ for unit in $MEMBERS; do
 	fi
 done
 
+kernel=$(uname -r)
+[ -d "$MODULES/$kernel" ] || bad="$bad kernel($kernel has no $MODULES/$kernel: not the slot's own kernel)"
+
+# The radios the kernel has brought up: a wifi interface once the driver has loaded its
+# firmware, an HCI device once Bluetooth is attached. Whether they are associated or
+# powered is the network's business, not the OS's.
+radios=""
+for dev in "$SYS"/class/net/wlan*; do [ -e "$dev" ] && { radios="wifi"; break; }; done
+for dev in "$SYS"/class/bluetooth/hci*; do [ -e "$dev" ] && { radios="${radios:+$radios }bluetooth"; break; }; done
+
+# Which OS this is: the booted slot, and when RAUC last wrote it -- empty for a slot
+# that was flashed, so a card's two flashed slots are A@ and B@. Parsed as
+# microduck-osupdate parses it.
+booted=$(rauc status --detailed --output-format=json 2>/dev/null |
+	sed 's/{"rootfs\./\n&/g' | grep '"state":"booted"' || true)
+slot="$(printf '%s' "$booted" | grep -o '"bootname":"[^"]*"' | head -n 1 | cut -d'"' -f4)"
+os="$slot@$(printf '%s' "$booted" | grep -o '"installed":{"timestamp":"[^"]*"' | head -n 1 | cut -d'"' -f6)"
+
+# Without a slot name every boot would look like a new OS, so compare nothing.
+if [ -z "$slot" ]; then
+	echo "warning: rauc status named no booted slot, so radios are neither compared nor recorded"
+elif [ -s "$RECORD" ]; then
+	# Lines are "<os> <radios>": this OS's own if it passed before, else the latest.
+	was=$(grep "^$os " "$RECORD" || tail -n 1 "$RECORD")
+	was_os=${was%% *}
+	for radio in ${was#* }; do
+		case " $radios " in *" $radio "*) continue ;; esac
+		if [ "$os" != "$was_os" ]; then
+			bad="$bad $radio(present under $was_os, the latest OS that passed, and missing under this one)"
+		else
+			echo "warning: $radio was present on an earlier boot of this same OS and is missing now;" \
+				"that is the hardware or its surroundings, not an update, so it does not fail the slot"
+		fi
+	done
+fi
+
 if [ -n "$bad" ]; then
 	echo "slot not healthy, not marking it good:$bad"
 	exit 1
 fi
-echo "every daemon came up; the slot can be marked good"
+
+# Only a boot that passed sets what the next OS is held to. This slot's line replaces
+# its old one and goes last; only the OS each slot holds now can boot again. A failure
+# to write must not fail the slot: it only loses the comparison for the next update.
+[ -z "$slot" ] || { mkdir -p "$(dirname "$RECORD")" &&
+	{ grep -v "^$slot@" "$RECORD"; printf '%s %s\n' "$os" "$radios"; } > "$RECORD.new" &&
+	mv "$RECORD.new" "$RECORD"; } 2>/dev/null ||
+	echo "warning: could not record this boot's radios in $RECORD"
+echo "every daemon came up, the kernel is the slot's own, radios: ${radios:-none}; the slot can be marked good"
