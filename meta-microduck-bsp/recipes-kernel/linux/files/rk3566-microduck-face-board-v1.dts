@@ -1,0 +1,85 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * microduck beta main board with the Face Board V1.0.
+ *
+ * The main board is the beta's, so this is rk3566-microduck-beta.dts with its
+ * face block swapped. V1.0 replaces the PCA9535 expander and its NPN switches
+ * with two constant-current drivers on the same I2C3: an AW21009 (9 channels,
+ * 0x20) for the indicator LEDs and an AW2023 (3 channels, 0x45) for the RGB
+ * LED, whose INTN takes the expander's GPIO4_C7. The freed GPIO4_D0 carries a
+ * new button. Everything else on the face board connector (PDM mic, ToF on
+ * SPI3, IMU on I2C3) is wired as on the beta.
+ *
+ * Which channel lights which LED is not described here yet: the labels are the
+ * driver channels (face:ledN = the AW21009's LEDn pin, face:rgb:N = the
+ * AW2023's LEDN), to be renamed once checked on a board. They keep the face:
+ * prefix so 70-microduck-face-leds.rules hands them to the robot group.
+ */
+
+#include "rk3566-microduck-beta.dts"
+
+/ {
+	model = "Pollen Robotics microduck beta, face board V1.0";
+	compatible = "pollen,microduck-face-board-v1", "pollen,microduck-beta", "rockchip,rk3566";
+
+	/delete-node/ face-leds;
+
+	face-keys {
+		compatible = "gpio-keys";
+		pinctrl-names = "default";
+		pinctrl-0 = <&face_button>;
+
+		/* Pulled up and debounced (RC) on the face board; pressed is low. */
+		face-button {
+			label = "face-button";
+			linux,code = <KEY_ENTER>;
+			gpios = <&gpio4 RK_PD0 GPIO_ACTIVE_LOW>;
+		};
+	};
+};
+
+/delete-node/ &face_gpio;
+
+&i2c3 {
+	/* EN is pulled up on the face board; ISET sets the full-scale current. */
+	led-controller@20 {
+		compatible = "awinic,aw21009";
+		reg = <0x20>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		led@1 { reg = <1>; label = "face:led1"; };
+		led@2 { reg = <2>; label = "face:led2"; };
+		led@3 { reg = <3>; label = "face:led3"; };
+		led@4 { reg = <4>; label = "face:led4"; };
+		led@5 { reg = <5>; label = "face:led5"; };
+		led@6 { reg = <6>; label = "face:led6"; };
+		led@7 { reg = <7>; label = "face:led7"; };
+		led@8 { reg = <8>; label = "face:led8"; };
+		led@9 { reg = <9>; label = "face:led9"; };
+	};
+
+	led-controller@45 {
+		compatible = "awinic,aw2023";
+		reg = <0x45>;
+		awinic,imax = <1>;
+		interrupt-parent = <&gpio4>;
+		interrupts = <RK_PC7 IRQ_TYPE_LEVEL_LOW>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&face_gpio_int>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		led@0 { reg = <0>; label = "face:rgb:0"; };
+		led@1 { reg = <1>; label = "face:rgb:1"; };
+		led@2 { reg = <2>; label = "face:rgb:2"; };
+	};
+};
+
+&pinctrl {
+	face {
+		face_button: face-button {
+			rockchip,pins = <4 RK_PD0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+};

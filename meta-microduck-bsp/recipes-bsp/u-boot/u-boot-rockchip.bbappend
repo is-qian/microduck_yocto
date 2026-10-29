@@ -81,7 +81,9 @@ microduck_beta_rkbin() {
 	install -m 0644 ${UNPACKDIR}/rkbin-beta/rk356x_spl_v1.14.bin ${UNPACKDIR}/rkbin/bin/rk35/
 	install -m 0644 ${UNPACKDIR}/rkbin-beta/microduck-beta/RK3568MINIALL.ini ${UNPACKDIR}/rkbin/RKBOOT/RK3568MINIALL.ini
 }
-do_configure[prefuncs] += "${@'microduck_beta_rkbin' if d.getVar('MACHINE') == 'microduck-beta' else ''}"
+# MACHINEOVERRIDES, not MACHINE: microduck-face-board-v1 is the same main board.
+# Missing this would pack the stock DDR blob and leave it dead at power-on.
+do_configure[prefuncs] += "${@'microduck_beta_rkbin' if 'microduck-beta' in d.getVar('MACHINEOVERRIDES').split(':') else ''}"
 
 # And fail the build, not the board, if the idblock does not carry it.
 microduck_check_beta_ddr() {
@@ -89,4 +91,4 @@ microduck_check_beta_ddr() {
 		bbfatal "beta idblock does not carry the rk3566 DDR v1.26 blob"
 	fi
 }
-do_compile[postfuncs] += "${@'microduck_check_beta_ddr' if d.getVar('MACHINE') == 'microduck-beta' else ''}"
+do_compile[postfuncs] += "${@'microduck_check_beta_ddr' if 'microduck-beta' in d.getVar('MACHINEOVERRIDES').split(':') else ''}"

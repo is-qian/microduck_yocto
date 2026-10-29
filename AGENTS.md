@@ -122,6 +122,10 @@ meta-microduck-bsp/recipes-kernel/linux/files/rk3566-microduck-beta.dts
                           its whole device tree, copied into the kernel tree at
                           build time (MICRODUCK_BOARD_DTS).
 kas/beta.yml              compose last to build the beta board.
+meta-microduck-bsp/conf/machine/microduck-face-board-v1.conf
+                          the beta with the V1.0 face board: beta overrides +
+                          a DTS that includes the beta's (docs/agents/beta-board.md).
+kas/face-board-v1.yml     compose last to build it.
 meta-microduck-bsp/conf/machine/include/microduck-common.inc
                           anything shared with the future custom PCB.
 ```

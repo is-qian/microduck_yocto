@@ -42,9 +42,9 @@ on:
         type: string
         default: ""
       machine:
-        description: "board: the Zero 3W stand-in, or the beta board"
+        description: "board: the Zero 3W stand-in, the beta board, or the beta with the V1.0 face board"
         type: choice
-        options: [microduck-zero3, microduck-beta]
+        options: [microduck-zero3, microduck-beta, microduck-face-board-v1]
         default: microduck-zero3
       daemon_version:
         description: "microduck_daemon release to seed, e.g. 0.16.1 (empty = the newest release)"
