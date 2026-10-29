@@ -12,7 +12,7 @@ Output: .release-notes/RELEASE_NOTES_<version>.md, its first line the title.
     export RELEASE_NOTES_MODEL=huggingface/zai-org/GLM-5.3
     python -m scripts.release_notes.generate_release_notes \\
         --since v0.1.0 --head main --version os-zero3-preview \\
-        --title "v0.1.0-preview (microduck-zero3)"
+        --title "v0.1.0-preview"
 """
 
 import argparse
@@ -90,7 +90,7 @@ def main(since: str, head: str, version: str, title: str, machine: str, max_iter
     notes = OUTPUT_DIR / f"RELEASE_NOTES_{version}.md"
     context = (
         f"The output directory is {OUTPUT_DIR}. "
-        f"The release is {version}, for the {machine} board, built from commit {head}. "
+        f"The release is {version}, for {machine}, built from commit {head}. "
     )
     if not run_opencode(
         f"Run the {SKILL} skill. {context}"
@@ -139,9 +139,9 @@ def cli():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--since", required=True, help="the previous release's tag")
     parser.add_argument("--head", required=True, help="the commit this release was built from")
-    parser.add_argument("--version", required=True, help="the release tag, e.g. microduck-os-v1.0.0-zero3")
+    parser.add_argument("--version", required=True, help="the release tag, e.g. microduck-os-v1.0.0")
     parser.add_argument("--title", required=True, help="the release title the notes' heading starts with")
-    parser.add_argument("--machine", default="microduck-zero3")
+    parser.add_argument("--machine", default="microduck-zero3", help="the boards, as words for the prompt")
     parser.add_argument("--max-iterations", type=int, default=3)
     args = parser.parse_args()
     sys.exit(main(args.since, args.head, args.version, args.title, args.machine, args.max_iterations))
