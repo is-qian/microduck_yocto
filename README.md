@@ -165,10 +165,12 @@ itself and the image does not build.
 ### Signing keys
 
 Bundles are signed, and a robot installs only bundles signed by a key its CA
-trusts (`meta-microduck/recipes-core/rauc/files/ca.cert.pem`). The private key
-is never in this repository or the image. CI signs with the development pair
-from its `RAUC_DEV_KEY` / `RAUC_DEV_CERT` secrets. To sign your own builds, make
-a CA and key once, into the build directory:
+trusts. There are two CAs in `meta-microduck/recipes-core/rauc/files/`:
+`ca-dev.cert.pem`, trusted by the dev image only, and `ca-prod.cert.pem`,
+trusted by both. The private keys are never in this repository or the image. CI
+signs every build with the development pair from its `RAUC_DEV_KEY` /
+`RAUC_DEV_CERT` secrets (`docs/agents/rauc.md`, "Two CAs"). To sign your own dev
+builds, make a CA and key once, into the build directory:
 
 ```sh
 . kas/local.env
@@ -180,8 +182,8 @@ cp openssl-ca/dev/private/development-1.key.pem .
 chmod 600 development-1.key.pem
 ```
 
-and replace `ca.cert.pem` with `openssl-ca/dev/ca.cert.pem`. A robot flashed with
-one CA refuses bundles signed under another.
+and replace `ca-dev.cert.pem` with `openssl-ca/dev/ca.cert.pem`. A robot flashed
+with one CA refuses bundles signed under another.
 
 ## Repository layout
 

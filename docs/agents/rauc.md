@@ -173,15 +173,40 @@ the first entry of `IMAGE_FSTYPES`, which is oe-core's `tar.zst` here.
 
 Lives at `$KAS_BUILD_DIR/rauc-keys/development-1.{key,cert}.pem`, generated once
 with meta-rauc's `scripts/openssl-ca.sh` (README.md has the commands). **Never in
-this repo, never in the image.** Only `ca.cert.pem` — the public CA — is committed.
+this repo, never in the image.** Only the public CAs (`ca-dev.cert.pem`,
+`ca-prod.cert.pem`) are committed.
 
 `scripts/build-hfjob.sh` sends the pair to the job **only for a bundle target**,
 the key as `-s` (secret), the cert as `-e`. It refuses locally in 0.1 s if either
 is unreadable, because `bundle.bbclass` only checks the key in `do_bundle` —
 task 7561 of 7568 — so without the guard a missing key costs a full image build.
 
-That key has been on HF's compute. It is a development key forever; a production
-key must be a different key with its own CA added to the image keyring.
+That key has been on HF's compute. It is a development key forever; the production
+key is a different key under its own CA (below).
+
+## Two CAs
+
+| CA | Signs | Trusted by |
+|---|---|---|
+| `ca-dev.cert.pem` (meta-rauc's script, valid from 1970) | every CI bundle, in the HF job | the dev image only (`rauc-conf-dev-ca`) |
+| `ca-prod.cert.pem` (2026-10-29 to 2046) | released builds only, never in a build job | both images |
+
+RAUC reads one keyring file, `/usr/lib/rauc/keyring.pem`. `rauc-conf` installs the
+production CA there; `rauc-conf-dev-ca`, in `microduck-image-dev` alone, appends
+the dev CA in its postinst at `do_rootfs`. So a robot running `microduck-image`
+refuses every dev-signed bundle in RAUC itself, whatever a channel file says.
+The CA's private key is kept offline; only a signing certificate it issued
+(`prod-signing-1`, to 2031) is ever used.
+
+Traps:
+
+- **The production certificates start on 2026-10-29**, unlike the dev CA's 1970.
+  RAUC checks validity against the clock, and the board has no RTC: an install
+  before time sync fails as "not yet valid". osupdate fetches over HTTPS, which
+  already needs the time; an offline `rauc install` from a USB stick does not.
+- **A board flashed before this keyring trusts the dev CA only**, so it refuses a
+  production-signed bundle. One dev-signed bundle from after it moves the board
+  over: the slot it writes carries the new keyring.
 
 ## User data survives; know exactly what that means
 
