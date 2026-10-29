@@ -215,7 +215,7 @@ jobs:
           mkdir "$RUNNER_TEMP/assets" && cd "$RUNNER_TEMP/assets"
           # The dev image and the dev bundle only. The job also built the shipping
           # image and its bundle, but those reach a release through promote-os.yml,
-          # production-signed, in the release microduck-os-v<X.Y.Z>.
+          # production-signed, as microduck-os-v<X.Y.Z>-<board>.
           hf buckets ls "$prefix/" | awk '{print $NF}' \
             | grep -E "/microduck-image-dev-$MACHINE\.rootfs-[0-9]+\.(wic\.zst|wic\.zst\.sha256sum|wic\.bmap|manifest)\$|/microduck-bundle-$MACHINE-[0-9]+\.raucb\$|/loader\.bin-" \
             | while read -r p; do
