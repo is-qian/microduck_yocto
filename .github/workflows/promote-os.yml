@@ -90,7 +90,7 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           COMMIT: ${{ inputs.commit }}
         run: |
-          set -euo pipefail
+          set -eu
           bucket=hf://buckets/pollen-robotics/microduck-os/os
           cache=pollen-robotics/microduck-yocto-cache
           cd "$RUNNER_TEMP"
