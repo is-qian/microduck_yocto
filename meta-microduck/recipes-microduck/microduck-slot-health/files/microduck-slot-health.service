@@ -10,7 +10,7 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/libexec/microduck-slot-health
 # It waits on robot-boot-check, which decides by 300 s after boot at the latest, then
-# up to 180 s after boot for a radio; leave room above both.
+# up to 60 s after boot for a radio; leave room above both.
 TimeoutStartSec=420
 
 [Install]

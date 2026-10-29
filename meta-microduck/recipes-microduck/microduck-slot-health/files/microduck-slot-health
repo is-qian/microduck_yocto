@@ -16,9 +16,9 @@
 #    every member has run steadily for 10 s, one has failed or crash-looped, or its
 #    deadline (`[update_gate] boot_deadline_s`, 60 s) passes, and exits 0 for a release
 #    that came up. Asked rather than copied, so the two never disagree about a daemon
-#    and a healthy boot is decided in seconds -- about 25 s on the beta board, where
-#    the copy slept until 180 s. Any other exit fails the slot: 3 is a release that did
-#    not come up, and a check that could not answer has not said it did.
+#    and a healthy boot is decided in seconds -- about 25 s on the beta board. Any
+#    other exit fails the slot: 3 is a release that did not come up, and a check that
+#    could not answer has not said it did.
 #    Needs a daemon release whose --dry-run reports its verdict (microduck#494); an
 #    older one exits 0 either way.
 #
@@ -45,9 +45,10 @@
 # Paths can be pointed elsewhere for scripts/test-slot-health.sh.
 set -eu
 
-# What the gate waited until before it asked the daemon, so a radio that took that
-# long still passes as it did.
-RADIO_DEADLINE=180
+# Seconds after boot. Every board is a beta board, whose wifi is up at 4 s and
+# Bluetooth at 12 s; a radio not up by 60 is not coming, and matches the daemon
+# check's default deadline.
+RADIO_DEADLINE=60
 
 UPTIME=${SLOT_HEALTH_UPTIME:-/proc/uptime}
 SYS=${SLOT_HEALTH_SYS:-/sys}

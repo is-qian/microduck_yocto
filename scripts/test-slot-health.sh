@@ -206,8 +206,8 @@ fresh never-wifi
 run "flashed A passes" 0
 slot B "2026-10-28T10:00:00Z"; radios bluetooth
 echo 20.00 > "$STUB/uptime"
-run "an update whose wifi never comes up fails at 180 s" 1
-case $(cut -d. -f1 "$STUB/uptime") in 180) ;; *) fail=$((fail + 1)); echo "FAIL the wait ends at the deadline (uptime $(cat "$STUB/uptime"))";; esac
+run "an update whose wifi never comes up fails at 60 s" 1
+case $(cut -d. -f1 "$STUB/uptime") in 60) ;; *) fail=$((fail + 1)); echo "FAIL the wait ends at the deadline (uptime $(cat "$STUB/uptime"))";; esac
 
 fresh same-os-waits-for-nothing
 run "flashed A passes" 0
