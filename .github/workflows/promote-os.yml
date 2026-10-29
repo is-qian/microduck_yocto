@@ -34,7 +34,7 @@ on:
       machine:
         description: "board"
         type: choice
-        options: [microduck-zero3, microduck-beta]
+        options: [microduck-zero3, microduck-beta, microduck-face-board-v1]
         default: microduck-zero3
       bump:
         description: "version bump from the board's previous release (the first release starts from 0.0.0)"
@@ -117,20 +117,21 @@ jobs:
           echo "$(field SHA256 manifest.env)  candidate.raucb" | sha256sum -c -
 
           # The shipping card from the same job: microduck-image-<machine>, not
-          # microduck-image-dev-<machine>. The beta's loader too, as build-image.yml
-          # attaches it: what `rkdeveloptool db` needs for a board in maskrom.
+          # microduck-image-dev-<machine>. The loader too, but the Zero 3W's, as
+          # build-image.yml does: what `rkdeveloptool db` needs for a beta main
+          # board (face board V1.0 included) in maskrom.
           mkdir assets
           hf buckets ls "$cache/deploy/$job/" | awk '{print $NF}' \
             | grep -E "/microduck-image-$MACHINE\.rootfs-[0-9]{14}\.(wic\.zst|wic\.zst\.sha256sum|wic\.bmap)\$|/loader\.bin-" \
             | while read -r p; do
                 hf buckets cp "hf://buckets/$cache/$p" "assets/${p##*/}" > /dev/null
               done
-          if [ "$MACHINE" = microduck-beta ]; then
-            mv assets/loader.bin-* assets/microduck-beta-loader.bin
-          else
+          if [ "$MACHINE" = microduck-zero3 ]; then
             rm -f assets/loader.bin-*
+          else
+            mv assets/loader.bin-* "assets/$MACHINE-loader.bin"
           fi
-          want=3; [ "$MACHINE" = microduck-beta ] && want=4
+          want=4; [ "$MACHINE" = microduck-zero3 ] && want=3
           [ "$(ls assets | wc -l)" -eq "$want" ] || {
             echo "expected $want card files in deploy/$job (pruned after 14 days?), got:"; ls -l assets; exit 1; }
           (cd assets && sha256sum -c *.wic.zst.sha256sum)
@@ -254,7 +255,7 @@ jobs:
       # Before stable moves, so a robot never follows a build that has no release.
       # Re-runnable: an existing release gets its assets replaced. Created with
       # GITHUB_TOKEN, which does not trigger build-image.yml's `release` event --
-      # it must not, or every release would rebuild both boards from its tag.
+      # it must not, or every release would rebuild every board from its tag.
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

@@ -27,7 +27,7 @@ name: build-image
 # KEEP_DAYS (see the prune step), and the card image is the compressed
 # .wic.zst + .wic.bmap; the 13 GB plain .wic is not uploaded.
 #
-# Publishing a GitHub release builds both boards from its tag and attaches what
+# Publishing a GitHub release builds every board from its tag and attaches what
 # a person needs to flash or update one to the release itself (see the attach
 # step), so a tagged version never needs the bucket or a rebuild.
 
@@ -92,13 +92,13 @@ jobs:
     # contents: write is for attaching images to a release; nothing else writes.
     permissions:
       contents: write
-    # A push or a release builds both boards; a manual run builds the one it
+    # A push or a release builds every board; a manual run builds the one it
     # names. Not fail-fast: a red beta must not cancel a Zero 3W build that is
     # fine (and a cancelled run leaves its HF job to the cancel step, not to luck).
     strategy:
       fail-fast: false
       matrix:
-        machine: ${{ github.event_name != 'workflow_dispatch' && fromJSON('["microduck-zero3","microduck-beta"]') || fromJSON(format('["{0}"]', inputs.machine)) }}
+        machine: ${{ github.event_name != 'workflow_dispatch' && fromJSON('["microduck-zero3","microduck-beta","microduck-face-board-v1"]') || fromJSON(format('["{0}"]', inputs.machine)) }}
 
     # `shell: bash` runs every step as `bash --noprofile --norc -eo pipefail`,
     # and the pipefail is the point. GitHub's default is `bash -e`, under which a
@@ -196,10 +196,10 @@ jobs:
 
       # A release carries its own images: the bucket's copies are pruned after
       # KEEP_DAYS, a release's assets are not. The repository is private, so its
-      # assets are too. Names already say the machine, except the beta's loader,
-      # which goes up as microduck-beta-loader.bin: it is what `rkdeveloptool db`
-      # needs for a board in maskrom (docs/agents/beta-board.md). Only the beta's:
-      # the Zero 3W is flashed as a card.
+      # assets are too. Names already say the machine, except the loader, which
+      # goes up as <machine>-loader.bin: it is what `rkdeveloptool db` needs for a
+      # beta main board in maskrom (docs/agents/beta-board.md), face board V1.0
+      # included. Not the Zero 3W's: that one is flashed as a card.
       - name: Attach the image to the release
         if: success() && github.event_name == 'release'
         env:
@@ -221,13 +221,13 @@ jobs:
             | while read -r p; do
                 hf buckets cp "hf://buckets/pollen-robotics/microduck-yocto-cache/$p" "./${p##*/}"
               done
-          if [ "$MACHINE" = microduck-beta ]; then
-            mv loader.bin-* microduck-beta-loader.bin
-          else
+          if [ "$MACHINE" = microduck-zero3 ]; then
             rm -f loader.bin-*
+          else
+            mv loader.bin-* "$MACHINE-loader.bin"
           fi
           # A missing .raucb or .bmap must not publish a release that looks complete.
-          want=5; [ "$MACHINE" = microduck-beta ] && want=6
+          want=6; [ "$MACHINE" = microduck-zero3 ] && want=5
           [ "$(ls | wc -l)" -eq "$want" ] || { echo "expected $want assets, got:"; ls -l; exit 1; }
           sha256sum -c *.wic.zst.sha256sum
           gh release upload "$TAG" * --clobber -R "$GITHUB_REPOSITORY"
