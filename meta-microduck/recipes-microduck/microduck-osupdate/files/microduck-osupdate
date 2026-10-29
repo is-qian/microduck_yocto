@@ -14,13 +14,19 @@
 # key and every value checked against a pattern -- never sourced. The bundle is
 # what RAUC verifies (X.509 signature, compatible, the install-check hook); the
 # manifest only says which bundle.
-# shortcut: the manifest is unsigned, so whoever can write the bucket can point a
-# robot at an older, validly signed bundle (a downgrade). Production: sign it and
-# refuse a build older than the installed one.
+# The manifest is unsigned, so whoever can write the bucket can point a robot at
+# an older, validly signed bundle. A production board refuses any build older
+# than the one it runs (see apply).
+# shortcut: a dev board takes the downgrade; it is a bench board. Sign the
+# manifest if the bucket's write access ever widens.
 set -eu
 
 BASE_URL=https://huggingface.co/buckets/pollen-robotics/microduck-os/resolve
-CHANNEL=dev
+# A production board is one whose RAUC keyring lacks the development CA, which
+# only the dev image adds (rauc-conf-dev-ca). It can install nothing but
+# production-signed bundles, and only stable carries those.
+production() { [ ! -e /usr/lib/rauc/ca-dev.cert.pem ]; }
+if production; then CHANNEL=stable; else CHANNEL=dev; fi
 # Root-owned local configuration, so sourcing it is fine (unlike the manifest).
 [ ! -r /etc/microduck-osupdate.conf ] || . /etc/microduck-osupdate.conf
 STATE=/var/lib/robot/osupdate
@@ -95,7 +101,7 @@ check() {
 
 # apply [BUILD]: the channel's newest build, or a chosen one from the index --
 # a dev branch, a given stable release, or an older build to go back to. Choosing
-# is an explicit act, so an older build is allowed here.
+# is an explicit act, so an older build is allowed here -- on a dev board only.
 apply() {
 	exec 9> "$STATE/lock"
 	flock -n 9 || fail "an update is already running"
@@ -111,7 +117,13 @@ apply() {
 	a=$STATE/target.env
 	build=$(field "$a" BUILD); url=$(field "$a" URL); sha256=$(field "$a" SHA256)
 	size=$(field "$a" SIZE); version=$(field "$a" VERSION)
-	[ "$build" != "$(installed_build)" ] || fail "build $build is already running"
+	installed=$(installed_build)
+	[ "$build" != "$installed" ] || fail "build $build is already running"
+	# Build ids are UTC timestamps, so newer is larger. A flashed slot has none.
+	# Going back on a production board is `switch`, to the other slot as it is.
+	if production && [ -n "$installed" ] && [ "$build" -lt "$installed" ]; then
+		fail "build $build is older than the installed $installed; this board does not downgrade"
+	fi
 	# Already in the other slot, and good: boot it rather than download it again.
 	if [ "$build" = "$(other_build)" ] && other_good; then
 		switch_slot "$version"

@@ -198,6 +198,11 @@ refuses every dev-signed bundle in RAUC itself, whatever a channel file says.
 The CA's private key is kept offline; only a signing certificate it issued
 (`prod-signing-1`, to 2031) is ever used.
 
+`microduck-osupdate` picks its channel from the keyring: `dev` if
+`/usr/lib/rauc/ca-dev.cert.pem` exists, `stable` if not. On such a production
+board it also refuses a build older than the installed one, because the channel
+manifests are unsigned; going back there is `switch`, to the other slot.
+
 Traps:
 
 - **The production certificates start on 2026-10-29**, unlike the dev CA's 1970.
