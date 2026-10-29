@@ -12,7 +12,7 @@ Output: .release-notes/RELEASE_NOTES_<version>.md, its first line the title.
     export RELEASE_NOTES_MODEL=huggingface/zai-org/GLM-5.3
     python -m scripts.release_notes.generate_release_notes \\
         --since v0.1.0 --head main --version os-zero3-preview \\
-        --title "microduck OS 0.1.0-preview (microduck-zero3)"
+        --title "v0.1.0-preview (microduck-zero3)"
 """
 
 import argparse

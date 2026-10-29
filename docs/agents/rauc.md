@@ -252,7 +252,7 @@ Traps:
    (`huggingface/zai-org/GLM-5.3`) and `OPENCODE_VERSION` (`1.19.4`). Preview locally:
    `GITHUB_TOKEN=$(gh auth token) RELEASE_NOTES_MODEL=... python -m
    scripts.release_notes.generate_release_notes --since v0.1.0 --head main
-   --version microduck-os-preview-zero3 --title "microduck OS preview (microduck-zero3)"`
+   --version microduck-os-preview-zero3 --title "preview (microduck-zero3)"`
    (needs `pip install PyGithub` and opencode logged in to huggingface).
    Only PRs count: a commit pushed straight to main is not in the notes, and a
    `#<number>` that is not one of the release's PRs (an issue) gets its line

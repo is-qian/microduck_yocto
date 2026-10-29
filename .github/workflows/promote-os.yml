@@ -250,7 +250,7 @@ jobs:
           # A failed run can leave a draft that misses PRs; the release must not use it.
           python -m scripts.release_notes.generate_release_notes \
             --since "$SINCE" --head "$COMMIT" --version "$TAG" --machine "$MACHINE" \
-            --title "microduck OS v$VERSION ($MACHINE)" || { rm -rf .release-notes; exit 1; }
+            --title "v$VERSION ($MACHINE)" || { rm -rf .release-notes; exit 1; }
 
       # Before stable moves, so a robot never follows a build that has no release.
       # Re-runnable: an existing release gets its assets replaced. Created with
@@ -275,7 +275,7 @@ jobs:
           else
             # The drafted notes when the step above produced them (title on their
             # first line), and in every case the files section.
-            title="microduck OS v$VERSION ($MACHINE)"
+            title="v$VERSION ($MACHINE)"
             : > notes.md
             if [ -s "$drafted" ]; then
               case $(head -n 1 "$drafted") in
