@@ -31,7 +31,8 @@ RAUC_BUNDLE_HOOKS[file] = "microduck-bundle-hook"
 RAUC_BUNDLE_HOOKS[hooks] = "install-check"
 
 # The dev image, so the card built alongside and every updated slot keep a
-# password-less root to test with. Switch to microduck-image before shipping.
+# password-less root to test with. microduck-bundle-shipping.bb carries the
+# shipping image, and is the one that gets promoted to stable.
 RAUC_SLOT_rootfs = "microduck-image-dev"
 # Required: bundle.bbclass defaults to the first IMAGE_FSTYPES entry, tar.zst here.
 RAUC_SLOT_rootfs[fstype] = "ext4"
@@ -40,7 +41,8 @@ RAUC_SLOT_rootfs[fstype] = "ext4"
 RAUC_SLOT_rootfs[hooks] = "post-install"
 
 # The signing pair lives in the build directory and never in this repo or the
-# image; only the public CA is committed (recipes-core/rauc/files/ca.cert.pem).
+# image; only the public CAs are committed (recipes-core/rauc/files/). This is the
+# development pair; the production one never enters a build (promote-os.yml).
 # README.md has the one-time key generation. build-hfjob.sh writes the pair here.
 RAUC_KEY_FILE ?= "${TOPDIR}/rauc-keys/development-1.key.pem"
 RAUC_CERT_FILE ?= "${TOPDIR}/rauc-keys/development-1.cert.pem"
