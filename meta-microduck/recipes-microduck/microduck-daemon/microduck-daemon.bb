@@ -318,6 +318,9 @@ do_install:append() {
 	# image showed the same bare hostname until its first update. Cut out of the
 	# script rather than copied into files/, so there is one snippet and it cannot
 	# drift; the first update then rewrites this same path with the same text.
+	# In ${PN}, not a dev-only package: the hook writes it on every board, shipping
+	# ones included, so leaving it out would only make a fresh robot differ from an
+	# updated one. Bash syntax behind a $BASH_VERSION guard; bash is in both images.
 	install -d ${D}${sysconfdir}/profile.d
 	sed -n "/<<'PROMPT'\$/,/^PROMPT\$/p" ${S}/scripts/setup-login.sh | sed '1d;$d' \
 		> ${D}${sysconfdir}/profile.d/robot-name-prompt.sh
@@ -433,6 +436,7 @@ FILES:${PN} += " \
     ${prefix}/local/sbin/robot-rescue \
     ${nonarch_base_libdir}/udev/rules.d/60-robot-i2c.rules \
     ${sysconfdir}/robot \
+    ${sysconfdir}/profile.d/robot-name-prompt.sh \
     ${sysconfdir}/systemd/journald.conf.d/10-robot.conf \
     ${localstatedir}/lib/robot \
 "
@@ -443,8 +447,8 @@ FILES:${PN} += " \
 # It is not the 300 bytes, it is the RDEPENDS: bash-completion brings a 132 KB
 # dispatcher, its profile snippet and an empty directory -- the megabyte of
 # completion scripts is oe-core's separate bash-completion-extra package, which
-# nothing here asks for. Small, then, but microduck-image has no login at all --
-# nobody is typing on a shipping robot, so nothing there should pay for a Tab key.
+# nothing here asks for. Small, then, but a shipping robot is not where anyone
+# types commands, so nothing there should pay for a Tab key.
 # microduck-image-dev installs it; microduck-image cannot get it by accident.
 #
 # That RDEPENDS is also what makes this work rather than merely exist:
@@ -463,13 +467,6 @@ FILES:${PN} += " \
 PACKAGES =+ "${PN}-bash-completion"
 FILES:${PN}-bash-completion = "${datadir}/bash-completion"
 RDEPENDS:${PN}-bash-completion += "${PN} bash-completion"
-
-# The name in the prompt, for the same reason as the Tab key: only an image somebody
-# logs into wants it. Bash syntax behind a $BASH_VERSION guard, and bash is already in
-# both images.
-PACKAGES =+ "${PN}-login-prompt"
-FILES:${PN}-login-prompt = "${sysconfdir}/profile.d/robot-name-prompt.sh"
-RDEPENDS:${PN}-login-prompt += "${PN} bash"
 
 # The dev-board trust anchor, as its own package so it can only reach an image
 # that asks for it by name. microduck-image-dev installs it; microduck-image
