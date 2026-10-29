@@ -21,9 +21,9 @@ EXTRA_USERS_PARAMS = "useradd -m -s /bin/bash -G robot,sudo,audio,video,dialout,
 # The card image to download and flash is the compressed .wic.zst plus its .bmap:
 # `bmaptool copy` writes only the blocks in use, instead of dd copying all 13 GB.
 # Plain `wic` stays in the list. oe-core deletes a type that is not listed as soon
-# as it has been converted (image.bbclass, rm_tmp_images), and rockchip's
-# gen_rkparameter reads the .wic after that. build-hfjob.sh leaves it out of the
-# bucket instead.
+# as it has been converted (image.bbclass, rm_tmp_images), and a beta board's
+# eMMC is flashed from the plain .wic with `rkdeveloptool wl`
+# (docs/agents/beta-board.md). build-hfjob.sh leaves it out of the bucket instead.
 #
 # wic.zst.sha256sum is oe-core's sha256sum conversion: `sha256sum -c` on it
 # checks a download before it goes anywhere near a card. bmaptool checks the
@@ -40,6 +40,20 @@ do_image_wic_ufs() {
 	:
 }
 gen_rkupdateimg() {
+	:
+}
+
+# Two more, for a different reason: their names are fixed, not per image.
+# - rootfs.img, a symlink to the image's ext4
+# - parameter, Rockchip's partition table for its flashing tool
+# CI builds microduck-image and microduck-image-dev in one job (the shipping and
+# dev bundles), and the second image's do_image_complete then fails: "trying to
+# install files into a shared area when those files already exist". Nothing here
+# reads either file; the wks takes idblock/uboot/boot by their own names.
+link_rootfs_image() {
+	:
+}
+gen_rkparameter() {
 	:
 }
 
