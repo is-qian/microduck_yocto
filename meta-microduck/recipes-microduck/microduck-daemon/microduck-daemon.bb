@@ -341,7 +341,7 @@ do_install:append() {
 	install -m 0644 ${S}/padd/systemd/padd.service ${D}${systemd_system_unitdir}/
 
 	# The boot recovery net, verbatim from the release: the timer runs
-	# robot-boot-check 180 s after boot, which hands a release whose daemons did
+	# robot-boot-check a second after boot, which hands a release whose daemons did
 	# not come up to robot-rescue (current -> golden, reboot). Both units name
 	# /usr/local/sbin, so that is where the scripts go: outside the release tree,
 	# because they run exactly when the release cannot be trusted.

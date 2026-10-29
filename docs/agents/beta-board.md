@@ -362,6 +362,6 @@ chip as one LED with vendor sysfs files instead and is not used.
   double blink + fan off at idle = up. The Recovery button gets loader mode from
   any of these. There, `rkdeveloptool rl 8128 32768 env.img` reads U-Boot's env
   (4-byte CRC32, then NUL-separated `key=value`), which says what the last boots
-  did: `BOOT_A_LEFT` falls by one per attempt and only rauc-mark-good, 180 s
-  after boot, puts it back to 3.
+  did: `BOOT_A_LEFT` falls by one per attempt and only rauc-mark-good, once the
+  health gate passes (about 25 s after boot), puts it back to 3.
 - **A newer schematic**, to diff against every block above.
