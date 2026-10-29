@@ -1,3 +1,9 @@
+# Our own login banner. The distro keeps the `poky` override (microduck.conf), so
+# without this meta-poky's files/poky/motd ships, warning that Poky is for testing
+# only. FILESOVERRIDES is searched highest override first, and `microduck` comes
+# after `poky` in DISTROOVERRIDES, so files/microduck/motd wins in any layer order.
+FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
+
 # Grow / to fill its slot at boot. `rauc install` writes the bundle's ext4 image raw
 # into a 2 GiB slot, so the filesystem stays the image's size (~740 MB, ~90 MB
 # free), and the second daemon update after a slot switch failed updaterd's disk
