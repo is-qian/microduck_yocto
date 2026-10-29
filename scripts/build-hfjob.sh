@@ -113,11 +113,18 @@ stage=$(mktemp -d "${TMPDIR:-/tmp}/hfjob-src.XXXXXX")
 trap 'rm -rf "$stage"' EXIT
 inputs="kas meta-microduck meta-microduck-bsp meta-microduck-distro"
 cp -R $inputs "$stage"/
+# The name becomes a label, which HF refuses unless it matches ^[a-zA-Z0-9_-]*$
+# (run 40879162403 died on a '+'). The target may list several recipes, so
+# anything else becomes one '-'. Recipes lose their microduck- prefix and the
+# whole name stops at 63 characters, the usual limit for a label value: not
+# confirmed for HF, and the default target is 64 without it.
+name=$(printf '%s' "${TARGET:-image}" | sed 's/microduck-//g')
+name=$(printf '%s' "microduck-${MACHINE#microduck-}-$name-$KAS_CMD" | tr -cs 'A-Za-z0-9_-' '-' | cut -c1-63)
 set -- \
 	--namespace pollen-robotics \
 	--flavor "$FLAVOR" \
 	--timeout "$TIMEOUT" \
-	--name "microduck-${MACHINE#microduck-}-$(printf '%s' "${TARGET:-image}" | tr -s ' ' '+')-$KAS_CMD" \
+	--name "$name" \
 	--detach
 for d in $inputs; do
 	set -- "$@" -v "$stage/$d:/src/$d"
