@@ -189,72 +189,17 @@
 	};
 
 	/*
-	 * Seeed DTB: twelve LEDs on the face board, driven through the PCA9535
-	 * expander on I2C3 (V0.1 does not show the face board). Pins 6, 7, 14
-	 * and 15 of the expander are not LEDs. Labels are Seeed's.
+	 * Face Board V1.0 (sch_261020) button K1 on GPIO4_D0, freed by the
+	 * move from the PCA9535 expander to dedicated LED drivers.
+	 * R62/C9 provide pull-up and debounce.
 	 */
-	face_leds: face-leds {
-		compatible = "gpio-leds";
+	face_keys: gpio-keys {
+		compatible = "gpio-keys";
 
-		led-cam {
-			label = "face:cam:red";
-			gpios = <&face_gpio 0 GPIO_ACTIVE_HIGH>;
-		};
-
-		led-green1 {
-			label = "face:green1:green";
-			gpios = <&face_gpio 1 GPIO_ACTIVE_HIGH>;
-			linux,default-trigger = "heartbeat";
-		};
-
-		led-green2 {
-			label = "face:green2:green";
-			gpios = <&face_gpio 2 GPIO_ACTIVE_HIGH>;
-		};
-
-		led-rgb-blue {
-			label = "face:rgb:blue";
-			gpios = <&face_gpio 3 GPIO_ACTIVE_HIGH>;
-		};
-
-		led-rgb-green {
-			label = "face:rgb:green";
-			gpios = <&face_gpio 4 GPIO_ACTIVE_HIGH>;
-		};
-
-		led-rgb-red {
-			label = "face:rgb:red";
-			gpios = <&face_gpio 5 GPIO_ACTIVE_HIGH>;
-		};
-
-		led-gb-blue {
-			label = "face:gb:blue";
-			gpios = <&face_gpio 8 GPIO_ACTIVE_HIGH>;
-		};
-
-		led-gb-green {
-			label = "face:gb:green";
-			gpios = <&face_gpio 9 GPIO_ACTIVE_HIGH>;
-		};
-
-		led-gr1-red {
-			label = "face:gr1:red";
-			gpios = <&face_gpio 10 GPIO_ACTIVE_HIGH>;
-		};
-
-		led-gr1-green {
-			label = "face:gr1:green";
-			gpios = <&face_gpio 11 GPIO_ACTIVE_HIGH>;
-		};
-
-		led-gr2-red {
-			label = "face:gr2:red";
-			gpios = <&face_gpio 12 GPIO_ACTIVE_HIGH>;
-		};
-
-		led-gr2-green {
-			label = "face:gr2:green";
-			gpios = <&face_gpio 13 GPIO_ACTIVE_HIGH>;
+		face-button {
+			label = "face-button";
+			linux,code = <KEY_ENTER>;
+			gpios = <&gpio4 RK_PD0 GPIO_ACTIVE_LOW>;
 		};
 	};
 
@@ -704,22 +649,53 @@
 	pinctrl-0 = <&i2c3m1_xfer>;
 
 	/*
-	 * Seeed DTB: a PCA9535 16-bit expander on the face board, interrupt on
-	 * GPIO4_C7 (the BTB pin V0.1 leaves unnamed). It drives the face LEDs.
+	 * Face Board V1.0 LED drivers (sheet 04), replacing the V0 PCA9535
+	 * expander and its NPN switches. AW21009 EN is pulled up on board
+	 * (R36); AW2023 INTN keeps the V0 interrupt line, GPIO4_C7 via R40.
+	 * AW2023 channel order from the LED1 symbol: LED0=B, LED1=G, LED2=R.
 	 * Whether the BMI088 is on this bus too is not in their tree -- tofd
 	 * opens it from userspace, so `i2cdetect -y 3` is the check.
 	 */
-	face_gpio: gpio@20 {
-		compatible = "nxp,pca9535";
+	aw21009: led-controller@20 {
+		compatible = "awinic,aw210xx_led";
 		reg = <0x20>;
-		gpio-controller;
-		#gpio-cells = <2>;
-		interrupt-controller;
-		#interrupt-cells = <2>;
+		osc_clk = <1>;		/* 16 MHz */
+		br_res = <1>;		/* 8-bit PWM */
+		global_current = <0xff>;
+
+		aw210xx_led {
+			aw210xx,name = "aw21009";
+			aw210xx,imax = <1>;
+			aw210xx,brightness = <0>;
+			aw210xx,max_brightness = <255>;
+		};
+	};
+
+	aw2023: led-controller@45 {
+		compatible = "awinic,aw2023";
+		reg = <0x45>;
+		awinic,imax = <1>;
 		interrupt-parent = <&gpio4>;
 		interrupts = <RK_PC7 IRQ_TYPE_LEVEL_LOW>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&face_gpio_int>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		led@0 {
+			reg = <0>;
+			label = "face:rgb:blue";
+		};
+
+		led@1 {
+			reg = <1>;
+			label = "face:rgb:green";
+		};
+
+		led@2 {
+			reg = <2>;
+			label = "face:rgb:red";
+		};
 	};
 };
 

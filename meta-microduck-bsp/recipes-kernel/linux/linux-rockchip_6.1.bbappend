@@ -152,7 +152,10 @@ do_patch[postfuncs] += "microduck_install_board_dts"
 # microduck_check_uboot_config: a fragment line whose dependency is missing is
 # silently dropped by merge_config, and the first symptom would be a face board
 # with no LEDs on a board that otherwise boots fine.
-SRC_URI:append:microduck-beta = " file://microduck-beta.cfg"
+#
+# 0004 adds the Face Board V1.0 LED drivers the beta dts describes; it is a
+# beta-only append because the Zero 3W has no face board.
+SRC_URI:append:microduck-beta = " file://microduck-beta.cfg file://0004-leds-aw21009-aw2023-face-board-drivers.patch"
 
 microduck_check_kernel_fragments() {
 	for frag in ${@' '.join(u.split('://')[1].split(';')[0] for u in d.getVar('SRC_URI').split() if u.startswith('file://microduck-') and u.endswith('.cfg'))}; do
